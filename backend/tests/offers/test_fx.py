@@ -11,6 +11,8 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from travelmind.offers.fx import (
     CACHE_KEY,
     ECB_DAILY_URL,
+    FAILURE_KEY,
+    FAILURE_TTL_SECONDS,
     display_currency_for,
     get_fx_rates,
     parse_ecb_xml,
@@ -73,6 +75,8 @@ def test_display_currency():
         XML.replace('rate="90.4000"', 'rate="abc"'),
         XML.replace('currency="INR"', 'currency="rupees"'),
         XML.replace('time="2026-09-28"', 'time="yesterday"'),
+        XML.replace('rate="90.4000"', 'rate="1E+999999"'),
+        XML.replace('rate="90.4000"', 'rate="1000000001"'),
     ],
     ids=[
         "garbage",
@@ -84,6 +88,8 @@ def test_display_currency():
         "not-a-number",
         "bad-code",
         "bad-date",
+        "absurd-exponent",
+        "over-1e9",
     ],
 )
 def test_parse_rejects_unusable_feeds(xml):
@@ -180,6 +186,9 @@ class _BrokenRedis:
     async def get(self, key):
         raise RedisConnectionError("down")
 
+    async def exists(self, *keys):
+        raise RedisConnectionError("down")
+
     async def set(self, key, value, ex=None):
         raise RedisConnectionError("down")
 
@@ -189,3 +198,85 @@ async def test_redis_outage_still_returns_fresh_rates(respx_mock):
     rates = await get_fx_rates(_BrokenRedis(), enabled=True)  # type: ignore[arg-type]
     assert rates is not None
     assert rates.as_of == date(2026, 9, 28)
+
+
+async def test_failed_fetch_backs_off_for_five_minutes(respx_mock):
+    route = respx_mock.get(ECB_DAILY_URL).mock(return_value=httpx.Response(503))
+    redis = await _redis()
+    try:
+        assert await get_fx_rates(redis, enabled=True) is None
+        ttl = await redis.ttl(FAILURE_KEY)
+        assert await get_fx_rates(redis, enabled=True) is None
+    finally:
+        await redis.aclose()
+    assert FAILURE_TTL_SECONDS == 300
+    assert 0 < ttl <= 300
+    assert route.call_count == 1  # the second call never reached the feed
+
+
+async def test_garbage_feed_also_backs_off(respx_mock):
+    route = respx_mock.get(ECB_DAILY_URL).mock(
+        return_value=httpx.Response(200, text="<html>maintenance</html>")
+    )
+    redis = await _redis()
+    try:
+        assert await get_fx_rates(redis, enabled=True) is None
+        assert await get_fx_rates(redis, enabled=True) is None
+        assert await redis.get(FAILURE_KEY) == b"1"
+    finally:
+        await redis.aclose()
+    assert route.call_count == 1
+
+
+async def test_cached_rates_win_over_the_failure_marker(respx_mock):
+    route = respx_mock.get(ECB_DAILY_URL).mock(return_value=httpx.Response(200, text=XML))
+    redis = await _redis()
+    try:
+        assert await get_fx_rates(redis, enabled=True) is not None
+        await redis.set(FAILURE_KEY, "1", ex=FAILURE_TTL_SECONDS)
+        assert await get_fx_rates(redis, enabled=True) is not None
+    finally:
+        await redis.aclose()
+    assert route.call_count == 1
+
+
+class _MarkerBrokenRedis:
+    """Cache miss, but reading or writing the failure marker fails."""
+
+    def __init__(self):
+        self.set_calls = []
+
+    async def get(self, key):
+        return None
+
+    async def exists(self, *keys):
+        raise RedisConnectionError("down")
+
+    async def set(self, key, value, ex=None):
+        self.set_calls.append(key)
+        raise RedisConnectionError("down")
+
+
+async def test_marker_read_failure_falls_through_to_fetch(respx_mock):
+    route = respx_mock.get(ECB_DAILY_URL).mock(return_value=httpx.Response(200, text=XML))
+    rates = await get_fx_rates(_MarkerBrokenRedis(), enabled=True)  # type: ignore[arg-type]
+    assert rates is not None
+    assert route.call_count == 1
+
+
+async def test_marker_write_failure_does_not_raise(respx_mock):
+    respx_mock.get(ECB_DAILY_URL).mock(return_value=httpx.Response(503))
+    redis = _MarkerBrokenRedis()
+    assert await get_fx_rates(redis, enabled=True) is None  # type: ignore[arg-type]
+    assert redis.set_calls == [FAILURE_KEY]
+
+
+async def test_fetch_uses_a_tight_timeout(respx_mock):
+    route = respx_mock.get(ECB_DAILY_URL).mock(return_value=httpx.Response(200, text=XML))
+    redis = await _redis()
+    try:
+        await get_fx_rates(redis, enabled=True)
+    finally:
+        await redis.aclose()
+    timeout = route.calls.last.request.extensions["timeout"]
+    assert timeout == {"connect": 1.0, "read": 2.0, "write": 2.0, "pool": 2.0}

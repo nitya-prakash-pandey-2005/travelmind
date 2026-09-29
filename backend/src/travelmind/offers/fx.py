@@ -23,6 +23,10 @@ from travelmind.offers.money import Money
 ECB_DAILY_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
 CACHE_KEY = "fx:ecb:daily"
 CACHE_TTL_SECONDS = 12 * 3600
+FAILURE_KEY = "fx:ecb:down"  # set after a failed fetch so we back off instead of retrying
+FAILURE_TTL_SECONDS = 300
+FETCH_TIMEOUT = httpx.Timeout(2.0, connect=1.0)
+_MAX_RATE = Decimal("1e9")  # no real currency is near this; bounds later multiplication
 _NS = "{http://www.ecb.int/vocabulary/2002-08-01/eurofxref}"
 _CODE = re.compile(r"[A-Z]{3}")
 log = structlog.get_logger()
@@ -61,7 +65,7 @@ def _validated(as_of: object, pairs: Iterable[tuple[object, object]]) -> FxRates
             rate = Decimal(raw_rate)
         except InvalidOperation as exc:
             raise ValueError(f"Invalid rate for {currency}: {raw_rate!r}") from exc
-        if not rate.is_finite() or rate <= 0:
+        if not rate.is_finite() or rate <= 0 or rate > _MAX_RATE:
             raise ValueError(f"Invalid rate for {currency}: {raw_rate!r}")
         if currency != "EUR":
             rates[currency] = rate
@@ -107,7 +111,10 @@ def _load(raw: bytes | str) -> FxRates:
 async def get_fx_rates(
     redis: Redis, *, enabled: bool = True, url: str = ECB_DAILY_URL
 ) -> FxRates | None:
-    """Today's ECB rates, cached in Redis for 12 h. `None` when disabled or unavailable."""
+    """Today's ECB rates, cached in Redis for 12 h. `None` when disabled or unavailable.
+
+    After a failed fetch, a marker makes callers skip the feed for FAILURE_TTL_SECONDS.
+    """
     if not enabled:
         return None
     try:
@@ -117,12 +124,21 @@ async def get_fx_rates(
     except (RedisError, ValueError) as exc:
         log.warning("fx_cache_unavailable", error=str(exc))
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        if await redis.exists(FAILURE_KEY):
+            return None
+    except RedisError as exc:
+        log.warning("fx_cache_unavailable", error=str(exc))
+    try:
+        async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
             response = await client.get(url)
         response.raise_for_status()
         rates = parse_ecb_xml(response.text)
     except (httpx.HTTPError, ValueError) as exc:
         log.warning("fx_rates_unavailable", error=str(exc))
+        try:
+            await redis.set(FAILURE_KEY, "1", ex=FAILURE_TTL_SECONDS)
+        except RedisError as marker_exc:
+            log.warning("fx_cache_unavailable", error=str(marker_exc))
         return None
     try:
         await redis.set(CACHE_KEY, _dump(rates), ex=CACHE_TTL_SECONDS)
