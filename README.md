@@ -1,79 +1,50 @@
-# TravelMind ✈️
+# TravelMind
 
-TravelMind is a production-grade AI travel negotiation system. It aggregates flights from multiple suppliers (GDS, LCC, OTA) by normalizing disparate schemas into a canonical `FareRecord`. It then uses a RAG pipeline (ChromaDB + BGE-M3) and a LangChain ReAct Agent to search, compare, clarify, and negotiate flight prices directly through natural language.
+AI copilot for travel agencies and corporate travel: quotes from live supplier inventory,
+every price verified against real offers, fare intelligence, policy and approvals.
 
-## Architecture
+> Status: Milestone 1 in progress. Plan 1 (backend foundation) is complete.
+> `frontend/` is the legacy prototype UI and is replaced in M1 Plan 4.
 
-```text
-User Query → FastAPI → ReAct Agent → [Tools: Search | Negotiate | Clarify | Compare]
-                                          ↓
-                                   RAG Pipeline (ChromaDB + BGE-M3)
-                                          ↓
-                              Normalized Supplier Fare Data
-                          (SupplierA/GDS, SupplierB/LCC, SupplierC/OTA)
-```
+## Layout
 
-## Quick Start
+| Path | What |
+|---|---|
+| `backend/` | FastAPI app (`src/travelmind`), Alembic migrations, tests |
+| `infra/postgres/init.sql` | Creates DB roles (`travelmind_owner`, `travelmind_app`) and databases |
+| `docker-compose.yml` | Postgres 16 + pgvector (port 5433), Redis 7 (port 6380) |
+| `docs/superpowers/specs/` | Product/architecture spec |
+| `docs/superpowers/plans/` | Implementation plans |
 
-### 1. Backend Setup
+## Run locally
 
-Open a terminal and set up the Python environment:
+Prerequisites: Docker Desktop, [uv](https://docs.astral.sh/uv/).
 
 ```bash
-cd travel-rag-agent
-python -m venv venv
-# Windows:
-.\venv\Scripts\Activate
-# Mac/Linux:
-source venv/bin/activate
-
-pip install -r requirements.txt
-```
-
-### 2. Environment Variables
-
-Create a `.env` file from the example:
-```bash
+docker compose up -d --wait
+cd backend
 cp .env.example .env
+uv sync
+uv run python -m alembic upgrade head
+uv run python -m travelmind.reference.cli import-ourairports
+uv run uvicorn travelmind.main:create_app --factory --reload
 ```
-Ensure you add your `GOOGLE_API_KEY` (Gemini) inside the `.env` file.
 
-### 3. Data Pipeline
+API docs: http://localhost:8000/docs
 
-You need Kaggle credentials (`~/.kaggle/kaggle.json`) to download the flight prices dataset automatically.
-If you don't have it, the script will generate a fallback mock dataset.
+## Test
 
 ```bash
-# 1. Download OpenFlights and Kaggle Data
-python scripts/download_open_data.py
-
-# 2. Build Supplier Records (Simulate GDS, LCC, OTA)
-python scripts/build_supplier_records.py
-
-# 3. Normalize and Index into ChromaDB
-python scripts/index_data.py
+cd backend
+uv run pytest            # needs docker compose services running
+uv run ruff check . && uv run mypy src
 ```
 
-### 4. Run the API
+Reset the local database completely: `docker compose down -v && docker compose up -d --wait`.
 
-```bash
-uvicorn src.api.main:app --reload
-```
-The API docs will be available at [http://localhost:8000/docs](http://localhost:8000/docs).
+## Security model (short)
 
-### 5. Run the Frontend UI
-
-Open a new terminal:
-```bash
-cd travel-rag-agent/frontend
-npm install
-npm run dev
-```
-Open [http://localhost:5173](http://localhost:5173) in your browser to chat with TravelMind!
-
-### 6. Run Evaluations
-
-To run the automated agent evaluations:
-```bash
-python -m src.evals.run_evals
-```
+- Tenant data tables use Postgres row-level security (forced); the app connects as a role
+  that cannot bypass it. Identity tables are only accessed through `travelmind.identity`.
+- Sessions are opaque, revocable, httpOnly cookies; passwords use Argon2.
+- Cross-site state-changing requests are rejected; login is rate limited.

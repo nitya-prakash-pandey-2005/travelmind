@@ -73,6 +73,7 @@ Platform (TravelMind)
 ```
 
 - Every row carries `agency_id` (and `corporate_id` where relevant). PostgreSQL **Row-Level Security** enforces isolation; the app sets the tenant per request. Cross-tenant access is impossible even if a query forgets a filter.
+- Exception (decided in M1 Plan 1): identity tables `agencies`, `users`, `sessions` have no RLS because login must look users up before the tenant is known. They are accessed only through `travelmind.identity` (enforced by an architecture test), and `users` queries always filter by `agency_id`. Invitations use `<agency_id>.<secret>` tokens so they stay under RLS.
 - Auth: email + password (Argon2) and invitation links in M1; Google/Microsoft OIDC SSO in M3. Sessions via httpOnly secure cookies.
 - Audit log: every state change on quotes, bookings, policies, credentials (who, what, when, before/after).
 

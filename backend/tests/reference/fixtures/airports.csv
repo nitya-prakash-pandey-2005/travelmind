@@ -1,0 +1,13 @@
+"id","ident","type","name","latitude_deg","longitude_deg","elevation_ft","continent","iso_country","iso_region","municipality","scheduled_service","gps_code","iata_code","local_code","home_link","wikipedia_link","keywords"
+1,"VIDP","large_airport","Indira Gandhi International Airport",28.5665,77.103104,777,"AS","IN","IN-DL","New Delhi","yes","VIDP","DEL",,,,"Palam, Delhi"
+2,"VABB","large_airport","Chhatrapati Shivaji Maharaj International Airport",19.0887,72.8679,39,"AS","IN","IN-MM","Mumbai","yes","VABB","BOM",,,,"Bombay, Sahar"
+3,"VOGO","medium_airport","Dabolim Airport",15.3808,73.8314,150,"AS","IN","IN-GA","Vasco da Gama","yes","VOGO","GOI",,,,"Goa"
+4,"VOGA","medium_airport","Manohar International Airport",15.7442,73.8606,560,"AS","IN","IN-GA","Mopa","yes","VOGA","GOX",,,,"Goa, Mopa"
+5,"LIMJ","medium_airport","Genoa Cristoforo Colombo Airport",44.4133,8.8375,13,"EU","IT","IT-42","Genova","yes","LIMJ","GOA",,,,"Genova"
+6,"SBGR","large_airport","São Paulo/Guarulhos International Airport",-23.4356,-46.4731,2459,"SA","BR","BR-SP","São Paulo","yes","SBGR","GRU",,,,
+7,"XXCL","closed","Old Closed Field",10.0,10.0,0,"AS","IN","IN-DL","Nowhere","no",,"XXC",,,,
+8,"XHEL","heliport","City Heliport",11.0,11.0,0,"AS","IN","IN-DL","Somewhere","no",,"HLP",,,,
+9,"XDUP","small_airport","Old Delhi Strip",28.6,77.2,700,"AS","IN","IN-DL","Delhi","no",,"DEL",,,,
+10,"XNOI","small_airport","No IATA Strip",12.0,12.0,0,"AS","IN","IN-DL","Nowhere","no",,,,,,
+11,"XBAD","small_airport","Bad Coordinates Strip","abc",12.0,0,"AS","IN","IN-DL","Nowhere","no",,"BAD",,,,
+12,"XZZZ","large_airport","Unknown Country Airport",1.0,1.0,0,"AS","ZZ","ZZ-1","Nowhere","yes",,"ZZZ",,,,
