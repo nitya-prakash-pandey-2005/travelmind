@@ -31,6 +31,32 @@ test("ignores redirects to other sites", async () => {
   await waitFor(() => expect(router.state.location.pathname).toBe("/"));
 });
 
+test.each([
+  ["an absolute URL", "https%3A%2F%2Fevil.example"],
+  ["a backslash", "%2F%5Cevil.example"],
+  ["a tab", "%2F%09%2Fevil.example"],
+  ["a newline", "%2F%0A%2Fevil.example"],
+  ["double encoding", "%252F%252Fevil.example"],
+])("ignores redirects smuggled with %s", async (_label, encoded) => {
+  mockApi(withSession(null, { "POST /api/v1/auth/login": { status: 200, body: ME_OWNER } }));
+  const { router, user } = renderApp(`/login?redirect=${encoded}`);
+  await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
+  await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
+  await user.click(screen.getByRole("button", { name: "Engage" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  expect(await screen.findByRole("heading", { name: "Mission Control" })).toBeInTheDocument();
+});
+
+test("keeps the query string of a same-site redirect", async () => {
+  mockApi(withSession(null, { "POST /api/v1/auth/login": { status: 200, body: ME_OWNER } }));
+  const { router, user } = renderApp(`/login?redirect=${encodeURIComponent("/team?tab=crew")}`);
+  await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
+  await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
+  await user.click(screen.getByRole("button", { name: "Engage" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/team"));
+  expect(router.state.location.search).toEqual({ tab: "crew" });
+});
+
 test("wrong credentials show the server's message and stay on login", async () => {
   mockApi(
     withSession(null, {

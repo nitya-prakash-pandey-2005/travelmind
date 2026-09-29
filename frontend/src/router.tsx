@@ -10,7 +10,7 @@ import {
 import { meQueryOptions } from "./api/queries";
 import { setUnauthorizedHandler } from "./api/queryClient";
 import { NotFound } from "./app/NotFound";
-import { RouteError } from "./app/RouteError";
+import { RootRouteError } from "./app/RouteError";
 import { AcceptInvitePage } from "./auth/AcceptInvitePage";
 import { LoginPage } from "./auth/LoginPage";
 import { SignupPage } from "./auth/SignupPage";
@@ -21,14 +21,36 @@ import { DesignGallery } from "./ui/DesignGallery";
 
 export type RouterContext = { queryClient: QueryClient };
 
-/** Only same-site paths: "/team" is fine, "//evil.example" and "https://…" are not. */
+/**
+ * Browsers read "\" as "/" and strip tabs/newlines from URLs, so "/\evil.example" or "/<TAB>/evil.example"
+ * can become protocol-relative. Reject backslashes, space, C0 controls and DEL outright.
+ */
+function hasUrlTrickChars(value: string): boolean {
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (char === "\\" || code <= 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/**
+ * Only same-site paths: "/team?tab=crew" is fine; "//evil.example", "https://…", "/\evil.example" are not.
+ * The value is also resolved against our origin and must stay on it.
+ */
 function safeRedirect(value: unknown): string | undefined {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : undefined;
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return undefined;
+  if (hasUrlTrickChars(value)) return undefined;
+  try {
+    const url = new URL(value, window.location.origin);
+    return url.origin === window.location.origin ? url.pathname + url.search + url.hash : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: Outlet,
-  errorComponent: RouteError,
+  errorComponent: RootRouteError,
   notFoundComponent: NotFound,
 });
 

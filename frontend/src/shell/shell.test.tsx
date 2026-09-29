@@ -72,3 +72,22 @@ test("a failing route shows the error with its trace ID instead of a blank scree
   expect(screen.getByText("Trace ID: trace-42")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
 });
+
+test("Try again recovers once the failing request succeeds", async () => {
+  let meCalls = 0;
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/auth/me": () => {
+        meCalls += 1;
+        return meCalls === 1
+          ? { status: 500, body: { detail: "Something went wrong on our side. Please try again.", trace_id: "trace-77" } }
+          : { status: 200, body: ME_OWNER };
+      },
+    }),
+  );
+  const { user } = renderApp("/");
+  expect(await screen.findByText("Trace ID: trace-77")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Try again" }));
+  expect(await screen.findByRole("banner")).toHaveTextContent("Alpha Travels");
+  expect(screen.queryByText("Trace ID: trace-77")).not.toBeInTheDocument();
+});

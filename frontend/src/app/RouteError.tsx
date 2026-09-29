@@ -1,3 +1,4 @@
+import { useRouter, type ErrorComponentProps } from "@tanstack/react-router";
 import { asApiError } from "../api/client";
 import { Button } from "../ui/Button";
 import { FormError } from "../ui/FormError";
@@ -15,5 +16,22 @@ export function RouteError({ error, reset }: { error: unknown; reset: () => void
         </div>
       </Panel>
     </div>
+  );
+}
+
+/**
+ * Root error boundary. `reset()` alone re-renders the failed match, which still holds the error,
+ * so "Try again" also invalidates the router to re-run the guards/loaders that failed.
+ */
+export function RootRouteError({ error, reset }: ErrorComponentProps) {
+  const router = useRouter();
+  return (
+    <RouteError
+      error={error}
+      reset={() => {
+        reset();
+        void router.invalidate();
+      }}
+    />
   );
 }
