@@ -83,13 +83,14 @@ async def login_route(
 ) -> MeResponse:
     settings = get_settings()
     ip = client_ip(request) or "unknown"
-    # Per-IP ceiling stops one client rotating emails; never reset on success.
+    # Per-IP ceiling stops one client rotating emails; successful logins refund their slot.
     ip_limiter = LoginRateLimiter(
         redis, settings.login_ip_max_attempts, settings.login_window_seconds
     )
     limiter = LoginRateLimiter(redis, settings.login_max_attempts, settings.login_window_seconds)
     key = f"rl:login:{ip}:{body.email}"
-    if not await ip_limiter.hit(f"rl:login-ip:{ip}") or not await limiter.hit(key):
+    ip_key = f"rl:login-ip:{ip}"
+    if not await ip_limiter.hit(ip_key) or not await limiter.hit(key):
         minutes = settings.login_window_seconds // 60
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
@@ -102,6 +103,7 @@ async def login_route(
     except service.InvalidCredentials:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password.") from None
     await limiter.reset(key)
+    await ip_limiter.refund(ip_key)
     set_session_cookie(response, token)
     return me_response(user, agency)
 

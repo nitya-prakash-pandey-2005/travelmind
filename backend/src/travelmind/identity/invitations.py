@@ -4,13 +4,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.concurrency import run_in_threadpool
 
 from travelmind.audit.service import record_event
 from travelmind.config import get_settings
 from travelmind.db import bind_tenant
 from travelmind.identity.models import Agency, Invitation, User
-from travelmind.identity.passwords import hash_password
+from travelmind.identity.passwords import hash_password_async
 from travelmind.identity.service import SessionContext, start_session
 from travelmind.identity.tokens import hash_token, make_scoped_token, split_scoped_token
 
@@ -83,7 +82,7 @@ async def accept_invitation(
         raise InvalidInvitation
     if await db.scalar(select(User.id).where(User.email == invitation.email)) is not None:
         raise InvalidInvitation
-    password_hash = await run_in_threadpool(hash_password, password)
+    password_hash = await hash_password_async(password)
     user = User(
         id=uuid4(),
         agency_id=invitation.agency_id,

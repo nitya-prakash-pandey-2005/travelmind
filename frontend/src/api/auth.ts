@@ -1,0 +1,22 @@
+import { ApiError, apiFetch } from "./client";
+import type { Me } from "./types";
+
+export type LoginInput = { email: string; password: string };
+export type SignupInput = { agency_name: string; full_name: string; email: string; password: string };
+export type AcceptInvitationInput = { token: string; full_name: string; password: string };
+
+export const authApi = {
+  async me(): Promise<Me | null> {
+    try {
+      return await apiFetch<Me>("/api/v1/auth/me");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) return null;
+      throw error;
+    }
+  },
+  login: (body: LoginInput) => apiFetch<Me>("/api/v1/auth/login", { method: "POST", body }),
+  signup: (body: SignupInput) => apiFetch<Me>("/api/v1/auth/signup", { method: "POST", body }),
+  logout: () => apiFetch<void>("/api/v1/auth/logout", { method: "POST" }),
+  acceptInvitation: (body: AcceptInvitationInput) =>
+    apiFetch<Me>("/api/v1/invitations/accept", { method: "POST", body }),
+};

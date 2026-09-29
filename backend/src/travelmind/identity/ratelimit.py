@@ -4,6 +4,15 @@ from redis.exceptions import RedisError
 
 log = structlog.get_logger()
 
+# Give back one attempt without ever going below zero (a missing key stays missing).
+_REFUND_SCRIPT = """
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+if current > 0 then
+  return redis.call('DECR', KEYS[1])
+end
+return 0
+"""
+
 
 class LoginRateLimiter:
     """Fixed-window counter. Fails open (allows) if Redis is unreachable, and logs it."""
@@ -15,16 +24,26 @@ class LoginRateLimiter:
 
     async def hit(self, key: str) -> bool:
         try:
-            count = await self._redis.incr(key)
-            if count == 1:
-                await self._redis.expire(key, self._window)
+            # INCR + EXPIRE NX in one transaction: every counter gets a TTL, so a failure
+            # between the two commands can never leave a permanent lockout behind.
+            async with self._redis.pipeline(transaction=True) as pipe:
+                pipe.incr(key)
+                pipe.expire(key, self._window, nx=True)
+                count, _ = await pipe.execute()
         except RedisError as exc:
             log.warning("rate_limiter_unavailable", error=str(exc))
             return True
-        return count <= self._max
+        return int(count) <= self._max
 
     async def reset(self, key: str) -> None:
         try:
             await self._redis.delete(key)
+        except RedisError as exc:
+            log.warning("rate_limiter_unavailable", error=str(exc))
+
+    async def refund(self, key: str) -> None:
+        """Give back one attempt, e.g. after a successful login."""
+        try:
+            await self._redis.eval(_REFUND_SCRIPT, 1, key)
         except RedisError as exc:
             log.warning("rate_limiter_unavailable", error=str(exc))

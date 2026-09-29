@@ -1,0 +1,91 @@
+@import "tailwindcss";
+@import "./theme.css";
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  html[data-theme="daylight"] {
+    color-scheme: light;
+  }
+  body {
+    @apply bg-void font-sans text-ink antialiased;
+    min-height: 100dvh;
+  }
+  :focus-visible {
+    outline: 2px solid var(--tm-primary);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--tm-primary) 35%, transparent);
+  }
+}
+
+/* Blueprint grid behind the deck. */
+@utility tm-grid {
+  background-image:
+    linear-gradient(var(--tm-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tm-grid-line) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Soft instrument glow for primary actions. */
+@utility tm-glow {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--tm-primary) 45%, transparent),
+    0 0 22px -6px color-mix(in oklab, var(--tm-primary) 60%, transparent);
+}
+
+/* CRT scanlines over the whole deck (dark theme only). */
+@utility tm-scanlines {
+  &::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 50;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgb(255 255 255 / 0.022) 0 1px,
+      transparent 1px 3px
+    );
+  }
+}
+
+@utility tm-blink {
+  animation: tm-blink 1s steps(2, start) infinite;
+}
+
+@utility tm-spin-slow {
+  animation: tm-spin 24s linear infinite;
+}
+
+@keyframes tm-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+@keyframes tm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+[data-theme="daylight"] .tm-scanlines::after {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .tm-scanlines::after {
+    display: none;
+  }
+}

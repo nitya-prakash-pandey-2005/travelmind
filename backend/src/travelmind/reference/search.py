@@ -25,6 +25,27 @@ CITY_ALIASES: dict[str, tuple[str, ...]] = {
     "gurgaon": ("DEL",),
     "gurugram": ("DEL",),
     "noida": ("DEL",),
+    # Multi-airport cities, in priority order: the first code is the main international airport.
+    "london": ("LHR", "LGW", "STN", "LTN", "LCY"),
+    "paris": ("CDG", "ORY"),
+    "new york": ("JFK", "EWR", "LGA"),
+    "tokyo": ("HND", "NRT"),
+    "seoul": ("ICN", "GMP"),
+    "osaka": ("KIX", "ITM"),
+    "chicago": ("ORD", "MDW"),
+    "washington": ("IAD", "DCA", "BWI"),
+    "houston": ("IAH", "HOU"),
+    "buenos aires": ("EZE", "AEP"),
+    "sao paulo": ("GRU", "CGH", "VCP"),
+    "rome": ("FCO", "CIA"),
+    "milan": ("MXP", "LIN", "BGY"),
+    "moscow": ("SVO", "DME", "VKO"),
+    "istanbul": ("IST", "SAW"),
+    "bangkok": ("BKK", "DMK"),
+    "shanghai": ("PVG", "SHA"),
+    "beijing": ("PEK", "PKX"),
+    "dubai": ("DXB", "DWC"),
+    "toronto": ("YYZ", "YTZ"),
 }
 TYPE_BOOST = {"large_airport": 15, "medium_airport": 8, "small_airport": 0}
 # Tie-break order among equal scores; unlisted types (heliport, seaplane_base, ...) rank last.
@@ -35,6 +56,8 @@ TOKEN_COVERAGE_BONUS = 20
 SCHEDULED_BOOST = 10
 MIN_FUZZY_SCORE = 70.0
 ALIAS_SCORE = 1100.0
+# Alias tuples are ordered by priority; each earlier position outranks any type/scheduled boost.
+ALIAS_PRIORITY_STEP = 100.0
 IATA_SCORE = 1000.0
 
 
@@ -153,7 +176,8 @@ class AirportIndex:
             SCHEDULED_BOOST if airport.scheduled_service else 0
         )
         if airport.iata_code in aliases:
-            return ALIAS_SCORE + boost
+            position = aliases.index(airport.iata_code)
+            return ALIAS_SCORE + ALIAS_PRIORITY_STEP * (len(aliases) - position) + boost
         if len(q) == 3 and q.upper() == airport.iata_code:
             return IATA_SCORE + boost
         fuzzy = max(
