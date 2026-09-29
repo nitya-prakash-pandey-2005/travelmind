@@ -99,3 +99,18 @@ test("a failed airport lookup says so instead of offering choices", async () => 
   expect(await screen.findByRole("alert")).toHaveTextContent("Airport data is unavailable.");
   expect(screen.queryByRole("option")).not.toBeInTheDocument();
 });
+
+test("closing with Ctrl+K clears the search, so reopening starts fresh", async () => {
+  const { user } = renderApp("/");
+  await screen.findByRole("banner");
+  await user.keyboard("{Control>}k{/Control}");
+  await user.type(await screen.findByPlaceholderText(/command or an airport/i), "crew");
+  expect(screen.getAllByRole("option")).toHaveLength(1);
+  await user.keyboard("{Control>}k{/Control}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await user.keyboard("{Control>}k{/Control}");
+  expect(await screen.findByPlaceholderText(/command or an airport/i)).toHaveValue("");
+  for (const name of ["Mission Control", "Crew roster", "Design system", "Switch to daylight theme", "Sign out"]) {
+    expect(screen.getByRole("option", { name })).toBeInTheDocument();
+  }
+});

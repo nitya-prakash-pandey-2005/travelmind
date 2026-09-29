@@ -28,12 +28,18 @@ export function CommandPalette() {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setOpen((current) => !current);
+        // Closing by shortcut resets the search exactly like close() does for Escape, overlay and select.
+        if (open) {
+          setOpen(false);
+          setSearch("");
+        } else {
+          setOpen(true);
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [open]);
 
   const close = () => {
     setOpen(false);
