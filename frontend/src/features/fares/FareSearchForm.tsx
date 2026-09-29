@@ -15,16 +15,25 @@ const CABINS: { value: Cabin; label: string }[] = [
   { value: "first", label: "First" },
 ];
 
+/** 1–9 travellers; an empty or unreadable entry means one. */
+function clampAdults(draft: string): number {
+  const value = Math.trunc(Number(draft));
+  return Number.isFinite(value) && value >= 1 ? Math.min(9, value) : 1;
+}
+
 export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (request: FlightSearchRequest) => void }) {
   const { origin, destination } = useRouteSelection();
   const [departure, setDeparture] = useState(() => isoDateFromNow(14));
   const [returning, setReturning] = useState("");
-  const [adults, setAdults] = useState(1);
+  // A draft string so the field can be cleared and retyped; it is clamped on blur and on submit.
+  const [adults, setAdults] = useState("1");
   const [cabin, setCabin] = useState<Cabin>("economy");
 
   const sameAirport = origin !== null && destination !== null && origin.iata_code === destination.iata_code;
+  const departsInPast = departure !== "" && departure < isoDateFromNow(0);
   const returnTooEarly = returning !== "" && returning < departure;
-  const ready = origin !== null && destination !== null && !sameAirport && departure !== "" && !returnTooEarly;
+  const ready =
+    origin !== null && destination !== null && !sameAirport && departure !== "" && !departsInPast && !returnTooEarly;
 
   return (
     <Panel eyebrow="Fare scan" title="Scan live fares">
@@ -33,12 +42,14 @@ export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (r
         onSubmit={(event) => {
           event.preventDefault();
           if (!ready || !origin || !destination) return;
+          const travellers = clampAdults(adults);
+          setAdults(String(travellers));
           onSearch({
             origin: origin.iata_code,
             destination: destination.iata_code,
             departure_date: departure,
             return_date: returning || null,
-            adults,
+            adults: travellers,
             children_ages: [],
             cabin,
             max_connections: 1,
@@ -54,6 +65,7 @@ export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (r
             required
             min={isoDateFromNow(0)}
             value={departure}
+            error={departsInPast ? "Departure can't be in the past." : undefined}
             onChange={(e) => setDeparture(e.target.value)}
           />
           <TextField
@@ -73,7 +85,8 @@ export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (r
             min={1}
             max={9}
             value={adults}
-            onChange={(e) => setAdults(Math.min(9, Math.max(1, Number(e.target.value) || 1)))}
+            onChange={(e) => setAdults(e.target.value)}
+            onBlur={() => setAdults(String(clampAdults(adults)))}
           />
           <SelectField label="Cabin" value={cabin} onChange={(e) => setCabin(e.target.value as Cabin)}>
             {CABINS.map((c) => (

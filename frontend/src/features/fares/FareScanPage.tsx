@@ -33,7 +33,7 @@ export function FareScanPage() {
     <div className="grid gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
       <div className="flex flex-col gap-4">
         <FareSearchForm busy={search.isFetching} onSearch={submit} />
-        {data?.baseline && (
+        {data?.baseline && !search.isError && (
           <FareGauge baseline={data.baseline} price={cheapest?.display_total ?? null} insight={cheapest?.insight ?? null} />
         )}
       </div>

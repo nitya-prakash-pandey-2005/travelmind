@@ -19,11 +19,12 @@ const INSIGHT: Record<Insight["signal"], { tone: "ok" | "neutral" | "warn"; labe
   high: { tone: "warn", label: "High price" },
 };
 
-const CO2_SOURCE = {
-  google_tim: "Google Travel Impact Model, this flight",
-  google_tim_typical: "Google Travel Impact Model, typical for this route",
-  supplier: "Supplier estimate",
-} as const;
+/** Where the CO₂ figure came from, shown next to it (the Google TIM credit is the board's footnote). */
+const CO2_SOURCE: Record<NonNullable<FlightOffer["co2_source"]>, string> = {
+  google_tim: "this flight",
+  google_tim_typical: "route typical",
+  supplier: "supplier est.",
+};
 
 export function stopsLabel(slice: Slice): string {
   const vias = slice.segments.slice(0, -1).map((s) => s.destination);
@@ -67,7 +68,7 @@ export function OfferCard({ offer }: { offer: FlightOffer }) {
   const { checked } = offer.baggage;
 
   return (
-    <article aria-label={`${carrier} ${price}`} className="rounded-sm border border-line bg-void/40 p-4 transition hover:border-primary/50">
+    <article aria-label={converted ? `${carrier} about ${price}` : `${carrier} ${price}`} className="rounded-sm border border-line bg-void/40 p-4 transition hover:border-primary/50">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="flex items-center gap-2">
@@ -93,8 +94,9 @@ export function OfferCard({ offer }: { offer: FlightOffer }) {
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-xs text-dim">
         <span className="flex flex-wrap gap-3">
           {offer.co2_kg_per_passenger !== null && (
-            <span title={CO2_SOURCE[offer.co2_source ?? "supplier"]}>
+            <span>
               {formatNumber(offer.co2_kg_per_passenger)} kg CO₂e
+              {offer.co2_source && ` · ${CO2_SOURCE[offer.co2_source]}`}
             </span>
           )}
           {checked !== null && <span>{checked > 0 ? `${checked} checked bag${checked > 1 ? "s" : ""}` : "No checked bag"}</span>}

@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
 import { resetSessionState } from "../../auth/resetSessionState";
 import { isoDateFromNow } from "../../lib/dates";
@@ -96,6 +96,10 @@ test("offers show provenance, stops, CO₂ and converted prices", async () => {
   expect(liveCard).toHaveTextContent("1 stop · DXB");
   expect(liveCard).toHaveTextContent("+1");
   expect(liveCard).toHaveTextContent("240 kg CO₂e");
+  expect(liveCard).toHaveTextContent("240 kg CO₂e · route typical");
+  expect(sandboxCard).toHaveTextContent("98 kg CO₂e · this flight");
+  expect(liveCard).toHaveAccessibleName("Emirates about ₹8,331");
+  expect(sandboxCard).toHaveAccessibleName("IndiGo ₹4,200");
   expect(screen.getByText(/Google Travel Impact Model/)).toBeInTheDocument();
 });
 
@@ -225,4 +229,98 @@ test("a failed scan shows the reason", async () => {
   });
   await user.click(await screen.findByRole("button", { name: "Scan fares" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("No flight suppliers are connected yet.");
+});
+
+test("supplier CO₂ is labelled as the supplier's estimate", async () => {
+  const supplierCo2 = { ...indigo, co2_kg_per_passenger: 110, co2_source: "supplier" as const };
+  const { list } = await scanAndList({ [SEARCH]: { status: 200, body: searchResponse({ offers: [supplierCo2] }) } });
+  expect(within(list).getByRole("article")).toHaveTextContent("110 kg CO₂e · supplier est.");
+});
+
+test("an unconverted price is shown as billed, without ≈", async () => {
+  const unconverted = { ...indigo, total: { amount_minor: 10000, currency: "USD" }, display_total: null };
+  const { list } = await scanAndList({ [SEARCH]: { status: 200, body: searchResponse({ offers: [unconverted] }) } });
+  const card = within(list).getByRole("article");
+  expect(card).toHaveAccessibleName("IndiGo $100");
+  expect(card).toHaveTextContent("$100");
+  expect(card).not.toHaveTextContent("≈");
+  expect(card).not.toHaveTextContent("Billed");
+});
+
+test("missing CO₂ and durations are not invented", async () => {
+  const bare = makeOffer({
+    id: "sandbox~bare",
+    co2_kg_per_passenger: null,
+    co2_source: null,
+    slices: [{ ...makeOffer().slices[0]!, duration_minutes: null }],
+  });
+  const { list } = await scanAndList({ [SEARCH]: { status: 200, body: searchResponse({ offers: [bare] }) } });
+  const card = within(list).getByRole("article");
+  expect(card).not.toHaveTextContent("CO₂");
+  expect(card).toHaveTextContent("—");
+});
+
+test("scanning the same trip again asks the suppliers again", async () => {
+  const { list, user, calls } = await scanAndList({ [SEARCH]: { status: 200, body: searchResponse() } });
+  expect(list).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Scan fares" }));
+  await screen.findByRole("list", { name: "Flight offers" });
+  expect(calls.filter((c) => c.path === "/api/v1/flights/search")).toHaveLength(2);
+});
+
+test("a failed re-scan hides the earlier price check", async () => {
+  let attempt = 0;
+  const { user } = await scanAndList({
+    [SEARCH]: () =>
+      ++attempt === 1
+        ? {
+            status: 200,
+            body: searchResponse({
+              baseline: { family: "market", currency: "INR", sample_size: 24, p25_minor: 450000, median_minor: 520000, p75_minor: 600000, window_days: 45 },
+            }),
+          }
+        : { status: 429, body: { detail: "Too many searches. Try again in a minute." } },
+  });
+  expect(screen.getByRole("region", { name: "Price check" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Scan fares" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Too many searches.");
+  expect(screen.queryByRole("region", { name: "Price check" })).not.toBeInTheDocument();
+});
+
+test("adults can be cleared and retyped, and are clamped when the field is left", async () => {
+  const { user, calls } = scan({ [SEARCH]: { status: 200, body: searchResponse() } });
+  const adults = await screen.findByRole("spinbutton", { name: "Adults" });
+  await user.clear(adults);
+  expect(adults).toHaveValue(null);
+  await user.type(adults, "3");
+  expect(adults).toHaveValue(3);
+  await user.click(screen.getByRole("button", { name: "Scan fares" }));
+  await screen.findByRole("list", { name: "Flight offers" });
+  expect(calls.find((c) => c.path === "/api/v1/flights/search")?.body).toMatchObject({ adults: 3 });
+
+  await user.clear(adults);
+  await user.type(adults, "42");
+  await user.tab();
+  expect(adults).toHaveValue(9);
+  await user.clear(adults);
+  await user.tab();
+  expect(adults).toHaveValue(1);
+});
+
+test("an empty adults field is sent as one traveller", async () => {
+  const { user, calls } = scan({ [SEARCH]: { status: 200, body: searchResponse() } });
+  const adults = await screen.findByRole("spinbutton", { name: "Adults" });
+  await user.clear(adults);
+  fireEvent.submit(adults.closest("form")!);
+  await screen.findByRole("list", { name: "Flight offers" });
+  expect(calls.find((c) => c.path === "/api/v1/flights/search")?.body).toMatchObject({ adults: 1 });
+  expect(adults).toHaveValue(1);
+});
+
+test("a departure in the past can't be scanned", async () => {
+  scan({});
+  const depart = await screen.findByLabelText("Depart");
+  fireEvent.change(depart, { target: { value: isoDateFromNow(-1) } });
+  expect(depart).toHaveAccessibleDescription("Departure can't be in the past.");
+  expect(screen.getByRole("button", { name: "Scan fares" })).toBeDisabled();
 });
