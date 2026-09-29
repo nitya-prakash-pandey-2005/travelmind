@@ -1,0 +1,107 @@
+import type { QueryClient } from "@tanstack/react-query";
+import {
+  Outlet,
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+  redirect,
+  type RouterHistory,
+} from "@tanstack/react-router";
+import { meQueryOptions } from "./api/queries";
+import { setUnauthorizedHandler } from "./api/queryClient";
+import { NotFound } from "./app/NotFound";
+import { RouteError } from "./app/RouteError";
+import { AcceptInvitePage } from "./auth/AcceptInvitePage";
+import { LoginPage } from "./auth/LoginPage";
+import { SignupPage } from "./auth/SignupPage";
+import { MissionControlPage } from "./features/dashboard/MissionControlPage";
+import { TeamPage } from "./features/team/TeamPage";
+import { AppShell } from "./shell/AppShell";
+import { DesignGallery } from "./ui/DesignGallery";
+
+export type RouterContext = { queryClient: QueryClient };
+
+/** Only same-site paths: "/team" is fine, "//evil.example" and "https://…" are not. */
+function safeRedirect(value: unknown): string | undefined {
+  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : undefined;
+}
+
+const rootRoute = createRootRouteWithContext<RouterContext>()({
+  component: Outlet,
+  errorComponent: RouteError,
+  notFoundComponent: NotFound,
+});
+
+const redirectIfSignedIn = async ({ context }: { context: RouterContext }) => {
+  if (await context.queryClient.ensureQueryData(meQueryOptions)) throw redirect({ to: "/" });
+};
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  // The router merges this result over the raw query, so the key must be overwritten (not
+  // omitted) for an unsafe value like "//evil.example" to be dropped.
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    redirect: safeRedirect(search.redirect),
+  }),
+  beforeLoad: redirectIfSignedIn,
+  component: LoginPage,
+});
+
+const signupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/signup",
+  beforeLoad: redirectIfSignedIn,
+  component: SignupPage,
+});
+
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/invite/$token",
+  component: AcceptInvitePage,
+});
+
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "app",
+  beforeLoad: async ({ context, location }) => {
+    const me = await context.queryClient.ensureQueryData(meQueryOptions);
+    if (!me) throw redirect({ to: "/login", search: { redirect: location.href } });
+  },
+  component: AppShell,
+});
+
+const missionRoute = createRoute({ getParentRoute: () => appRoute, path: "/", component: MissionControlPage });
+const teamRoute = createRoute({ getParentRoute: () => appRoute, path: "/team", component: TeamPage });
+const designRoute = createRoute({ getParentRoute: () => appRoute, path: "/design", component: DesignGallery });
+
+export const routeTree = rootRoute.addChildren([
+  loginRoute,
+  signupRoute,
+  inviteRoute,
+  appRoute.addChildren([missionRoute, teamRoute, designRoute]),
+]);
+
+const PUBLIC_PREFIXES = ["/login", "/signup", "/invite/"];
+
+export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {
+  const router = createRouter({
+    routeTree,
+    context: { queryClient },
+    history,
+    defaultPreload: "intent",
+    defaultPendingMinMs: 0,
+  });
+  setUnauthorizedHandler(() => {
+    const { pathname, href } = router.state.location;
+    if (PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix))) return;
+    void router.navigate({ to: "/login", search: { redirect: href } });
+  });
+  return router;
+}
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: ReturnType<typeof createAppRouter>;
+  }
+}

@@ -26,6 +26,8 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
 Element.prototype.scrollIntoView ??= function scrollIntoView() {};
+// jsdom defines scrollTo but only logs "Not implemented"; the router calls it on navigation.
+window.scrollTo = (() => {}) as typeof window.scrollTo;
 
 afterEach(() => {
   cleanup();

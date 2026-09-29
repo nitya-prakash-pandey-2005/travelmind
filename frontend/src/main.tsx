@@ -8,12 +8,19 @@ import "@fontsource/jetbrains-mono/500.css";
 import "./styles/index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
+import { createQueryClient } from "./api/queryClient";
+import { AppProviders } from "./app/AppProviders";
+import { createAppRouter } from "./router";
+import { initTheme } from "./ui/theme";
+
+initTheme();
+const queryClient = createQueryClient();
+const router = createAppRouter(queryClient);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root element");
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <AppProviders queryClient={queryClient} router={router} />
   </StrictMode>,
 );
