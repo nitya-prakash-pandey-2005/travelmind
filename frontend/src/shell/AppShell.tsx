@@ -1,6 +1,7 @@
 import { Outlet } from "@tanstack/react-router";
 import { useCurrentUser } from "../auth/useCurrentUser";
 import { useLogout } from "../auth/useLogout";
+import { CommandPalette } from "../features/palette/CommandPalette";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { ThemeToggle } from "../ui/ThemeToggle";
@@ -20,6 +21,7 @@ export function AppShell() {
           <p className="truncate font-display text-sm tracking-wide text-ink">{me.agency.name}</p>
         </div>
         <div className="flex items-center gap-3">
+          <CommandPalette />
           <ThemeToggle />
           <div className="hidden items-center gap-2 sm:flex">
             <span className="text-sm text-ink">{me.user.full_name}</span>
