@@ -52,6 +52,9 @@ export function CommandPalette() {
 
   const commands: PaletteCommand[] = [
     { id: "nav-mission", group: "Navigate", label: "Mission Control", keywords: "home dashboard globe route", run: () => void navigate({ to: "/" }) },
+    { id: "nav-fares", group: "Navigate", label: "Fare scan", keywords: "flights fares prices offers search", run: () => void navigate({ to: "/fares" }) },
+    { id: "nav-hotels", group: "Navigate", label: "Hotel scan", keywords: "hotels rooms stay accommodation", run: () => void navigate({ to: "/hotels" }) },
+    { id: "nav-suppliers", group: "Navigate", label: "Suppliers", keywords: "suppliers connections keys duffel liteapi data", run: () => void navigate({ to: "/suppliers" }) },
     { id: "nav-team", group: "Navigate", label: "Crew roster", keywords: "team members invite crew", run: () => void navigate({ to: "/team" }) },
     { id: "nav-design", group: "Navigate", label: "Design system", keywords: "styles components tokens", run: () => void navigate({ to: "/design" }) },
     {

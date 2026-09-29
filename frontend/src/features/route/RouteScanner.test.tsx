@@ -42,3 +42,18 @@ test("swap flips the route", async () => {
   await user.click(screen.getByRole("button", { name: "Swap origin and destination" }));
   expect(routeStore.get()).toEqual({ origin: AIRPORTS.BOM, destination: AIRPORTS.DEL });
 });
+
+test("a ready route offers a fare scan when the page provides one", async () => {
+  const onScanFares = vi.fn();
+  routeStore.set({ origin: AIRPORTS.DEL, destination: AIRPORTS.BOM });
+  const { user } = renderWithClient(<RouteScanner onScanFares={onScanFares} />);
+  await user.click(screen.getByRole("button", { name: "Scan fares for this route" }));
+  expect(onScanFares).toHaveBeenCalledOnce();
+});
+
+test("without a ready route there is nothing to scan yet", () => {
+  routeStore.set({ origin: AIRPORTS.DEL, destination: null });
+  renderWithClient(<RouteScanner onScanFares={vi.fn()} />);
+  expect(screen.queryByRole("button", { name: "Scan fares for this route" })).not.toBeInTheDocument();
+  expect(screen.getByText("Pick two airports to scan fares.")).toBeInTheDocument();
+});

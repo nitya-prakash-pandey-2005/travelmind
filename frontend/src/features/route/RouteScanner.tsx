@@ -9,7 +9,13 @@ import { AirportPicker } from "../airports/AirportPicker";
 import { CRUISE_KMH, KM_PER_NMI, TAXI_CLIMB_DESCENT_MIN, estimateFlightMinutes, greatCircleKm } from "./geo";
 import { routeStore, useRouteSelection } from "./routeStore";
 
-export function RouteScanner({ onRouteReady }: { onRouteReady?: (origin: Airport, destination: Airport) => void }) {
+export function RouteScanner({
+  onRouteReady,
+  onScanFares,
+}: {
+  onRouteReady?: (origin: Airport, destination: Airport) => void;
+  onScanFares?: () => void;
+}) {
   const { origin, destination } = useRouteSelection();
   const sameAirport = origin !== null && destination !== null && origin.iata_code === destination.iata_code;
   const km = origin && destination && !sameAirport ? greatCircleKm(origin, destination) : null;
@@ -67,7 +73,13 @@ export function RouteScanner({ onRouteReady }: { onRouteReady?: (origin: Airport
           />
         </dl>
       )}
-      <p className="mt-4 text-xs text-dim">Live fares appear here once a supplier is connected.</p>
+      {km !== null && onScanFares ? (
+        <Button className="mt-4 w-full" onClick={onScanFares}>
+          Scan fares for this route
+        </Button>
+      ) : (
+        <p className="mt-4 text-xs text-dim">Pick two airports to scan fares.</p>
+      )}
     </Panel>
   );
 }
