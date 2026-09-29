@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from travelmind.db import DbSession
 from travelmind.identity.deps import AuthedUser
@@ -41,4 +42,5 @@ async def search_airports_route(
     limit: Annotated[int, Query(ge=1, le=25)] = 8,
 ) -> list[AirportOut]:
     index = await get_airport_index(db)
-    return [AirportOut.from_record(hit.airport) for hit in index.search(q, limit)]
+    hits = await run_in_threadpool(index.search, q, limit)  # fuzzy scan is CPU-heavy
+    return [AirportOut.from_record(hit.airport) for hit in hits]

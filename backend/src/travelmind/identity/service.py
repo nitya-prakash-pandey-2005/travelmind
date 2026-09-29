@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from travelmind.audit.service import record_event
 from travelmind.config import get_settings
@@ -14,6 +15,7 @@ from travelmind.identity.passwords import hash_password, verify_password
 from travelmind.identity.tokens import hash_token, new_token
 
 # Verified against when the email is unknown, so response time doesn't reveal which emails exist.
+# Argon2 is CPU-heavy (~50 ms): request paths run it via run_in_threadpool, never on the event loop.
 _TIMING_DUMMY_HASH = hash_password("timing-equalizer-not-a-real-password")
 
 
@@ -57,13 +59,14 @@ async def signup(
 ) -> tuple[User, Agency, str]:
     if await db.scalar(select(User.id).where(User.email == email)) is not None:
         raise EmailAlreadyRegistered
+    password_hash = await run_in_threadpool(hash_password, password)
     agency = Agency(id=uuid4(), name=agency_name)
     user = User(
         id=uuid4(),
         agency_id=agency.id,
         email=email,
         full_name=full_name,
-        password_hash=hash_password(password),
+        password_hash=password_hash,
         role="owner",
     )
     try:
@@ -94,9 +97,9 @@ async def login(
 ) -> tuple[User, Agency, str]:
     user = await db.scalar(select(User).where(User.email == email))
     if user is None or not user.is_active:
-        verify_password(_TIMING_DUMMY_HASH, password)
+        await run_in_threadpool(verify_password, _TIMING_DUMMY_HASH, password)
         raise InvalidCredentials
-    if not verify_password(user.password_hash, password):
+    if not await run_in_threadpool(verify_password, user.password_hash, password):
         raise InvalidCredentials
     agency = await db.get_one(Agency, user.agency_id)
     await bind_tenant(db, user.agency_id)

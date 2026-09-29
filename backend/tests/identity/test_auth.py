@@ -1,4 +1,12 @@
-from tests.helpers import DEFAULT_PASSWORD, exec_as_tenant, make_client, run_as_owner, signup
+from tests.helpers import (
+    DEFAULT_PASSWORD,
+    exec_as_tenant,
+    make_client,
+    on_event_loop,
+    run_as_owner,
+    signup,
+)
+from travelmind.identity import passwords
 
 LOGIN = "/api/v1/auth/login"
 SESSION_COOKIE = "tm_session"
@@ -107,3 +115,51 @@ async def test_non_ascii_names_are_accepted(client):
     assert r.status_code == 201
     assert r.json()["user"]["full_name"] == "Zoë Ağaoğlu"
     assert r.json()["agency"]["name"] == "Ağaoğlu Seyahat"
+
+
+class _LoopCheckingHasher:
+    """Wraps the real argon2 hasher and records whether each call ran on the event loop."""
+
+    def __init__(self, real):
+        self._real = real
+        self.calls: list[tuple[str, bool]] = []
+
+    def hash(self, password):
+        self.calls.append(("hash", on_event_loop()))
+        return self._real.hash(password)
+
+    def verify(self, password_hash, password):
+        self.calls.append(("verify", on_event_loop()))
+        return self._real.verify(password_hash, password)
+
+
+async def test_password_hashing_runs_off_the_event_loop(client, app, monkeypatch):
+    spy = _LoopCheckingHasher(passwords._hasher)
+    monkeypatch.setattr(passwords, "_hasher", spy)
+
+    assert (await signup(client)).status_code == 201
+    token = (
+        await client.post(
+            "/api/v1/invitations", json={"email": "agent@alphatravels.com", "role": "agent"}
+        )
+    ).json()["token"]
+    async with make_client(app) as anon:
+        accepted = await anon.post(
+            "/api/v1/invitations/accept",
+            json={"token": token, "full_name": "Ravi Agent", "password": DEFAULT_PASSWORD},
+        )
+        assert accepted.status_code == 201
+        ok = await anon.post(
+            LOGIN, json={"email": "owner@alphatravels.com", "password": DEFAULT_PASSWORD}
+        )
+        wrong = await anon.post(
+            LOGIN, json={"email": "owner@alphatravels.com", "password": "wrong-password-123"}
+        )
+        unknown = await anon.post(
+            LOGIN, json={"email": "nobody@alphatravels.com", "password": "wrong-password-123"}
+        )
+    assert (ok.status_code, wrong.status_code, unknown.status_code) == (200, 401, 401)
+
+    # signup + accept hash; ok/wrong/unknown(dummy) logins verify
+    assert [name for name, _ in spy.calls] == ["hash", "hash", "verify", "verify", "verify"]
+    assert not any(on_loop for _, on_loop in spy.calls), spy.calls

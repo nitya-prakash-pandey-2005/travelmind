@@ -57,3 +57,27 @@ async def test_missing_login_field_is_reported_by_name(client):
     r = await client.post(LOGIN, json={"email": "owner@alphatravels.com"})
     assert r.status_code == 422
     assert [e["field"] for e in r.json()["errors"]] == ["password"]
+
+
+async def test_login_is_rate_limited_per_ip_across_emails(client):
+    for i in range(50):
+        r = await client.post(
+            LOGIN, json={"email": f"guess{i}@alphatravels.com", "password": "wrong-password-123"}
+        )
+        assert r.status_code == 401
+    blocked = await client.post(
+        LOGIN, json={"email": "guess-final@alphatravels.com", "password": "wrong-password-123"}
+    )
+    assert blocked.status_code == 429
+    assert "Too many sign-in attempts" in blocked.json()["detail"]
+
+
+async def test_signup_is_rate_limited_per_ip(client):
+    for i in range(10):
+        r = await signup(client, email=f"owner{i}@agency{i}.com", agency_name=f"Agency {i}")
+        assert r.status_code == 201
+    blocked = await signup(client, email="owner10@agency10.com", agency_name="Agency 10")
+    assert blocked.status_code == 429
+    assert blocked.json() == {
+        "detail": "Too many sign-up attempts from your network. Please try again later."
+    }

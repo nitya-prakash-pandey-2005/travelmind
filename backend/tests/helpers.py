@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import Any
 from uuid import UUID
@@ -56,3 +57,12 @@ async def exec_as_tenant(
         rows = [tuple(row) for row in result] if result.returns_rows else []
     await engine.dispose()
     return rows
+
+
+def on_event_loop() -> bool:
+    """True when called from the event-loop thread (i.e. the caller would block the loop)."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True

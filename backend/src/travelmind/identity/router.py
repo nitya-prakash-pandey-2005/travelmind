@@ -41,8 +41,21 @@ def me_response(user: User, agency: Agency) -> MeResponse:
 
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup_route(
-    body: SignupRequest, request: Request, response: Response, db: DbSession
+    body: SignupRequest,
+    request: Request,
+    response: Response,
+    db: DbSession,
+    redis: RedisClient,
 ) -> MeResponse:
+    settings = get_settings()
+    signup_limiter = LoginRateLimiter(
+        redis, settings.signup_max_per_ip, settings.signup_window_seconds
+    )
+    if not await signup_limiter.hit(f"rl:signup:{client_ip(request) or 'unknown'}"):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Too many sign-up attempts from your network. Please try again later.",
+        )
     try:
         user, agency, token = await service.signup(
             db,
@@ -69,9 +82,14 @@ async def login_route(
     redis: RedisClient,
 ) -> MeResponse:
     settings = get_settings()
+    ip = client_ip(request) or "unknown"
+    # Per-IP ceiling stops one client rotating emails; never reset on success.
+    ip_limiter = LoginRateLimiter(
+        redis, settings.login_ip_max_attempts, settings.login_window_seconds
+    )
     limiter = LoginRateLimiter(redis, settings.login_max_attempts, settings.login_window_seconds)
-    key = f"rl:login:{client_ip(request) or 'unknown'}:{body.email}"
-    if not await limiter.hit(key):
+    key = f"rl:login:{ip}:{body.email}"
+    if not await ip_limiter.hit(f"rl:login-ip:{ip}") or not await limiter.hit(key):
         minutes = settings.login_window_seconds // 60
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,

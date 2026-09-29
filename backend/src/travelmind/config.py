@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     login_max_attempts: int = 10
     login_window_seconds: int = 15 * 60
+    login_ip_max_attempts: int = 50
+    signup_max_per_ip: int = 10
+    signup_window_seconds: int = 3600
     log_level: str = "INFO"
 
 
