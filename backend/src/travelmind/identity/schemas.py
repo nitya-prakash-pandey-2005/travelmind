@@ -9,8 +9,20 @@ def _normalize_email(value: object) -> object:
 
 
 NormalizedEmail = Annotated[EmailStr, BeforeValidator(_normalize_email)]
-PersonName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-AgencyName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=200)]
+# Control characters (notably NUL, which Postgres rejects) are never valid in a name.
+_NO_CONTROL_CHARS = r"^[^\x00-\x1f\x7f]+$"
+PersonName = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=200, pattern=_NO_CONTROL_CHARS
+    ),
+]
+AgencyName = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=2, max_length=200, pattern=_NO_CONTROL_CHARS
+    ),
+]
 NewPassword = Annotated[str, StringConstraints(min_length=10, max_length=256)]
 
 

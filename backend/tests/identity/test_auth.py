@@ -90,3 +90,20 @@ async def test_signup_and_login_are_audited(client, app):
         body["agency"]["id"], "SELECT action FROM audit_log ORDER BY created_at"
     )
     assert [row[0] for row in rows] == ["agency.created", "auth.login"]
+
+
+async def test_control_characters_in_full_name_are_rejected(client):
+    r = await signup(client, full_name="Asha\u0000Owner")
+    assert r.status_code == 422
+
+
+async def test_control_characters_in_agency_name_are_rejected(client):
+    r = await signup(client, agency_name="Beta\u0000Travels")
+    assert r.status_code == 422
+
+
+async def test_non_ascii_names_are_accepted(client):
+    r = await signup(client, full_name="Zoë Ağaoğlu", agency_name="Ağaoğlu Seyahat")
+    assert r.status_code == 201
+    assert r.json()["user"]["full_name"] == "Zoë Ağaoğlu"
+    assert r.json()["agency"]["name"] == "Ağaoğlu Seyahat"
