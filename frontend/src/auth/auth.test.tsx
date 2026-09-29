@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import { ME_OWNER } from "../test/fixtures";
 import { mockApi } from "../test/mockApi";
 import { renderApp, withSession } from "../test/renderApp";
+import { safeRedirect } from "../router";
 
 test("signed-out visitors are sent to login with a return path", async () => {
   mockApi(withSession(null));
@@ -37,6 +38,9 @@ test.each([
   ["a tab", "%2F%09%2Fevil.example"],
   ["a newline", "%2F%0A%2Fevil.example"],
   ["double encoding", "%252F%252Fevil.example"],
+  ["a dot segment", "%2F.%2F%2Fevil.example"],
+  ["a parent segment", "%2Fa%2F..%2F%2Fevil.example"],
+  ["an encoded dot segment", "%2F%252e%2F%2Fevil.example"],
 ])("ignores redirects smuggled with %s", async (_label, encoded) => {
   mockApi(withSession(null, { "POST /api/v1/auth/login": { status: 200, body: ME_OWNER } }));
   const { router, user } = renderApp(`/login?redirect=${encoded}`);
@@ -45,6 +49,18 @@ test.each([
   await user.click(screen.getByRole("button", { name: "Engage" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   expect(await screen.findByRole("heading", { name: "Welcome aboard, Asha" })).toBeInTheDocument();
+});
+
+test.each(["/.//evil.example", "/a/..//evil.example", "/%2e//evil.example"])(
+  "safeRedirect rejects %s, which normalises to a protocol-relative URL",
+  (value) => {
+    expect(safeRedirect(value)).toBeUndefined();
+  },
+);
+
+test("safeRedirect keeps same-site paths with their query and hash", () => {
+  expect(safeRedirect("/team?tab=crew#roster")).toBe("/team?tab=crew#roster");
+  expect(safeRedirect("/a/../team")).toBe("/team");
 });
 
 test("keeps the query string of a same-site redirect", async () => {

@@ -37,12 +37,15 @@ function hasUrlTrickChars(value: string): boolean {
  * Only same-site paths: "/team?tab=crew" is fine; "//evil.example", "https://…", "/\evil.example" are not.
  * The value is also resolved against our origin and must stay on it.
  */
-function safeRedirect(value: unknown): string | undefined {
+export function safeRedirect(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return undefined;
   if (hasUrlTrickChars(value)) return undefined;
   try {
     const url = new URL(value, window.location.origin);
-    return url.origin === window.location.origin ? url.pathname + url.search + url.hash : undefined;
+    if (url.origin !== window.location.origin) return undefined;
+    // Dot segments can normalise to a protocol-relative path: "/.//evil.example" → "//evil.example".
+    const path = url.pathname + url.search + url.hash;
+    return path.startsWith("//") ? undefined : path;
   } catch {
     return undefined;
   }
