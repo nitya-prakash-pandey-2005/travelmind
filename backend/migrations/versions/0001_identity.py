@@ -81,6 +81,7 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("accepted_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint("role IN ('admin', 'agent')", name="ck_invitations_role"),
+        sa.CheckConstraint("email = lower(email)", name="ck_invitations_email_lower"),
     )
     op.create_index("ix_invitations_agency_id", "invitations", ["agency_id"])
     op.create_table(

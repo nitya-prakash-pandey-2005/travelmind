@@ -78,6 +78,24 @@ async def test_cannot_write_rows_for_another_tenant():
             await db.flush()
 
 
+async def test_invitation_email_must_be_lowercase():
+    alpha, owner = await _seed_agency("Alpha")
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, alpha.id)
+        db.add(
+            Invitation(
+                agency_id=alpha.id,
+                email="Mixed.Case@Alpha.com",
+                role="agent",
+                token_hash=uuid4().hex,
+                invited_by_user_id=owner.id,
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
+        with pytest.raises(DBAPIError, match="ck_invitations_email_lower"):
+            await db.flush()
+
+
 async def test_tenant_context_survives_commit_in_same_session():
     alpha, _ = await _seed_agency("Alpha")
     async with get_sessionmaker()() as db:
