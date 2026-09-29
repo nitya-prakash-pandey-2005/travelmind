@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 REQUEST_ID_HEADER = "X-Request-ID"
 _VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
@@ -42,6 +42,41 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         status_code=500,
         headers={REQUEST_ID_HEADER: request_id},
     )
+
+
+class UnhandledErrorMiddleware:
+    """Turns unhandled errors into the plain JSON 500 *inside* the CORS layer.
+
+    Starlette's `Exception` handler runs in ServerErrorMiddleware, outside every user
+    middleware, so its 500s carry no CORS headers and a browser SPA can't read the
+    message or trace_id. Register this before CORSMiddleware (last-added = outermost)
+    so CORS and the request-id header wrap its response. The app-level `Exception`
+    handler stays as a backstop for errors raised outside this middleware.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        response_started = False
+
+        async def send_tracking_start(message: Message) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_tracking_start)
+        except Exception as exc:
+            if response_started:
+                raise
+            response = await unhandled_exception_handler(Request(scope), exc)
+            await response(scope, receive, send)
 
 
 VALIDATION_ERROR_MESSAGE = "Some of the information you entered isn't valid."

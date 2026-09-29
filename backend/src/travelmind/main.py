@@ -9,6 +9,7 @@ from travelmind.middleware import (
     REQUEST_ID_HEADER,
     OriginCheckMiddleware,
     RequestIdMiddleware,
+    UnhandledErrorMiddleware,
     unhandled_exception_handler,
     validation_exception_handler,
 )
@@ -20,7 +21,10 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
     app = FastAPI(title="TravelMind API", version="0.1.0")
-    # Starlette runs the last-added middleware first: RequestId → CORS → OriginCheck → app.
+    # Starlette runs the last-added middleware first:
+    # RequestId → CORS → OriginCheck → UnhandledError → app.
+    # UnhandledError must sit inside CORS so 500s still carry CORS headers.
+    app.add_middleware(UnhandledErrorMiddleware)
     app.add_middleware(OriginCheckMiddleware, allowed_origins=settings.allowed_origins)
     app.add_middleware(
         CORSMiddleware,
