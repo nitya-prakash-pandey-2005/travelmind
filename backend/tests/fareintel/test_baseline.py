@@ -118,6 +118,43 @@ def test_assess_signals():
     assert high_near.signal == "high" and "rarely fall" in high_near.message
 
 
+def market(p25: int, median: int, p75: int) -> Baseline:
+    return Baseline(
+        family="market",
+        currency="INR",
+        sample_size=20,
+        p25_minor=p25,
+        median_minor=median,
+        p75_minor=p75,
+    )
+
+
+@pytest.mark.parametrize(
+    ("base", "price"),
+    [
+        (market(5000, 5000, 6000), 5000),  # at p25, but only because p25 == median
+        (market(4000, 5000, 5000), 5000),  # at p75, but only because p75 == median
+        (market(5000, 5000, 5000), 5000),  # every fare the same
+        (market(9990, 10000, 10010), 9960),  # under p25 by -0.4%: rounds to "0% under"
+        (market(9990, 10000, 10010), 10040),  # over p75 by +0.4%: rounds to "0% over"
+    ],
+)
+def test_ties_and_negligible_differences_are_typical(base, price):
+    insight = assess(price, base, 30)
+    assert insight.signal == "typical"
+    assert "0% under" not in insight.message and "0% over" not in insight.message
+
+
+def test_half_a_percent_is_shown_as_one_percent():
+    base = market(9990, 10000, 10010)
+    good = assess(9950, base, 30)
+    assert (good.signal, good.delta_pct) == ("good", -0.5)
+    assert good.message.startswith("1% under")
+    high = assess(10050, base, 10)
+    assert (high.signal, high.delta_pct) == ("high", 0.5)
+    assert high.message.startswith("1% over")
+
+
 async def test_snapshots_are_append_only_for_the_app():
     await add([1000])
     async with get_sessionmaker()() as db:

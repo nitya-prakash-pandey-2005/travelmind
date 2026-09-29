@@ -93,23 +93,28 @@ async def compute_baseline(
 
 def assess(price_minor: int, baseline: Baseline, days_to_departure: int) -> Insight:
     delta = round((price_minor - baseline.median_minor) / baseline.median_minor * 100, 1)
+    # Whole percent shown to the user, rounded half-up (f"{x:.0f}" would round 0.5 down to 0).
+    pct = int(Decimal(str(abs(delta))).quantize(Decimal(1), rounding=ROUND_HALF_UP))
     seen = f"the median of {baseline.sample_size} fares seen for this route"
-    if price_minor <= baseline.p25_minor:
-        return Insight("good", delta, f"{abs(delta):.0f}% under {seen}. Good time to book.")
-    if price_minor >= baseline.p75_minor:
+    # A verdict needs a real, visible difference from the median: sitting on a percentile that
+    # ties with the median, or a difference that rounds to 0%, is just the typical price.
+    if pct > 0 and price_minor <= baseline.p25_minor and price_minor < baseline.median_minor:
+        return Insight("good", delta, f"{pct}% under {seen}. Good time to book.")
+    if pct > 0 and price_minor >= baseline.p75_minor and price_minor > baseline.median_minor:
         if days_to_departure > WAIT_THRESHOLD_DAYS:
             return Insight(
                 "high",
                 delta,
-                f"{delta:.0f}% over {seen}. Prices this far out often dip — consider waiting.",
+                f"{pct}% over {seen}. Prices this far out often dip — consider waiting.",
             )
         return Insight(
             "high",
             delta,
-            f"{delta:.0f}% over {seen}, but departure is close — prices rarely fall now.",
+            f"{pct}% over {seen}, but departure is close — prices rarely fall now.",
         )
+    sign = "-" if delta < 0 and pct else "+"
     return Insight(
         "typical",
         delta,
-        f"Around the typical price for this route and booking window ({delta:+.0f}%).",
+        f"Around the typical price for this route and booking window ({sign}{pct}%).",
     )

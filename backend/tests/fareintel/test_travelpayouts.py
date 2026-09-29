@@ -1,4 +1,6 @@
+import asyncio
 import os
+import time
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -8,8 +10,10 @@ from sqlalchemy import func, select
 from structlog.testing import capture_logs
 
 from travelmind.db import get_sessionmaker
+from travelmind.fareintel import travelpayouts
 from travelmind.fareintel.models import FareSnapshot
 from travelmind.fareintel.travelpayouts import (
+    CLAIM_TTL_SECONDS,
     FAILURE_KEY,
     FAILURE_TTL_SECONDS,
     SEED_TTL_SECONDS,
@@ -113,7 +117,7 @@ async def test_seeds_cached_fares_once_per_day(respx_mock):
     finally:
         await redis.aclose()
     assert await count() == 2
-    assert 0 < ttl <= SEED_TTL_SECONDS
+    assert CLAIM_TTL_SECONDS < ttl <= SEED_TTL_SECONDS
     assert route.call_count == 1
     sent = route.calls.last.request
     assert sent.headers["X-Access-Token"] == "tp-token"
@@ -157,7 +161,7 @@ async def test_a_failure_backs_off_for_five_minutes(respx_mock):
         assert await seed(redis) == 0
         assert await seed(redis, destination="BLR") == 0  # any route: the service is down
         ttl = await redis.ttl(FAILURE_KEY)
-        assert not await redis.exists(SEED_KEY)
+        assert await redis.ttl(SEED_KEY) <= CLAIM_TTL_SECONDS  # only the short claim remains
     finally:
         await redis.aclose()
     assert route.call_count == 1
@@ -281,10 +285,13 @@ async def test_a_database_error_leaves_the_callers_session_usable(respx_mock):
                 )
             )
             await db.commit()
-        assert not await redis.exists(f"tp:seed:DELXBOM:{DEPART.strftime('%Y-%m')}:INR")
+        claim_ttl = await redis.ttl(f"tp:seed:DELXBOM:{DEPART.strftime('%Y-%m')}:INR")
+        backed_off = await redis.exists(FAILURE_KEY)
     finally:
         await redis.aclose()
     assert added == 0
+    assert claim_ttl <= CLAIM_TTL_SECONDS  # never promoted to the 24 h "seeded" marker
+    assert backed_off  # a database fault doesn't refetch on every search
     assert logs and "tp-token" not in repr(logs)
     assert [r.provenance for r in await snapshots()] == ["LIVE"]
 
@@ -297,4 +304,63 @@ async def test_redis_outage_skips_seeding_without_raising(respx_mock):
     finally:
         await redis.aclose()
     assert route.call_count == 0
+    assert await count() == 0
+
+
+async def test_a_claimed_route_is_not_fetched_twice(respx_mock):
+    route = respx_mock.get(TP_PRICES_URL).mock(return_value=httpx.Response(200, json=payload()))
+    redis = tp_redis()
+    try:
+        await redis.set(SEED_KEY, "1", ex=CLAIM_TTL_SECONDS)  # another search is seeding it now
+        assert await seed(redis) == 0
+    finally:
+        await redis.aclose()
+    assert route.call_count == 0
+    assert await count() == 0
+
+
+async def test_concurrent_searches_fetch_once(respx_mock):
+    route = respx_mock.get(TP_PRICES_URL).mock(return_value=httpx.Response(200, json=payload()))
+    redis = tp_redis()
+    try:
+        results = await asyncio.gather(seed(redis), seed(redis), seed(redis))
+    finally:
+        await redis.aclose()
+    assert sorted(results) == [0, 0, 2]
+    assert route.call_count == 1
+
+
+@pytest.mark.parametrize("currency", ["RUPEES", "", "I1R"])
+async def test_an_unusable_currency_never_raises_or_fetches(respx_mock, currency):
+    route = respx_mock.get(TP_PRICES_URL).mock(return_value=httpx.Response(200, json=payload()))
+    redis = tp_redis()
+    try:
+        assert await seed(redis, currency=currency) == 0
+    finally:
+        await redis.aclose()
+    assert route.call_count == 0
+    assert await count() == 0
+
+
+async def test_a_stalled_response_is_cut_off_by_the_deadline(respx_mock, monkeypatch):
+    async def stall(request):
+        await asyncio.sleep(5)
+        return httpx.Response(200, json=payload())
+
+    monkeypatch.setattr(travelpayouts, "FETCH_DEADLINE_SECONDS", 0.2)
+    respx_mock.get(TP_PRICES_URL).mock(side_effect=stall)
+    redis = tp_redis()
+    try:
+        started = time.monotonic()
+        with capture_logs() as logs:
+            assert await seed(redis) == 0
+        elapsed = time.monotonic() - started
+        backed_off = await redis.exists(FAILURE_KEY)
+    finally:
+        await redis.aclose()
+    assert elapsed < 2
+    assert backed_off
+    assert [(e["event"], e.get("error_type")) for e in logs] == [
+        ("travelpayouts_unavailable", "TimeoutError")
+    ]
     assert await count() == 0

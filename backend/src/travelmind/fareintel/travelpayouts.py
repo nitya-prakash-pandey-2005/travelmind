@@ -1,11 +1,12 @@
 """Seed fare history with Travelpayouts cached prices (indications only — never bookable).
 
 Seeding is best-effort and never raises: an HTTP, Redis, parse or database failure adds nothing.
-After a failed fetch, a marker makes callers skip Travelpayouts for FAILURE_TTL_SECONDS so a
-search never waits on a service that is down. The token travels in a header and is never logged:
+After a failed fetch or save, a marker makes callers skip Travelpayouts for FAILURE_TTL_SECONDS so
+a search never waits on a service that is down. The token travels in a header and is never logged:
 errors are logged by status or exception type only, never with the exception text.
 """
 
+import asyncio
 import re
 from datetime import UTC, date, datetime
 
@@ -21,12 +22,15 @@ from travelmind.offers.money import Money
 
 TP_PRICES_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
 SEED_TTL_SECONDS = 24 * 3600
+CLAIM_TTL_SECONDS = 60  # one search fetches a route while concurrent ones skip it
 FAILURE_KEY = "tp:down"
 FAILURE_TTL_SECONDS = 300
 FETCH_TIMEOUT = httpx.Timeout(3.0, connect=1.0)  # runs inside a search request
+FETCH_DEADLINE_SECONDS = 3.0  # caps the whole call; httpx timeouts are per phase
 _MAX_PRICE = 10**9  # major units; far beyond any real fare, and keeps totals in a BIGINT
 _MAX_STOPS = 10
 _CARRIER = re.compile(r"[A-Z0-9]{2,3}")
+_CURRENCY = re.compile(r"[A-Z]{3}")
 log = structlog.get_logger()
 
 
@@ -64,7 +68,10 @@ def _snapshot(
     except ValueError:
         return None
     days_out = (day - today).days
-    total = Money.from_decimal(price, currency).amount_minor
+    try:
+        total = Money.from_decimal(price, currency).amount_minor
+    except ValueError:  # includes pydantic's ValidationError
+        return None
     if days_out < 0 or total <= 0:
         return None
     airline, transfers = item.get("airline"), item.get("transfers")
@@ -109,14 +116,21 @@ async def seed_route(
 ) -> int:
     """Add CACHED economy snapshots for the route's departure month; returns how many were added.
 
-    Runs at most once per route, month and currency every SEED_TTL_SECONDS. Rows are written in a
-    savepoint, so a database error never spoils the caller's transaction.
+    Runs at most once per route, month and currency every SEED_TTL_SECONDS: the first caller
+    claims the route with SET NX, so concurrent searches never fetch it twice. Rows are written in
+    a savepoint, so a database error never spoils the caller's transaction.
     """
+    currency = currency.strip().upper()
+    if not _CURRENCY.fullmatch(currency):
+        log.warning("travelpayouts_skipped", reason="unusable currency code")
+        return 0
     month = departure_date.strftime("%Y-%m")
     key = f"tp:seed:{origin}{destination}:{month}:{currency}"
     try:
-        if await redis.exists(key, FAILURE_KEY):
+        if await redis.exists(FAILURE_KEY):
             return 0
+        if not await redis.set(key, "1", nx=True, ex=CLAIM_TTL_SECONDS):
+            return 0  # seeded recently, or another search is seeding it right now
     except RedisError as exc:
         # Without the cache we can't rate-limit ourselves, so skip seeding this time.
         log.warning("travelpayouts_cache_unavailable", error_type=type(exc).__name__)
@@ -132,10 +146,11 @@ async def seed_route(
         "sorting": "price",
     }
     try:
-        async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
-            response = await client.get(
-                TP_PRICES_URL, params=params, headers={"X-Access-Token": token}
-            )
+        async with asyncio.timeout(FETCH_DEADLINE_SECONDS):
+            async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+                response = await client.get(
+                    TP_PRICES_URL, params=params, headers={"X-Access-Token": token}
+                )
         response.raise_for_status()
         items = _items(response.json(), currency)
     except httpx.HTTPStatusError as exc:
@@ -146,7 +161,7 @@ async def seed_route(
         log.warning("travelpayouts_unavailable", reason=str(exc))
         await _back_off(redis)
         return 0
-    except (httpx.HTTPError, ValueError) as exc:
+    except (httpx.HTTPError, ValueError, TimeoutError) as exc:
         log.warning("travelpayouts_unavailable", error_type=type(exc).__name__)
         await _back_off(redis)
         return 0
@@ -168,6 +183,7 @@ async def seed_route(
                 db.add_all(rows)
         except SQLAlchemyError as exc:
             log.warning("travelpayouts_seed_not_saved", error_type=type(exc).__name__)
+            await _back_off(redis)
             return 0
     try:
         await redis.set(key, "1", ex=SEED_TTL_SECONDS)
