@@ -10,7 +10,9 @@ os.environ["TM_MIGRATION_DATABASE_URL"] = os.environ.get(
     "postgresql+asyncpg://travelmind_owner:owner_dev_pw@localhost:5433/travelmind_test",
 )
 os.environ["TM_REDIS_URL"] = os.environ.get("TM_TEST_REDIS_URL", "redis://localhost:6380/15")
-# Tests never talk to real suppliers or FX feeds, whatever backend/.env contains.
+# Process env beats backend/.env, so these switch off any real supplier keys and the FX feed a
+# developer's .env may hold. TM_SANDBOX_SUPPLIER is only unset here, so a value for it in
+# backend/.env still applies: tests that depend on it build Settings(_env_file=None).
 for _key in (
     "TM_DUFFEL_TOKEN",
     "TM_LITEAPI_KEY",

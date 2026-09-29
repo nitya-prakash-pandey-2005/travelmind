@@ -19,11 +19,14 @@ _EXPONENTS = {
 }
 
 
-def _upper(value: object) -> object:
+def normalise_code(value: object) -> object:
+    """Strip and upper-case a code before its pattern check (StringConstraints checks raw input)."""
     return value.strip().upper() if isinstance(value, str) else value
 
 
-CurrencyCode = Annotated[str, BeforeValidator(_upper), StringConstraints(pattern=r"^[A-Z]{3}$")]
+CurrencyCode = Annotated[
+    str, BeforeValidator(normalise_code), StringConstraints(pattern=r"^[A-Z]{3}$")
+]
 
 
 def exponent(currency: str) -> int:
@@ -41,7 +44,10 @@ class Money(BaseModel):
     @classmethod
     def from_decimal(cls, amount: Decimal | str | int | float, currency: str) -> "Money":
         code = currency.strip().upper()
-        scaled = Decimal(str(amount)) * (Decimal(10) ** exponent(code))
+        value = Decimal(str(amount))
+        if not value.is_finite():
+            raise ValueError("Amount must be a finite number.")
+        scaled = value * (Decimal(10) ** exponent(code))
         return cls(
             amount_minor=int(scaled.quantize(Decimal(1), rounding=ROUND_HALF_UP)), currency=code
         )

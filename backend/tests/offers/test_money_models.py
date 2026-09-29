@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from travelmind.config import Settings
-from travelmind.offers.models import FlightSearchRequest, Segment, Slice
+from travelmind.offers.models import FlightOffer, FlightSearchRequest, Segment, Slice
 from travelmind.offers.money import Money, exponent
 
 
@@ -33,6 +33,14 @@ def test_money_is_immutable_and_validates_currency():
         money.amount_minor = 5  # type: ignore[misc]
     with pytest.raises(ValidationError):
         Money(amount_minor=100, currency="dollars")
+
+
+@pytest.mark.parametrize(
+    "amount", ["NaN", "Infinity", "-inf", float("nan"), float("inf"), Decimal("-Infinity")]
+)
+def test_money_rejects_non_finite_amounts(amount):
+    with pytest.raises(ValueError, match="finite number"):
+        Money.from_decimal(amount, "USD")
 
 
 def test_search_request_normalises_codes():
@@ -67,33 +75,68 @@ def test_search_request_bounds_passenger_fields():
         FlightSearchRequest(**base, cabin="luxury")
 
 
-def test_slice_counts_stops():
-    leg = {
-        "marketing_carrier": "EK",
-        "flight_number": "511",
-        "departing_at": datetime(2026, 11, 20, 4, 0),
-        "arriving_at": datetime(2026, 11, 20, 6, 0),
-    }
-    one_stop = Slice(
-        origin="DEL",
-        destination="LHR",
-        segments=[
-            Segment(origin="DEL", destination="DXB", **leg),
-            Segment(origin="DXB", destination="LHR", **leg),
-        ],
+def leg(origin: str, destination: str) -> Segment:
+    return Segment(
+        origin=origin,
+        destination=destination,
+        marketing_carrier="EK",
+        flight_number="511",
+        departing_at=datetime(2026, 11, 20, 4, 0),
+        arriving_at=datetime(2026, 11, 20, 6, 0),
     )
-    assert one_stop.stops == 1
+
+
+def journey(*airports: str, duration: int | None = None) -> Slice:
+    segments = [leg(a, b) for a, b in zip(airports, airports[1:], strict=False)]
+    return Slice(
+        origin=airports[0], destination=airports[-1], segments=segments, duration_minutes=duration
+    )
+
+
+def offer(*slices: Slice) -> FlightOffer:
+    return FlightOffer(
+        id="off_1",
+        supplier="sandbox",
+        supplier_ref="ref_1",
+        provenance="SANDBOX",
+        total=Money(amount_minor=4500000, currency="INR"),
+        owner_carrier="EK",
+        passenger_count=1,
+        slices=list(slices),
+        fetched_at=datetime.now(UTC),
+    )
+
+
+def test_slice_counts_stops():
+    assert journey("DEL", "LHR").stops == 0
+    assert journey("DEL", "DXB", "LHR").stops == 1
+    assert journey("DEL", "DXB", "IST", "LHR").stops == 2
+    assert Slice(origin="DEL", destination="LHR", segments=[]).stops == 0
+
+
+def test_offer_stops_is_the_worst_slice():
+    assert offer(journey("DEL", "LHR"), journey("LHR", "DXB", "DEL")).stops == 1
+    assert offer(journey("DEL", "LHR")).stops == 0
+    assert offer().stops == 0
+
+
+def test_offer_total_duration_sums_slices_and_needs_every_duration():
+    outbound = journey("DEL", "LHR", duration=570)
+    inbound = journey("LHR", "DXB", "DEL", duration=660)
+    assert offer(outbound, inbound).total_duration_minutes == 1230
+    assert offer(outbound, journey("LHR", "DEL")).total_duration_minutes is None
+    assert offer().total_duration_minutes == 0
 
 
 def test_sandbox_supplier_defaults_on_except_in_production():
-    assert Settings(environment="development").sandbox_supplier_enabled is True
-    assert Settings(environment="production").sandbox_supplier_enabled is False
-    assert (
-        Settings(environment="production", sandbox_supplier=True).sandbox_supplier_enabled is True
-    )
+    # _env_file=None: a developer's backend/.env must not decide this test.
+    assert Settings(_env_file=None, environment="development").sandbox_supplier_enabled is True
+    assert Settings(_env_file=None, environment="production").sandbox_supplier_enabled is False
+    enabled = Settings(_env_file=None, environment="production", sandbox_supplier=True)
+    assert enabled.sandbox_supplier_enabled is True
 
 
 def test_empty_sandbox_supplier_env_means_default(monkeypatch):
     monkeypatch.setenv("TM_SANDBOX_SUPPLIER", "")
-    assert Settings(environment="development").sandbox_supplier is None
-    assert Settings(environment="production").sandbox_supplier_enabled is False
+    assert Settings(_env_file=None, environment="development").sandbox_supplier is None
+    assert Settings(_env_file=None, environment="production").sandbox_supplier_enabled is False

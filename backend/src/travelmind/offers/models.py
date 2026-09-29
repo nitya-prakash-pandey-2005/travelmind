@@ -3,15 +3,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
-from travelmind.offers.money import Money
+from travelmind.offers.money import Money, normalise_code
 
-
-def _upper(value: object) -> object:
-    # Normalise before the pattern check: StringConstraints tests the pattern on the raw input.
-    return value.strip().upper() if isinstance(value, str) else value
-
-
-IataCode = Annotated[str, BeforeValidator(_upper), StringConstraints(pattern=r"^[A-Z]{3}$")]
+IataCode = Annotated[str, BeforeValidator(normalise_code), StringConstraints(pattern=r"^[A-Z]{3}$")]
 Cabin = Literal["economy", "premium_economy", "business", "first"]
 Provenance = Literal["LIVE", "CACHED", "SANDBOX"]
 Co2Source = Literal["google_tim", "google_tim_typical", "supplier"]
