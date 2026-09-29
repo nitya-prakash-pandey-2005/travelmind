@@ -4,9 +4,9 @@ import { Color, MeshPhongMaterial } from "three";
 import type { Airport } from "../../api/types";
 import { useTheme, type Theme } from "../../ui/theme";
 import { useReducedMotion } from "../../ui/useReducedMotion";
-import { midpoint } from "../route/geo";
 import { COUNTRIES } from "./countries";
 import { useElementSize } from "./useElementSize";
+import { useFlyToActiveRoute } from "./useFlyToActiveRoute";
 
 export type GlobeArc = { from: Airport; to: Airport; active: boolean };
 
@@ -51,11 +51,7 @@ export default function RouteGlobe({ arcs }: { arcs: GlobeArc[] }) {
     controls.autoRotateSpeed = 0.35;
   }, [reducedMotion, active, size.width]);
 
-  useEffect(() => {
-    if (!active || !globeRef.current) return;
-    const mid = midpoint(active.from, active.to);
-    globeRef.current.pointOfView({ lat: mid.lat, lng: mid.lng, altitude: 1.9 }, reducedMotion ? 0 : 1200);
-  }, [active, reducedMotion]);
+  useFlyToActiveRoute(globeRef, active, size.width > 0 && size.height > 0, reducedMotion);
 
   return (
     <div ref={containerRef} className="h-full min-h-[340px] w-full">
