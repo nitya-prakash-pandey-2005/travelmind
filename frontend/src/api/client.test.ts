@@ -102,3 +102,19 @@ test("asApiError wraps unknown errors", () => {
   const original = new ApiError(409, "Taken");
   expect(asApiError(original)).toBe(original);
 });
+
+test("a 200 with a non-JSON body is a plain server error, not null data", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("<html>ok</html>", { status: 200, headers: { "X-Request-ID": "req-7" } })),
+  );
+  const error = (await apiFetch("/api/v1/team").catch((e: unknown) => e)) as ApiError;
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error.message).toBe("Something went wrong on our side. Please try again.");
+  expect(error.traceId).toBe("req-7");
+});
+
+test("a 200 with an empty body rejects with an ApiError", async () => {
+  mockApi({ "GET /api/v1/team": { status: 200 } });
+  await expect(apiFetch("/api/v1/team")).rejects.toBeInstanceOf(ApiError);
+});

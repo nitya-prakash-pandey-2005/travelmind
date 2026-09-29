@@ -56,8 +56,17 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     throw new ApiError(0, NETWORK_ERROR_MESSAGE);
   }
   if (response.status === 204) return undefined as T;
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw toApiError(response.status, payload, response.headers.get("X-Request-ID"));
+  const requestId = response.headers.get("X-Request-ID");
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    // A success status with an unreadable body (SPA fallback HTML, captive portal) is not usable data.
+    if (response.ok) throw new ApiError(response.status, SERVER_ERROR_MESSAGE, {}, requestId ?? undefined);
+    payload = null;
+  }
+  if (!response.ok) throw toApiError(response.status, payload, requestId);
   return payload as T;
 }
 
