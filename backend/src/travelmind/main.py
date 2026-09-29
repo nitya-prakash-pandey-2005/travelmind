@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from travelmind.config import get_settings
 from travelmind.health import router as health_router
+from travelmind.identity.router import auth_router
 from travelmind.middleware import RequestIdMiddleware, unhandled_exception_handler
 from travelmind.observability import configure_logging
 
@@ -13,4 +14,5 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestIdMiddleware)
     app.add_exception_handler(Exception, unhandled_exception_handler)
     app.include_router(health_router)
+    app.include_router(auth_router)
     return app
