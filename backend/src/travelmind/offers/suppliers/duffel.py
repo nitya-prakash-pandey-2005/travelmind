@@ -27,7 +27,10 @@ DUFFEL_VERSION = "v2"
 MAX_OFFERS = 60
 _CABINS: frozenset[str] = frozenset(get_args(Cabin))
 _OFFER_REF = re.compile(r"off_[A-Za-z0-9]+")
-_DURATION = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:\d+(?:\.\d+)?S)?)?$")
+_DURATION = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$")
+# Failures from reading one malformed offer (pydantic's ValidationError is a ValueError,
+# InvalidOperation an ArithmeticError; AttributeError covers a nested field of the wrong type).
+_MAPPING_ERRORS = (KeyError, TypeError, ValueError, ArithmeticError, AttributeError)
 log = structlog.get_logger()
 
 
@@ -36,9 +39,9 @@ def parse_iso_duration(value: str | None) -> int | None:
     if not value:
         return None
     match = _DURATION.match(value)
-    if not match:
-        return None
-    days, hours, minutes = (int(g) if g else 0 for g in match.groups())
+    if not match or not any(match.groups()):
+        return None  # no match, or a bare "P"/"PT" with no component
+    days, hours, minutes = (int(g) if g else 0 for g in match.groups()[:3])
     return days * 1440 + hours * 60 + minutes
 
 
@@ -109,7 +112,18 @@ class DuffelFlightSupplier:
         data = payload.get("data") or {}
         live = bool(data.get("live_mode"))
         fetched_at = self._clock()
-        offers = [self._map_offer(raw, live, fetched_at) for raw in data.get("offers") or []]
+        raw_offers = data.get("offers") or []
+        offers: list[FlightOffer] = []
+        for raw in raw_offers:
+            try:
+                offers.append(self._map_offer(raw, live, fetched_at))
+            except _MAPPING_ERRORS as exc:
+                ref = raw.get("id") if isinstance(raw, dict) else None
+                log.warning("duffel_offer_skipped", offer_id=ref, error=type(exc).__name__)
+        if raw_offers and not offers:
+            raise SupplierError(
+                "unavailable", "Duffel sent offers we couldn't read. Try again shortly."
+            )
         offers.sort(key=lambda o: (o.total.currency, o.total.amount_minor))
         return offers[:MAX_OFFERS]
 
@@ -122,8 +136,14 @@ class DuffelFlightSupplier:
         payload = await self._request(
             "GET", f"/air/offers/{supplier_ref}", params={"return_available_services": "false"}
         )
-        raw = payload.get("data") or {}
-        return self._map_offer(raw, bool(raw.get("live_mode")), self._clock())
+        raw = payload.get("data")
+        try:
+            if not isinstance(raw, dict):
+                raise TypeError("offer payload is not an object")
+            return self._map_offer(raw, bool(raw.get("live_mode")), self._clock())
+        except _MAPPING_ERRORS as exc:
+            log.warning("duffel_offer_unusable", error=type(exc).__name__)
+            raise SupplierError("unavailable", "Duffel sent an unusable offer.") from exc
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -194,6 +214,7 @@ class DuffelFlightSupplier:
         passenger_count = max(len(passengers), 1)
         slices = [self._map_slice(s) for s in raw.get("slices") or []]
         owner = raw.get("owner") or {}
+        # Deliberate simplification: cabin and baggage come from segment 1's first passenger.
         raw_slices = raw.get("slices") or [{}]
         first_segment = (raw_slices[0].get("segments") or [{}])[0]
         segment_passenger = (first_segment.get("passengers") or [{}])[0]

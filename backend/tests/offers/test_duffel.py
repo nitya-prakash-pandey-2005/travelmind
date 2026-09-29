@@ -42,6 +42,9 @@ def test_parse_iso_duration():
     assert parse_iso_duration("PT45M") == 45
     assert parse_iso_duration(None) is None
     assert parse_iso_duration("garbage") is None
+    assert parse_iso_duration("P") is None
+    assert parse_iso_duration("PT") is None
+    assert parse_iso_duration("PT30S") == 0
 
 
 async def test_search_sends_the_documented_request(respx_mock):
@@ -210,3 +213,51 @@ async def test_unusable_emissions_are_dropped(respx_mock, emissions):
     )
     nonstop = (await supplier().search(request()))[1]
     assert (nonstop.co2_kg_per_passenger, nonstop.co2_source) == (None, None)
+
+
+def _drop_total(offer: dict) -> None:
+    del offer["total_amount"]
+
+
+def _string_owner(offer: dict) -> None:
+    offer["owner"] = "EK"
+
+
+@pytest.mark.parametrize("break_offer", [_drop_total, _string_owner])
+async def test_one_malformed_offer_does_not_sink_the_search(respx_mock, break_offer):
+    payload = fixture("duffel_offer_request.json")
+    break_offer(payload["data"]["offers"][0])
+    respx_mock.post(f"{BASE}/air/offer_requests").mock(
+        return_value=httpx.Response(201, json=payload)
+    )
+    offers = await supplier().search(request())
+    assert [o.supplier_ref for o in offers] == ["off_0000NONSTOP"]
+
+
+async def test_all_offers_malformed_is_unavailable(respx_mock):
+    payload = fixture("duffel_offer_request.json")
+    payload["data"]["offers"][0]["slices"][0]["segments"][0]["departing_at"] = "not a time"
+    payload["data"]["offers"][1]["total_amount"] = "lots"
+    respx_mock.post(f"{BASE}/air/offer_requests").mock(
+        return_value=httpx.Response(201, json=payload)
+    )
+    with pytest.raises(SupplierError) as err:
+        await supplier().search(request())
+    assert err.value.code == "unavailable"
+
+
+async def test_no_offers_is_an_empty_list(respx_mock):
+    payload = fixture("duffel_offer_request.json")
+    payload["data"]["offers"] = []
+    respx_mock.post(f"{BASE}/air/offer_requests").mock(
+        return_value=httpx.Response(201, json=payload)
+    )
+    assert await supplier().search(request()) == []
+
+
+@pytest.mark.parametrize("body", [{"data": {}}, {}, {"data": {"id": "off_1", "total_amount": "x"}}])
+async def test_price_rejects_unusable_offers(respx_mock, body):
+    respx_mock.get(f"{BASE}/air/offers/off_1").mock(return_value=httpx.Response(200, json=body))
+    with pytest.raises(SupplierError) as err:
+        await supplier().price("off_1")
+    assert err.value.code == "unavailable"
