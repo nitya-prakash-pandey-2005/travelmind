@@ -1,3 +1,4 @@
+import re
 import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -26,6 +27,11 @@ CITY_ALIASES: dict[str, tuple[str, ...]] = {
     "noida": ("DEL",),
 }
 TYPE_BOOST = {"large_airport": 15, "medium_airport": 8, "small_airport": 0}
+# Tie-break order among equal scores; unlisted types (heliport, seaplane_base, ...) rank last.
+TYPE_RANK = {"large_airport": 0, "medium_airport": 1, "small_airport": 2}
+# WRatio scales down long names, so "london heathrow" scores LHR no higher than LGW/LTN/STN.
+# Rewarding queries whose every word appears whole in the airport's name/city/keywords fixes that.
+TOKEN_COVERAGE_BONUS = 20
 SCHEDULED_BOOST = 10
 MIN_FUZZY_SCORE = 70.0
 ALIAS_SCORE = 1100.0
@@ -37,6 +43,10 @@ def fold(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value)
     stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
     return " ".join(stripped.lower().split())
+
+
+def _tokens(folded: str) -> frozenset[str]:
+    return frozenset(re.findall(r"[a-z0-9]+", folded))
 
 
 @dataclass(frozen=True)
@@ -66,6 +76,8 @@ class _Folded:
     name: str
     keywords: str
     aliases: tuple[str, ...]
+    name_tokens: frozenset[str]
+    all_tokens: frozenset[str]  # name + city + keywords
 
 
 def _aliases_by_code() -> dict[str, tuple[str, ...]]:
@@ -81,17 +93,24 @@ class AirportIndex:
 
     def __init__(self, airports: Iterable[AirportRecord]) -> None:
         aliases = _aliases_by_code()
-        self._entries = [
-            _Folded(
-                a,
-                fold(a.city or ""),
-                fold(a.name),
-                fold(a.keywords or ""),
-                aliases.get(a.iata_code, ()),
-            )
-            for a in airports
-        ]
+        self._entries = [self._fold_entry(a, aliases.get(a.iata_code, ())) for a in airports]
         self._by_code = {e.airport.iata_code: e.airport for e in self._entries}
+
+    @staticmethod
+    def _fold_entry(airport: AirportRecord, aliases: tuple[str, ...]) -> _Folded:
+        city = fold(airport.city or "")
+        name = fold(airport.name)
+        keywords = fold(airport.keywords or "")
+        name_tokens = _tokens(name)
+        return _Folded(
+            airport,
+            city,
+            name,
+            keywords,
+            aliases,
+            name_tokens,
+            name_tokens | _tokens(city) | _tokens(keywords),
+        )
 
     def get(self, iata_code: str) -> AirportRecord | None:
         return self._by_code.get(iata_code.strip().upper())
@@ -100,17 +119,35 @@ class AirportIndex:
         q = fold(query)
         if len(q) < 2:
             return []
+        q_tokens = _tokens(q)
         aliases = CITY_ALIASES.get(q, ())
-        hits = []
+        scored: list[tuple[float, _Folded]] = []
         for entry in self._entries:
-            score = self._score(q, entry, aliases)
+            score = self._score(q, q_tokens, entry, aliases)
             if score is not None:
-                hits.append(AirportHit(entry.airport, score))
-        hits.sort(key=lambda h: (-h.score, h.airport.iata_code))
-        return hits[:limit]
+                scored.append((score, entry))
+        scored.sort(key=lambda item: self._rank_key(item[0], item[1], q_tokens))
+        return [AirportHit(entry.airport, score) for score, entry in scored[:limit]]
 
     @staticmethod
-    def _score(q: str, entry: _Folded, aliases: tuple[str, ...]) -> float | None:
+    def _rank_key(
+        score: float, entry: _Folded, q_tokens: frozenset[str]
+    ) -> tuple[float, bool, int, bool, str]:
+        """Score desc, then scheduled service, type, query-in-name, and finally IATA code."""
+        airport = entry.airport
+        return (
+            -score,
+            not airport.scheduled_service,
+            TYPE_RANK.get(airport.airport_type, len(TYPE_RANK)),
+            # "sao paulo": GRU and CGH are both large; prefer the one named after the city.
+            not q_tokens <= entry.name_tokens,
+            airport.iata_code,
+        )
+
+    @staticmethod
+    def _score(
+        q: str, q_tokens: frozenset[str], entry: _Folded, aliases: tuple[str, ...]
+    ) -> float | None:
         airport = entry.airport
         boost = TYPE_BOOST.get(airport.airport_type, 0) + (
             SCHEDULED_BOOST if airport.scheduled_service else 0
@@ -128,4 +165,6 @@ class AirportIndex:
         )
         if fuzzy < MIN_FUZZY_SCORE:
             return None
+        if q_tokens and q_tokens <= entry.all_tokens:
+            fuzzy += TOKEN_COVERAGE_BONUS
         return fuzzy + boost

@@ -45,6 +45,10 @@ INDEX = AirportIndex(
         _airport("GRU", "São Paulo/Guarulhos International Airport", "São Paulo", country="BR"),
         _airport("LHR", "London Heathrow Airport", "London", country="GB"),
         _airport("LGW", "London Gatwick Airport", "London", country="GB"),
+        _airport("LTN", "London Luton Airport", "London", country="GB"),
+        _airport("STN", "London Stansted Airport", "London", country="GB"),
+        # Real OurAirports data lists Congonhas as a large, scheduled airport too.
+        _airport("CGH", "Congonhas Airport", "São Paulo", country="BR"),
     ]
 )
 
@@ -113,3 +117,29 @@ def test_typo_of_alias_beats_lookalike_city_with_real_data_keywords():
         ]
     )
     assert [hit.airport.iata_code for hit in index.search("dehli")][0] == "DEL"
+
+
+def test_full_airport_name_beats_other_airports_in_same_city():
+    assert codes("london heathrow")[0] == "LHR"
+
+
+def test_distinctive_name_word_finds_its_airport():
+    assert codes("gatwick")[0] == "LGW"
+    assert codes("guarulhos")[0] == "GRU"
+
+
+def test_city_query_prefers_airport_named_after_the_city_on_ties():
+    # GRU and CGH are both large airports in São Paulo; only GRU carries the city in its name.
+    assert codes("sao paulo")[:2] == ["GRU", "CGH"]
+
+
+def test_equal_scores_break_ties_by_airport_type_before_code():
+    index = AirportIndex(
+        [
+            _airport("AAA", "Alpha Heliport", "Zeta", country="GB", kind="heliport"),
+            _airport("ZZZ", "Omega Airfield", "Zeta", country="GB", kind="small_airport"),
+        ]
+    )
+    hits = index.search("zeta")
+    assert hits[0].score == hits[1].score
+    assert [hit.airport.iata_code for hit in hits] == ["ZZZ", "AAA"]
