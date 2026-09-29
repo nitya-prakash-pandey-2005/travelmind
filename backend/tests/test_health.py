@@ -1,12 +1,27 @@
 from tests.helpers import make_client
+from travelmind.db import get_db
 from travelmind.main import create_app
 
 
-async def test_health_ok(client):
+async def test_health_reports_database_ok(client):
     r = await client.get("/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    assert r.json() == {"status": "ok", "database": "ok"}
     assert len(r.headers["X-Request-ID"]) == 32
+
+
+async def test_health_reports_degraded_when_database_down(app, client):
+    class BrokenSession:
+        async def execute(self, *args, **kwargs):
+            raise ConnectionRefusedError("database is down")
+
+    async def broken_db():
+        yield BrokenSession()
+
+    app.dependency_overrides[get_db] = broken_db
+    r = await client.get("/health")
+    assert r.status_code == 503
+    assert r.json() == {"status": "degraded", "database": "unavailable"}
 
 
 async def test_request_id_is_echoed(client):

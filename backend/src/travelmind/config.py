@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     migration_database_url: str = (
         "postgresql+asyncpg://travelmind_owner:owner_dev_pw@localhost:5433/travelmind"
     )
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://localhost:6380/0"
     allowed_origins: list[str] = ["http://localhost:5173"]
     session_cookie_name: str = "tm_session"
     session_ttl_hours: int = 24 * 14
