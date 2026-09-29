@@ -143,3 +143,35 @@ def test_equal_scores_break_ties_by_airport_type_before_code():
     hits = index.search("zeta")
     assert hits[0].score == hits[1].score
     assert [hit.airport.iata_code for hit in hits] == ["ZZZ", "AAA"]
+
+
+def _record(code, name, city, country, country_name, kind="large_airport"):
+    return AirportRecord(code, name, city, country, country_name, kind, True, 0.0, 0.0, None)
+
+
+PRIMARY_INDEX = AirportIndex(
+    [
+        _record("LGW", "London Gatwick Airport", "London", "GB", "United Kingdom"),
+        _record("LHR", "London Heathrow Airport", "London", "GB", "United Kingdom"),
+        _record("LCY", "London City Airport", "London", "GB", "United Kingdom", "medium_airport"),
+        _record("ORY", "Paris-Orly Airport", "Paris", "FR", "France"),
+        _record("CDG", "Charles de Gaulle International Airport", "Paris", "FR", "France"),
+        _record("HND", "Tokyo Haneda International Airport", "Tokyo", "JP", "Japan"),
+        _record("NRT", "Narita International Airport", "Narita", "JP", "Japan"),
+    ]
+)
+
+
+def _top(query, n):
+    return [hit.airport.iata_code for hit in PRIMARY_INDEX.search(query, n)]
+
+
+def test_multi_airport_cities_list_the_main_airport_first():
+    assert _top("london", 3) == ["LHR", "LGW", "LCY"]
+    assert _top("paris", 2) == ["CDG", "ORY"]
+    assert _top("tokyo", 2) == ["HND", "NRT"]
+
+
+def test_specific_airport_names_still_win_over_the_city_alias():
+    assert _top("london city", 1) == ["LCY"]
+    assert _top("orly", 1) == ["ORY"]

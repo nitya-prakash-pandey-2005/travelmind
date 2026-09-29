@@ -1,5 +1,9 @@
+import asyncio
+import threading
+import time
 from uuid import uuid4
 
+from travelmind.identity import passwords
 from travelmind.identity.passwords import hash_password, verify_password
 from travelmind.identity.tokens import hash_token, make_scoped_token, new_token, split_scoped_token
 
@@ -32,3 +36,29 @@ def test_split_scoped_token_rejects_garbage():
     assert split_scoped_token("no-dot-here") is None
     assert split_scoped_token("not-a-uuid.secret") is None
     assert split_scoped_token(f"{uuid4()}.") is None
+
+
+class _ConcurrencyProbe:
+    """Stands in for the argon2 hasher and records how many hashes run at once."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+
+    def hash(self, password):
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        time.sleep(0.05)
+        with self._lock:
+            self.active -= 1
+        return f"hashed:{password}"
+
+
+async def test_password_hashing_concurrency_is_capped(monkeypatch):
+    probe = _ConcurrencyProbe()
+    monkeypatch.setattr(passwords, "_hasher", probe)
+    results = await asyncio.gather(*(passwords.hash_password_async(f"pw-{i}") for i in range(12)))
+    assert results == [f"hashed:pw-{i}" for i in range(12)]
+    assert 2 <= probe.peak <= passwords.ARGON2_MAX_CONCURRENCY == 4

@@ -1,4 +1,8 @@
-from tests.helpers import signup
+import os
+
+from redis.asyncio import Redis
+
+from tests.helpers import DEFAULT_PASSWORD, signup
 
 LOGIN = "/api/v1/auth/login"
 WRONG = {"email": "owner@alphatravels.com", "password": "wrong-password-123"}
@@ -81,3 +85,23 @@ async def test_signup_is_rate_limited_per_ip(client):
     assert blocked.json() == {
         "detail": "Too many sign-up attempts from your network. Please try again later."
     }
+
+
+async def test_successful_logins_do_not_use_up_the_network_limit(client):
+    await signup(client)
+    good = {"email": "owner@alphatravels.com", "password": DEFAULT_PASSWORD}
+    for _ in range(55):
+        r = await client.post(LOGIN, json=good)
+        assert r.status_code == 200
+
+
+async def test_rate_limit_keys_always_expire(client):
+    await client.post(LOGIN, json=WRONG)
+    redis = Redis.from_url(os.environ["TM_REDIS_URL"])
+    try:
+        keys = [key async for key in redis.scan_iter("rl:*")]
+        assert keys
+        for key in keys:
+            assert await redis.ttl(key) > 0
+    finally:
+        await redis.aclose()
