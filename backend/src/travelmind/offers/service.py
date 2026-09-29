@@ -26,6 +26,7 @@ from travelmind.fareintel.service import (
     compute_baseline,
 )
 from travelmind.fareintel.travelpayouts import seed_route
+from travelmind.identity.ratelimit import LoginRateLimiter
 from travelmind.offers.cache import recall_offer, remember_offers
 from travelmind.offers.carbon import TimClient
 from travelmind.offers.db_models import FlightSearchLog
@@ -63,6 +64,18 @@ class OfferServiceError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+
+
+class RateLimited(OfferServiceError):
+    def __init__(self) -> None:
+        super().__init__("Too many searches in a minute. Please wait a moment and try again.")
+
+
+async def check_search_budget(redis: Redis, settings: Settings, key: str) -> None:
+    """Count one search against a per-minute budget; raise RateLimited once it is spent."""
+    limiter = LoginRateLimiter(redis, settings.search_max_per_minute, 60)
+    if not await limiter.hit(key):
+        raise RateLimited()
 
 
 class UnknownAirport(OfferServiceError):
@@ -164,8 +177,9 @@ async def search_flights(
     """Search every connected supplier and return ranked offers with insights.
 
     `db` must already be bound to `agency_id` (bind_tenant). Commits once, at the end.
-    Raises UnknownAirport or NoSuppliers.
+    Raises RateLimited, UnknownAirport or NoSuppliers.
     """
+    await check_search_budget(redis, settings, f"rl:search:{agency_id}")
     index = await get_airport_index(db)
     airports: dict[str, AirportRecord] = {}
     for code in (request.origin, request.destination):

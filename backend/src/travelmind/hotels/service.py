@@ -1,11 +1,12 @@
 """Hotel search, callable from the HTTP API or directly (e.g. by the copilot).
 
 Supplier problems never fail the search: they come back as the source's status. The only
-exception is UnknownAirport (a bad destination), which the router maps to 422.
+exceptions are RateLimited (429) and UnknownAirport (a bad destination, 422).
 """
 
 import asyncio
 import time
+from uuid import UUID
 
 import structlog
 from redis.asyncio import Redis
@@ -19,7 +20,7 @@ from travelmind.offers.fx import display_currency_for, get_fx_rates
 from travelmind.offers.money import Money
 from travelmind.offers.schemas import SourceStatusOut
 from travelmind.offers.search import SourceState
-from travelmind.offers.service import UnknownAirport
+from travelmind.offers.service import RateLimited, UnknownAirport, check_search_budget
 from travelmind.offers.suppliers.base import SupplierError
 from travelmind.reference.service import get_airport_index
 
@@ -28,7 +29,7 @@ log = structlog.get_logger()
 SUPPLIER = LiteApiHotelSupplier.code
 NOT_CONFIGURED_MESSAGE = "Connect LiteAPI (TM_LITEAPI_KEY) to see hotels."
 
-__all__ = ["UnknownAirport", "search_hotels"]
+__all__ = ["RateLimited", "UnknownAirport", "search_hotels"]
 
 
 async def _search_supplier(
@@ -51,7 +52,13 @@ async def _search_supplier(
 
     try:
         offers = await asyncio.wait_for(
-            supplier.search(request, latitude=latitude, longitude=longitude, currency=currency),
+            supplier.search(
+                request,
+                latitude=latitude,
+                longitude=longitude,
+                currency=currency,
+                timeout_s=timeout_s,
+            ),
             timeout=timeout_s,
         )
     except TimeoutError:
@@ -65,12 +72,19 @@ async def _search_supplier(
 
 
 async def search_hotels(
-    db: AsyncSession, redis: Redis, settings: Settings, request: HotelSearchRequest
+    db: AsyncSession,
+    redis: Redis,
+    settings: Settings,
+    request: HotelSearchRequest,
+    *,
+    agency_id: UUID,
 ) -> HotelSearchResponse:
     """Hotels near the destination airport, cheapest first in the display currency.
 
-    Raises UnknownAirport when the destination isn't a known airport.
+    Raises RateLimited when the agency's per-minute hotel budget (separate from flights) is
+    spent, and UnknownAirport when the destination isn't a known airport.
     """
+    await check_search_budget(redis, settings, f"rl:hotels:{agency_id}")
     airport = (await get_airport_index(db)).get(request.destination)
     if airport is None:
         raise UnknownAirport(request.destination)

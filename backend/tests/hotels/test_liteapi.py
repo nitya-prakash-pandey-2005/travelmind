@@ -27,9 +27,9 @@ def request() -> HotelSearchRequest:
     )
 
 
-async def search(key: str = "sand_abc"):
+async def search(key: str = "sand_abc", **kwargs):
     return await LiteApiHotelSupplier(key).search(
-        request(), latitude=19.0887, longitude=72.8679, currency="INR"
+        request(), latitude=19.0887, longitude=72.8679, currency="INR", **kwargs
     )
 
 
@@ -48,6 +48,16 @@ async def test_sends_the_documented_request(respx_mock):
         True,
     )
     assert body["checkin"] == request().checkin.isoformat()
+
+
+@pytest.mark.parametrize(
+    ("budget", "sent"),
+    [({}, 8), ({"timeout_s": 25}, 10), ({"timeout_s": 9.5}, 7), ({"timeout_s": 3}, 4)],
+)
+async def test_liteapi_timeout_fits_inside_the_search_budget(respx_mock, budget, sent):
+    route = respx_mock.post(RATES).mock(return_value=httpx.Response(200, json=FIXTURE))
+    await search(**budget)
+    assert json.loads(route.calls.last.request.content)["timeout"] == sent
 
 
 async def test_maps_the_cheapest_room_per_hotel(respx_mock):

@@ -13,9 +13,13 @@ hotels_router = APIRouter(prefix="/api/v1/hotels", tags=["hotels"])
 
 @hotels_router.post("/search")
 async def search_hotels_route(
-    body: HotelSearchRequest, _current: AuthedUser, db: DbSession, redis: RedisClient
+    body: HotelSearchRequest, current: AuthedUser, db: DbSession, redis: RedisClient
 ) -> HotelSearchResponse:
     try:
-        return await service.search_hotels(db, redis, get_settings(), body)
+        return await service.search_hotels(
+            db, redis, get_settings(), body, agency_id=current.agency_id
+        )
+    except service.RateLimited as exc:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, exc.message) from None
     except service.UnknownAirport as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.message) from None

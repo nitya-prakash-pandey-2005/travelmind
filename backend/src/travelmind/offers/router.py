@@ -6,7 +6,6 @@ from travelmind.cache import RedisClient
 from travelmind.config import get_settings
 from travelmind.db import DbSession
 from travelmind.identity.deps import AuthedUser
-from travelmind.identity.ratelimit import LoginRateLimiter
 from travelmind.offers import service
 from travelmind.offers.models import FlightSearchRequest
 from travelmind.offers.registry import supplier_statuses
@@ -16,6 +15,7 @@ flights_router = APIRouter(prefix="/api/v1/flights", tags=["flights"])
 suppliers_router = APIRouter(prefix="/api/v1/suppliers", tags=["suppliers"])
 
 _STATUS: dict[type[service.OfferServiceError], int] = {
+    service.RateLimited: status.HTTP_429_TOO_MANY_REQUESTS,
     service.UnknownAirport: status.HTTP_422_UNPROCESSABLE_CONTENT,
     service.NoSuppliers: status.HTTP_503_SERVICE_UNAVAILABLE,
     service.OfferNotFound: status.HTTP_404_NOT_FOUND,
@@ -33,16 +33,9 @@ def _http_error(exc: service.OfferServiceError) -> HTTPException:
 async def search_flights_route(
     body: FlightSearchRequest, current: AuthedUser, db: DbSession, redis: RedisClient
 ) -> FlightSearchResponse:
-    settings = get_settings()
-    limiter = LoginRateLimiter(redis, settings.search_max_per_minute, 60)
-    if not await limiter.hit(f"rl:search:{current.agency_id}"):
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            "Too many searches in a minute. Please wait a moment and try again.",
-        )
     try:
         return await service.search_flights(
-            db, redis, settings, body, agency_id=current.agency_id, user_id=current.id
+            db, redis, get_settings(), body, agency_id=current.agency_id, user_id=current.id
         )
     except service.OfferServiceError as exc:
         raise _http_error(exc) from None

@@ -1,15 +1,24 @@
 import asyncio
 import copy
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
+import pytest
+from redis.asyncio import Redis
 
 from tests.helpers import signup
 from travelmind.config import get_settings
+from travelmind.hotels import service as hotels_service
 from travelmind.hotels.liteapi import LITEAPI_BASE_URL, LiteApiHotelSupplier
+from travelmind.hotels.models import HotelSearchRequest
+from travelmind.offers import service as offers_service
 from travelmind.offers.fx import ECB_DAILY_URL
+from travelmind.offers.models import FlightSearchRequest
+from travelmind.offers.service import RateLimited
 
 FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "liteapi_rates.json").read_text(encoding="utf-8")
@@ -18,6 +27,7 @@ ECB_XML = (Path(__file__).parents[1] / "offers" / "fixtures" / "ecb_daily.xml").
     encoding="utf-8"
 )
 SEARCH = "/api/v1/hotels/search"
+FLIGHTS = "/api/v1/flights/search"
 RATES = f"{LITEAPI_BASE_URL}/hotels/rates"
 TODAY = datetime.now(UTC).date()
 
@@ -150,3 +160,53 @@ async def test_hotel_search_validates_input(client, airports):
 
 async def test_hotel_search_needs_a_session(client, airports):
     assert (await client.post(SEARCH, json=stay())).status_code == 401
+
+
+async def test_hotel_searches_are_rate_limited_per_agency(client, airports, monkeypatch):
+    monkeypatch.setattr(get_settings(), "search_max_per_minute", 2)
+    await signup(client)
+    assert (await client.post(SEARCH, json=stay())).status_code == 200
+    assert (await client.post(SEARCH, json=stay())).status_code == 200
+    blocked = await client.post(SEARCH, json=stay())
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == (
+        "Too many searches in a minute. Please wait a moment and try again."
+    )
+
+
+async def test_hotel_and_flight_search_budgets_are_separate(client, airports, monkeypatch):
+    monkeypatch.setattr(get_settings(), "search_max_per_minute", 1)
+    monkeypatch.setattr(get_settings(), "sandbox_supplier", True)
+    await signup(client)
+    assert (await client.post(SEARCH, json=stay())).status_code == 200
+    assert (await client.post(SEARCH, json=stay())).status_code == 429
+    trip = {"origin": "DEL", "destination": "BOM", "departure_date": stay()["checkin"]}
+    assert (await client.post(FLIGHTS, json=trip)).status_code == 200
+    assert (await client.post(FLIGHTS, json=trip)).status_code == 429
+    assert (await client.post(SEARCH, json=stay())).status_code == 429
+
+
+async def test_direct_service_callers_are_rate_limited_too(monkeypatch):
+    """The copilot calls the services directly, so the limit lives there, before any DB use."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "search_max_per_minute", 0)
+    redis = Redis.from_url(os.environ["TM_REDIS_URL"])
+    agency = uuid4()
+    hotel_stay = HotelSearchRequest.model_validate(stay())
+    flight_trip = FlightSearchRequest(
+        origin="DEL", destination="BOM", departure_date=hotel_stay.checkin
+    )
+    try:
+        with pytest.raises(RateLimited):
+            await hotels_service.search_hotels(None, redis, settings, hotel_stay, agency_id=agency)  # type: ignore[arg-type]
+        with pytest.raises(RateLimited):
+            await offers_service.search_flights(
+                None,  # type: ignore[arg-type]
+                redis,
+                settings,
+                flight_trip,
+                agency_id=agency,
+                user_id=None,
+            )
+    finally:
+        await redis.aclose()

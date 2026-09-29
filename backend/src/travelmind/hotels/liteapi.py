@@ -92,6 +92,7 @@ class LiteApiHotelSupplier:
         longitude: float,
         currency: str,
         guest_nationality: str = "IN",
+        timeout_s: float = 10.0,
     ) -> list[HotelOffer]:
         body = {
             "latitude": latitude,
@@ -104,7 +105,8 @@ class LiteApiHotelSupplier:
             ],
             "currency": currency,
             "guestNationality": guest_nationality,
-            "timeout": 8,
+            # LiteAPI's own supplier wait: 2 s inside our budget, within its advised 4–10 s.
+            "timeout": max(4, min(10, int(timeout_s) - 2)),
             "maxRatesPerHotel": 1,
             "limit": 40,
             "includeHotelData": True,
