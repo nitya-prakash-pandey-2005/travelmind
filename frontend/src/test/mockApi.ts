@@ -2,7 +2,8 @@ import { vi } from "vitest";
 
 export type MockResult = { status: number; body?: unknown; headers?: Record<string, string> };
 export type MockCall = { method: string; path: string; search: URLSearchParams; body: unknown };
-export type MockHandler = MockResult | ((call: MockCall) => MockResult);
+/** A fixed result, or a function of the call; an async function holds the request in flight until it resolves. */
+export type MockHandler = MockResult | ((call: MockCall) => MockResult | Promise<MockResult>);
 
 /** Stub global fetch with a route table keyed by "METHOD /path" (query string ignored). */
 export function mockApi(routes: Record<string, MockHandler>) {
@@ -21,7 +22,7 @@ export function mockApi(routes: Record<string, MockHandler>) {
     const result: MockResult = !handler
       ? { status: 404, body: { detail: `No mock for ${method} ${url.pathname}` } }
       : typeof handler === "function"
-        ? handler(call)
+        ? await handler(call)
         : handler;
     const body = result.body === undefined ? null : JSON.stringify(result.body);
     return new Response(body, {

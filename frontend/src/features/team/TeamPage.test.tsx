@@ -1,8 +1,9 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
-import { ME_AGENT, ME_OWNER } from "../../test/fixtures";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { expect, onTestFinished, test, vi } from "vitest";
+import { AIRPORTS, ME_AGENT, ME_BETA, ME_OWNER } from "../../test/fixtures";
 import { mockApi } from "../../test/mockApi";
 import { renderApp, withSession } from "../../test/renderApp";
+import { routeStore } from "../route/routeStore";
 
 const TEAM = [
   { id: "u-owner", email: "asha@alphatravels.in", full_name: "Asha Rao", role: "owner" },
@@ -95,6 +96,67 @@ test("redirects to login when the session expires", async () => {
   await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
   expect(router.state.location.search).toEqual({ redirect: "/team" });
   expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
+});
+
+test("an expired session forgets the scanned route", async () => {
+  onTestFinished(() => routeStore.reset());
+  routeStore.set({ origin: AIRPORTS.DEL, destination: AIRPORTS.BOM });
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": { status: 401, body: { detail: "Your session has expired. Please sign in again." } },
+      "GET /api/v1/invitations": { status: 200, body: [] },
+    }),
+  );
+  const { router } = renderApp("/team");
+  await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
+  expect(routeStore.get()).toEqual({ origin: null, destination: null });
+});
+
+test("after the session expires, the next agency to sign in never sees the previous crew", async () => {
+  let session: "alpha" | "expired" | "beta" = "alpha";
+  let releaseBetaTeam!: () => void;
+  const betaTeamReady = new Promise<void>((resolve) => {
+    releaseBetaTeam = resolve;
+  });
+  const BETA_TEAM = [{ id: "u-beta", email: "meera@betatours.in", full_name: "Meera Iyer", role: "owner" }];
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": async () => {
+        if (session === "alpha") return { status: 200, body: TEAM };
+        if (session === "expired") {
+          return { status: 401, body: { detail: "Your session has expired. Please sign in again." } };
+        }
+        await betaTeamReady;
+        return { status: 200, body: BETA_TEAM };
+      },
+      "GET /api/v1/invitations": { status: 200, body: [] },
+      "POST /api/v1/auth/login": () => {
+        session = "beta";
+        return { status: 200, body: ME_BETA };
+      },
+    }),
+  );
+  const { router, queryClient, user } = renderApp("/team");
+  expect(await screen.findByText("Ravi Kumar")).toBeInTheDocument();
+
+  session = "expired";
+  await act(() => queryClient.invalidateQueries({ queryKey: ["team"] }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
+
+  await user.type(await screen.findByLabelText("Email"), "meera@betatours.in");
+  await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
+  await user.click(screen.getByRole("button", { name: "Engage" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/team"));
+
+  expect(await screen.findByRole("region", { name: "Beta Tours crew" })).toBeInTheDocument();
+  expect(screen.queryByText("Ravi Kumar")).not.toBeInTheDocument();
+  expect(screen.queryByText("ravi@alphatravels.in")).not.toBeInTheDocument();
+  expect(screen.getByText("Loading crew…")).toBeInTheDocument();
+
+  releaseBetaTeam();
+  const table = await screen.findByRole("table", { name: "Crew members" });
+  expect(within(table).getByText("Meera Iyer")).toBeInTheDocument();
+  expect(within(table).queryByText("Ravi Kumar")).not.toBeInTheDocument();
 });
 
 test("a failed roster load shows the server's message and trace ID instead of a table", async () => {

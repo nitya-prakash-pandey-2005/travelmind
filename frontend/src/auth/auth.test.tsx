@@ -1,6 +1,6 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { ME_OWNER } from "../test/fixtures";
+import { ME_BETA, ME_OWNER } from "../test/fixtures";
 import { mockApi } from "../test/mockApi";
 import { renderApp, withSession } from "../test/renderApp";
 import { safeRedirect } from "../router";
@@ -197,4 +197,45 @@ test("a field error for a field the form doesn't show still explains itself", as
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Join the crew" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Some of the information you entered isn't valid.");
+});
+
+test("accepting an invitation into another agency drops the previous agency's cached data", async () => {
+  let session: "alpha" | "beta" = "alpha";
+  let releaseBetaTeam!: () => void;
+  const betaTeamReady = new Promise<void>((resolve) => {
+    releaseBetaTeam = resolve;
+  });
+  const ME_BETA_AGENT = { ...ME_BETA, user: { ...ME_BETA.user, role: "agent" as const } };
+  const ALPHA_TEAM = [
+    { id: "u-owner", email: "asha@alphatravels.in", full_name: "Asha Rao", role: "owner" },
+    { id: "u-agent", email: "ravi@alphatravels.in", full_name: "Ravi Kumar", role: "agent" },
+  ];
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": async () => {
+        if (session === "alpha") return { status: 200, body: ALPHA_TEAM };
+        await betaTeamReady;
+        return { status: 200, body: [{ ...ME_BETA_AGENT.user }] };
+      },
+      "GET /api/v1/invitations": { status: 200, body: [] },
+      "POST /api/v1/invitations/accept": () => {
+        session = "beta";
+        return { status: 201, body: ME_BETA_AGENT };
+      },
+    }),
+  );
+  const { router, user } = renderApp("/");
+  const crewAboard = () => screen.getByText("Crew aboard").nextElementSibling;
+  await waitFor(() => expect(crewAboard()).toHaveTextContent("2"));
+
+  await act(() => router.navigate({ to: "/invite/$token", params: { token: "a-beta.secret-token" } }));
+  await user.type(await screen.findByLabelText("Your name"), "Meera Iyer");
+  await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
+  await user.click(screen.getByRole("button", { name: "Join the crew" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+
+  expect(await screen.findByRole("region", { name: "Beta Tours" })).toBeInTheDocument();
+  expect(crewAboard()).toHaveTextContent("—");
+  releaseBetaTeam();
+  await waitFor(() => expect(crewAboard()).toHaveTextContent("1"));
 });

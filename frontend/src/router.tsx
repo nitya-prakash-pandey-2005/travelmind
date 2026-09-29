@@ -13,6 +13,7 @@ import { NotFound } from "./app/NotFound";
 import { RootRouteError } from "./app/RouteError";
 import { AcceptInvitePage } from "./auth/AcceptInvitePage";
 import { LoginPage } from "./auth/LoginPage";
+import { resetSessionState } from "./auth/resetSessionState";
 import { SignupPage } from "./auth/SignupPage";
 import { MissionControlPage } from "./features/dashboard/MissionControlPage";
 import { TeamPage } from "./features/team/TeamPage";
@@ -117,7 +118,9 @@ export function createAppRouter(queryClient: QueryClient, history?: RouterHistor
     defaultPreload: "intent",
     defaultPendingMinMs: 0,
   });
+  // Registered here (not in api/queryClient) so the api layer never imports feature state.
   setUnauthorizedHandler(() => {
+    resetSessionState(queryClient);
     const { pathname, href } = router.state.location;
     if (PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix))) return;
     void router.navigate({ to: "/login", search: { redirect: href } });

@@ -30,3 +30,9 @@ export const AIRPORTS = {
   LHR: airport("LHR", "London Heathrow Airport", "London", "GB", "United Kingdom", 51.4706, -0.461941),
   JFK: airport("JFK", "John F Kennedy International Airport", "New York", "US", "United States", 40.639801, -73.7789),
 } satisfies Record<string, Airport>;
+
+/** A user of a different agency, for checks that one agency's data never reaches another. */
+export const ME_BETA: Me = {
+  user: { id: "u-beta", email: "meera@betatours.in", full_name: "Meera Iyer", role: "owner" },
+  agency: { id: "a-beta", name: "Beta Tours" },
+};

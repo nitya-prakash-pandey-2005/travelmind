@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { authApi } from "../api/auth";
 import { qk } from "../api/queries";
-import { routeStore } from "../features/route/routeStore";
+import { resetSessionState } from "./resetSessionState";
 
 export function useLogout() {
   const queryClient = useQueryClient();
@@ -10,9 +10,8 @@ export function useLogout() {
   return useMutation({
     mutationFn: () => authApi.logout(),
     onSettled: async () => {
-      routeStore.reset();
+      resetSessionState(queryClient);
       queryClient.setQueryData(qk.me, null);
-      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== qk.me[0] });
       await navigate({ to: "/login" });
     },
   });

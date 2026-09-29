@@ -8,6 +8,7 @@ import { Button } from "../ui/Button";
 import { FormError } from "../ui/FormError";
 import { TextField } from "../ui/TextField";
 import { AuthFrame } from "./AuthFrame";
+import { resetSessionState } from "./resetSessionState";
 
 /** Fields whose server errors show inline next to their input. */
 const INLINE_FIELDS = ["email", "password"] as const;
@@ -22,6 +23,8 @@ export function LoginPage() {
     mutationFn: authApi.login,
     meta: { skipAuthRedirect: true },
     onSuccess: (me) => {
+      // A different user (maybe another agency) may be signing in on this browser: drop the old data first.
+      resetSessionState(queryClient);
       queryClient.setQueryData(qk.me, me);
       router.history.push(search.redirect ?? "/");
     },
