@@ -2,12 +2,20 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { authApi, type SignupInput } from "../api/auth";
-import { ApiError } from "../api/client";
+import { ApiError, needsGeneralError } from "../api/client";
 import { qk } from "../api/queries";
 import { Button } from "../ui/Button";
 import { FormError } from "../ui/FormError";
 import { TextField } from "../ui/TextField";
 import { AuthFrame } from "./AuthFrame";
+
+/** Fields whose server errors show inline next to their input. */
+const INLINE_FIELDS = [
+  "agency_name",
+  "full_name",
+  "email",
+  "password",
+] as const satisfies readonly (keyof SignupInput)[];
 
 const EMPTY: SignupInput = { agency_name: "", full_name: "", email: "", password: "" };
 
@@ -25,7 +33,7 @@ export function SignupPage() {
   });
   const error = signup.error instanceof ApiError ? signup.error : null;
   const fieldErrors = error?.fieldErrors ?? {};
-  const hasFieldErrors = Object.keys(fieldErrors).length > 0;
+  const showGeneralError = error ? needsGeneralError(error, INLINE_FIELDS) : false;
   const update = (field: keyof SignupInput) => (event: React.ChangeEvent<HTMLInputElement>) =>
     setForm((current) => ({ ...current, [field]: event.target.value }));
 
@@ -52,7 +60,7 @@ export function SignupPage() {
           onChange={update("password")}
           error={fieldErrors.password}
         />
-        {error && !hasFieldErrors && <FormError error={error} />}
+        {error && showGeneralError && <FormError error={error} />}
         <Button type="submit" loading={signup.isPending}>
           Create command deck
         </Button>

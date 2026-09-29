@@ -73,3 +73,13 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 export function asApiError(error: unknown): ApiError {
   return error instanceof ApiError ? error : new ApiError(0, "Something went wrong. Please try again.");
 }
+
+/**
+ * A form shows the general message unless every field error is already shown inline on one of
+ * `renderedFields`; otherwise an error for a field the form doesn't render (a URL token, a select)
+ * would leave the user with nothing on screen.
+ */
+export function needsGeneralError(error: ApiError, renderedFields: readonly string[]): boolean {
+  const fields = Object.keys(error.fieldErrors);
+  return fields.length === 0 || fields.some((field) => !renderedFields.includes(field));
+}

@@ -156,6 +156,26 @@ test("an invalid invitation email is reported on the email field", async () => {
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
+test("a role error, which has no inline slot, is shown as a general message", async () => {
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": { status: 200, body: TEAM },
+      "GET /api/v1/invitations": { status: 200, body: [] },
+      "POST /api/v1/invitations": {
+        status: 422,
+        body: {
+          detail: "Some of the information you entered isn't valid.",
+          errors: [{ field: "role", message: "Input should be 'admin' or 'agent'" }],
+        },
+      },
+    }),
+  );
+  const { user } = renderApp("/team");
+  await user.type(await screen.findByLabelText("Crew member email"), "neha@alphatravels.in");
+  await user.click(screen.getByRole("button", { name: "Generate invitation" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Some of the information you entered isn't valid.");
+});
+
 test("a server failure while inviting shows the message and trace ID", async () => {
   mockApi(
     withSession(ME_OWNER, {

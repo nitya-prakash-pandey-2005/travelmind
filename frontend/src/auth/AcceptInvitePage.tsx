@@ -2,12 +2,15 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { authApi } from "../api/auth";
-import { ApiError } from "../api/client";
+import { ApiError, needsGeneralError } from "../api/client";
 import { qk } from "../api/queries";
 import { Button } from "../ui/Button";
 import { FormError } from "../ui/FormError";
 import { TextField } from "../ui/TextField";
 import { AuthFrame } from "./AuthFrame";
+
+/** Fields whose server errors show inline next to their input; the token comes from the link. */
+const INLINE_FIELDS = ["full_name", "password"] as const;
 
 export function AcceptInvitePage() {
   const { token } = useParams({ from: "/invite/$token" });
@@ -25,7 +28,7 @@ export function AcceptInvitePage() {
   });
   const error = accept.error instanceof ApiError ? accept.error : null;
   const fieldErrors = error?.fieldErrors ?? {};
-  const hasFieldErrors = Object.keys(fieldErrors).length > 0;
+  const showGeneralError = error ? needsGeneralError(error, INLINE_FIELDS) : false;
 
   return (
     <AuthFrame title="Join your crew" subtitle="Set your name and password to board your agency's deck.">
@@ -48,7 +51,7 @@ export function AcceptInvitePage() {
           onChange={(e) => setPassword(e.target.value)}
           error={fieldErrors.password}
         />
-        {error && !hasFieldErrors && <FormError error={error} />}
+        {error && showGeneralError && <FormError error={error} />}
         <Button type="submit" loading={accept.isPending}>
           Join the crew
         </Button>

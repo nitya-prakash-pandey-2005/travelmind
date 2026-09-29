@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 import { mockApi } from "../test/mockApi";
 import { ME_OWNER } from "../test/fixtures";
 import { authApi } from "./auth";
-import { ApiError, NETWORK_ERROR_MESSAGE, apiFetch, asApiError } from "./client";
+import { ApiError, NETWORK_ERROR_MESSAGE, apiFetch, asApiError, needsGeneralError } from "./client";
 import { checkHealth } from "./health";
 import { referenceApi } from "./reference";
 
@@ -117,4 +117,13 @@ test("a 200 with a non-JSON body is a plain server error, not null data", async 
 test("a 200 with an empty body rejects with an ApiError", async () => {
   mockApi({ "GET /api/v1/team": { status: 200 } });
   await expect(apiFetch("/api/v1/team")).rejects.toBeInstanceOf(ApiError);
+});
+
+test("a form needs the general message unless every field error is shown inline", () => {
+  const inline = ["email", "password"] as const;
+  expect(needsGeneralError(new ApiError(409, "Taken"), inline)).toBe(true);
+  expect(needsGeneralError(new ApiError(422, "Invalid", { email: "Bad email" }), inline)).toBe(false);
+  expect(needsGeneralError(new ApiError(422, "Invalid", { email: "Bad", password: "Short" }), inline)).toBe(false);
+  expect(needsGeneralError(new ApiError(422, "Invalid", { token: "Too short" }), inline)).toBe(true);
+  expect(needsGeneralError(new ApiError(422, "Invalid", { email: "Bad", role: "Unknown" }), inline)).toBe(true);
 });

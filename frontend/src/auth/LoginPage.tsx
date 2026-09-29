@@ -2,12 +2,15 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { authApi } from "../api/auth";
-import { ApiError } from "../api/client";
+import { ApiError, needsGeneralError } from "../api/client";
 import { qk } from "../api/queries";
 import { Button } from "../ui/Button";
 import { FormError } from "../ui/FormError";
 import { TextField } from "../ui/TextField";
 import { AuthFrame } from "./AuthFrame";
+
+/** Fields whose server errors show inline next to their input. */
+const INLINE_FIELDS = ["email", "password"] as const;
 
 export function LoginPage() {
   const search = useSearch({ from: "/login" });
@@ -24,7 +27,7 @@ export function LoginPage() {
     },
   });
   const error = login.error instanceof ApiError ? login.error : null;
-  const hasFieldErrors = error ? Object.keys(error.fieldErrors).length > 0 : false;
+  const showGeneralError = error ? needsGeneralError(error, INLINE_FIELDS) : false;
 
   return (
     <AuthFrame title="Mission access" subtitle="Sign in to your agency's command deck.">
@@ -54,7 +57,7 @@ export function LoginPage() {
           onChange={(event) => setPassword(event.target.value)}
           error={error?.fieldErrors.password}
         />
-        {error && !hasFieldErrors && <FormError error={error} />}
+        {error && showGeneralError && <FormError error={error} />}
         <Button type="submit" loading={login.isPending}>
           Engage
         </Button>

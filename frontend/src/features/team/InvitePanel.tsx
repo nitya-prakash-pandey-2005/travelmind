@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ApiError, asApiError } from "../../api/client";
+import { ApiError, asApiError, needsGeneralError } from "../../api/client";
 import { invitationsQueryOptions, qk } from "../../api/queries";
 import { teamApi } from "../../api/team";
 import type { InvitationCreated } from "../../api/types";
@@ -12,6 +12,9 @@ import { Panel } from "../../ui/Panel";
 import { TextField } from "../../ui/TextField";
 
 type InviteRole = "agent" | "admin";
+
+/** Fields whose server errors show inline next to their input; the role select has no error slot. */
+const INLINE_FIELDS = ["email"] as const;
 
 export function InvitePanel() {
   const queryClient = useQueryClient();
@@ -31,7 +34,7 @@ export function InvitePanel() {
   });
   const error = invite.error instanceof ApiError ? invite.error : null;
   const fieldErrors = error?.fieldErrors ?? {};
-  const hasFieldErrors = Object.keys(fieldErrors).length > 0;
+  const showGeneralError = error ? needsGeneralError(error, INLINE_FIELDS) : false;
   const link = created ? `${window.location.origin}/invite/${created.token}` : "";
 
   const copy = async () => {
@@ -75,7 +78,7 @@ export function InvitePanel() {
             <option value="admin">Admin</option>
           </select>
         </div>
-        {error && !hasFieldErrors && <FormError error={error} />}
+        {error && showGeneralError && <FormError error={error} />}
         <Button type="submit" loading={invite.isPending}>
           Generate invitation
         </Button>

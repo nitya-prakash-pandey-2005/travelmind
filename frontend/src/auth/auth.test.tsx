@@ -179,3 +179,22 @@ test("a dead invitation link explains itself", async () => {
   await user.click(screen.getByRole("button", { name: "Join the crew" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("This invitation link is invalid or has expired.");
 });
+
+test("a field error for a field the form doesn't show still explains itself", async () => {
+  mockApi(
+    withSession(null, {
+      "POST /api/v1/invitations/accept": {
+        status: 422,
+        body: {
+          detail: "Some of the information you entered isn't valid.",
+          errors: [{ field: "token", message: "String should have at least 10 characters" }],
+        },
+      },
+    }),
+  );
+  const { user } = renderApp("/invite/short");
+  await user.type(await screen.findByLabelText("Your name"), "Ravi Kumar");
+  await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
+  await user.click(screen.getByRole("button", { name: "Join the crew" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Some of the information you entered isn't valid.");
+});
