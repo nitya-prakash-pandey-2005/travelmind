@@ -10,6 +10,16 @@ os.environ["TM_MIGRATION_DATABASE_URL"] = os.environ.get(
     "postgresql+asyncpg://travelmind_owner:owner_dev_pw@localhost:5433/travelmind_test",
 )
 os.environ["TM_REDIS_URL"] = os.environ.get("TM_TEST_REDIS_URL", "redis://localhost:6380/15")
+# Tests never talk to real suppliers or FX feeds, whatever backend/.env contains.
+for _key in (
+    "TM_DUFFEL_TOKEN",
+    "TM_LITEAPI_KEY",
+    "TM_GOOGLE_TIM_API_KEY",
+    "TM_TRAVELPAYOUTS_TOKEN",
+):
+    os.environ[_key] = ""
+os.environ["TM_FX_ENABLED"] = "false"
+os.environ.pop("TM_SANDBOX_SUPPLIER", None)
 
 from pathlib import Path  # noqa: E402
 
