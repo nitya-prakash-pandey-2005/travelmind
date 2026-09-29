@@ -96,3 +96,81 @@ test("redirects to login when the session expires", async () => {
   expect(router.state.location.search).toEqual({ redirect: "/team" });
   expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
 });
+
+test("a failed roster load shows the server's message and trace ID instead of a table", async () => {
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": {
+        status: 500,
+        body: { detail: "Something went wrong on our side. Please try again.", trace_id: "trace-team-1" },
+      },
+      "GET /api/v1/invitations": { status: 200, body: [] },
+    }),
+  );
+  renderApp("/team");
+  const roster = await screen.findByRole("region", { name: "Alpha Travels crew" });
+  const alert = await within(roster).findByRole("alert");
+  expect(alert).toHaveTextContent("Something went wrong on our side. Please try again.");
+  expect(alert).toHaveTextContent("Trace ID: trace-team-1");
+  expect(screen.queryByRole("table", { name: "Crew members" })).not.toBeInTheDocument();
+});
+
+test("a failed invitations load shows the server's message and never claims nothing is pending", async () => {
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": { status: 200, body: TEAM },
+      "GET /api/v1/invitations": {
+        status: 500,
+        body: { detail: "Something went wrong on our side. Please try again.", trace_id: "trace-inv-1" },
+      },
+    }),
+  );
+  renderApp("/team");
+  const invitePanel = await screen.findByRole("region", { name: "Invite crew" });
+  const alert = await within(invitePanel).findByRole("alert");
+  expect(alert).toHaveTextContent("Something went wrong on our side. Please try again.");
+  expect(alert).toHaveTextContent("Trace ID: trace-inv-1");
+  expect(screen.queryByText("No pending invitations.")).not.toBeInTheDocument();
+});
+
+test("an invalid invitation email is reported on the email field", async () => {
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": { status: 200, body: TEAM },
+      "GET /api/v1/invitations": { status: 200, body: [] },
+      "POST /api/v1/invitations": {
+        status: 422,
+        body: {
+          detail: "Some of the information you entered isn't valid.",
+          errors: [{ field: "email", message: "value is not a valid email address" }],
+        },
+      },
+    }),
+  );
+  const { user } = renderApp("/team");
+  await user.type(await screen.findByLabelText("Crew member email"), "not-an-email");
+  await user.click(screen.getByRole("button", { name: "Generate invitation" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Crew member email")).toHaveAccessibleDescription("value is not a valid email address"),
+  );
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("a server failure while inviting shows the message and trace ID", async () => {
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": { status: 200, body: TEAM },
+      "GET /api/v1/invitations": { status: 200, body: [] },
+      "POST /api/v1/invitations": {
+        status: 500,
+        body: { detail: "Something went wrong on our side. Please try again.", trace_id: "trace-post-1" },
+      },
+    }),
+  );
+  const { user } = renderApp("/team");
+  await user.type(await screen.findByLabelText("Crew member email"), "neha@alphatravels.in");
+  await user.click(screen.getByRole("button", { name: "Generate invitation" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Something went wrong on our side. Please try again.");
+  expect(alert).toHaveTextContent("Trace ID: trace-post-1");
+});

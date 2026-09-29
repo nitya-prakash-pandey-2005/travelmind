@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ApiError } from "../../api/client";
+import { ApiError, asApiError } from "../../api/client";
 import { invitationsQueryOptions, qk } from "../../api/queries";
 import { teamApi } from "../../api/team";
 import type { InvitationCreated } from "../../api/types";
@@ -105,7 +105,13 @@ export function InvitePanel() {
       )}
 
       <h3 className="mb-2 mt-6 font-mono text-[11px] uppercase tracking-[0.22em] text-dim">Pending</h3>
-      {pending.data && pending.data.length > 0 ? (
+      {pending.isPending ? (
+        <p role="status" className="font-mono text-xs uppercase tracking-[0.2em] text-dim">
+          Loading invitations…
+        </p>
+      ) : pending.isError ? (
+        <FormError error={asApiError(pending.error)} />
+      ) : pending.data.length > 0 ? (
         <ul aria-label="Pending invitations" className="flex flex-col gap-2">
           {pending.data.map((invitation) => (
             <li key={invitation.id} className="flex items-center justify-between gap-2 text-sm">
