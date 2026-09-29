@@ -87,3 +87,24 @@ async def clean_redis():
     await client.flushdb()
     await client.aclose()
     yield
+
+
+@pytest.fixture
+async def airports():
+    """Load the reference fixture airports (DEL, BOM, GOI, GOX, GOA, GRU, …) and a fresh index."""
+    from tests.reference.data import fixture_text
+    from travelmind.reference.importer import load_reference_data, parse_airports, parse_countries
+    from travelmind.reference.service import reset_airport_index
+
+    reset_airport_index()
+    engine = create_async_engine(os.environ["TM_MIGRATION_DATABASE_URL"], poolclass=NullPool)
+    try:
+        await load_reference_data(
+            engine,
+            parse_countries(fixture_text("countries.csv")),
+            parse_airports(fixture_text("airports.csv")),
+        )
+    finally:
+        await engine.dispose()
+    yield
+    reset_airport_index()

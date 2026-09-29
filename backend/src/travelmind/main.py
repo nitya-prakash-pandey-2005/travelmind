@@ -14,6 +14,7 @@ from travelmind.middleware import (
     validation_exception_handler,
 )
 from travelmind.observability import configure_logging
+from travelmind.offers.router import flights_router, suppliers_router
 from travelmind.reference.router import reference_router
 
 
@@ -42,4 +43,6 @@ def create_app() -> FastAPI:
     app.include_router(invitations_router)
     app.include_router(team_router)
     app.include_router(reference_router)
+    app.include_router(flights_router)
+    app.include_router(suppliers_router)
     return app

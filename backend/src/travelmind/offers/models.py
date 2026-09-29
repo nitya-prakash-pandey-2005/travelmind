@@ -1,7 +1,14 @@
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    Field,
+    StringConstraints,
+    computed_field,
+    model_validator,
+)
 
 from travelmind.offers.money import Money, normalise_code
 
@@ -66,6 +73,7 @@ class Slice(BaseModel):
     fare_brand: str | None = None
     segments: list[Segment]
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def stops(self) -> int:
         return max(len(self.segments) - 1, 0)
@@ -103,10 +111,12 @@ class FlightOffer(BaseModel):
     fetched_at: datetime
     expires_at: datetime | None = None
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def stops(self) -> int:
         return max((s.stops for s in self.slices), default=0)
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def total_duration_minutes(self) -> int | None:
         durations = [s.duration_minutes for s in self.slices]
