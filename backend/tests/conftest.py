@@ -16,6 +16,7 @@ from pathlib import Path  # noqa: E402
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
+from redis.asyncio import Redis  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
@@ -66,3 +67,11 @@ def app():
 async def client(app):
     async with make_client(app) as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+async def clean_redis():
+    client = Redis.from_url(os.environ["TM_REDIS_URL"])
+    await client.flushdb()
+    await client.aclose()
+    yield

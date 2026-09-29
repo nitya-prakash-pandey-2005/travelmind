@@ -1,4 +1,5 @@
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, BeforeValidator, EmailStr, StringConstraints
@@ -53,3 +54,36 @@ class AgencyOut(BaseModel):
 class MeResponse(BaseModel):
     user: UserOut
     agency: AgencyOut
+
+
+InvitableRole = Literal["admin", "agent"]
+
+
+class InvitationCreate(BaseModel):
+    email: NormalizedEmail
+    role: InvitableRole
+
+
+class InvitationOut(BaseModel):
+    id: UUID
+    email: str
+    role: str
+    created_at: datetime
+    expires_at: datetime
+
+
+class InvitationCreated(InvitationOut):
+    token: str
+
+
+class InvitationAccept(BaseModel):
+    token: Annotated[str, StringConstraints(min_length=10, max_length=200)]
+    full_name: PersonName
+    password: NewPassword
+
+
+class TeamMember(BaseModel):
+    id: UUID
+    email: str
+    full_name: str
+    role: str

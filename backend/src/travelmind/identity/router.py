@@ -1,16 +1,31 @@
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+
+from travelmind.cache import RedisClient
 from travelmind.config import get_settings
 from travelmind.db import DbSession
-from travelmind.identity import service
+from travelmind.identity import invitations, service
 from travelmind.identity.cookies import clear_session_cookie, set_session_cookie
-from travelmind.identity.deps import AuthedUser, session_context
+from travelmind.identity.deps import (
+    AuthedUser,
+    CurrentUser,
+    client_ip,
+    require_role,
+    session_context,
+)
 from travelmind.identity.models import Agency, User
+from travelmind.identity.ratelimit import LoginRateLimiter
 from travelmind.identity.schemas import (
     AgencyOut,
+    InvitationAccept,
+    InvitationCreate,
+    InvitationCreated,
+    InvitationOut,
     LoginRequest,
     MeResponse,
     SignupRequest,
+    TeamMember,
     UserOut,
 )
 
@@ -47,14 +62,28 @@ async def signup_route(
 
 @auth_router.post("/login")
 async def login_route(
-    body: LoginRequest, request: Request, response: Response, db: DbSession
+    body: LoginRequest,
+    request: Request,
+    response: Response,
+    db: DbSession,
+    redis: RedisClient,
 ) -> MeResponse:
+    settings = get_settings()
+    limiter = LoginRateLimiter(redis, settings.login_max_attempts, settings.login_window_seconds)
+    key = f"rl:login:{client_ip(request) or 'unknown'}:{body.email}"
+    if not await limiter.hit(key):
+        minutes = settings.login_window_seconds // 60
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"Too many sign-in attempts. Please wait {minutes} minutes and try again.",
+        )
     try:
         user, agency, token = await service.login(
             db, email=body.email, password=body.password, ctx=session_context(request)
         )
     except service.InvalidCredentials:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password.") from None
+    await limiter.reset(key)
     set_session_cookie(response, token)
     return me_response(user, agency)
 
@@ -73,3 +102,71 @@ async def logout_route(request: Request, db: DbSession) -> Response:
 async def me_route(current: AuthedUser, db: DbSession) -> MeResponse:
     user, agency = await service.get_user_and_agency(db, current.id)
     return me_response(user, agency)
+
+
+invitations_router = APIRouter(prefix="/api/v1/invitations", tags=["team"])
+team_router = APIRouter(prefix="/api/v1/team", tags=["team"])
+ManagerUser = Annotated[CurrentUser, Depends(require_role("owner", "admin"))]
+
+
+@invitations_router.post("", status_code=status.HTTP_201_CREATED)
+async def create_invitation_route(
+    body: InvitationCreate, current: ManagerUser, db: DbSession
+) -> InvitationCreated:
+    try:
+        invitation, token = await invitations.create_invitation(
+            db,
+            agency_id=current.agency_id,
+            invited_by_user_id=current.id,
+            email=body.email,
+            role=body.role,
+        )
+    except invitations.InvitationConflict:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "This person already has a TravelMind account."
+        ) from None
+    return InvitationCreated(
+        id=invitation.id,
+        email=invitation.email,
+        role=invitation.role,
+        created_at=invitation.created_at,
+        expires_at=invitation.expires_at,
+        token=token,
+    )
+
+
+@invitations_router.get("")
+async def list_invitations_route(current: ManagerUser, db: DbSession) -> list[InvitationOut]:
+    pending = await invitations.list_pending_invitations(db, current.agency_id)
+    return [
+        InvitationOut(
+            id=i.id, email=i.email, role=i.role, created_at=i.created_at, expires_at=i.expires_at
+        )
+        for i in pending
+    ]
+
+
+@invitations_router.post("/accept", status_code=status.HTTP_201_CREATED)
+async def accept_invitation_route(
+    body: InvitationAccept, request: Request, response: Response, db: DbSession
+) -> MeResponse:
+    try:
+        user, agency, token = await invitations.accept_invitation(
+            db,
+            token=body.token,
+            full_name=body.full_name,
+            password=body.password,
+            ctx=session_context(request),
+        )
+    except invitations.InvalidInvitation:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, invitations.INVALID_INVITATION_MESSAGE
+        ) from None
+    set_session_cookie(response, token)
+    return me_response(user, agency)
+
+
+@team_router.get("")
+async def team_route(current: AuthedUser, db: DbSession) -> list[TeamMember]:
+    members = await service.list_team(db, current.agency_id)
+    return [TeamMember(id=m.id, email=m.email, full_name=m.full_name, role=m.role) for m in members]
