@@ -44,7 +44,7 @@ test.each([
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/"));
-  expect(await screen.findByRole("heading", { name: "Mission Control" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Welcome aboard, Asha" })).toBeInTheDocument();
 });
 
 test("keeps the query string of a same-site redirect", async () => {

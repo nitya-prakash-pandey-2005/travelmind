@@ -30,7 +30,7 @@ export function Panel({ title, eyebrow, actions, tone = "default", className, ch
         <span key={corner} aria-hidden="true" className={cn("pointer-events-none absolute h-3 w-3", corner, accent)} />
       ))}
       {(title || eyebrow || actions) && (
-        <header className="mb-3 flex items-start justify-between gap-3">
+        <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             {eyebrow && (
               <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-dim">{eyebrow}</p>
@@ -42,7 +42,7 @@ export function Panel({ title, eyebrow, actions, tone = "default", className, ch
             )}
           </div>
           {actions}
-        </header>
+        </div>
       )}
       {children}
     </section>

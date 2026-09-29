@@ -11,7 +11,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tailwindcss()],
     server: { port: 5173, strictPort: true, proxy },
+    // Pre-bundle the lazily imported globe stack so the dev server doesn't reload the page on first use.
+    optimizeDeps: { include: ["react-globe.gl", "three", "topojson-client"] },
     preview: { port: 4173, strictPort: true, proxy },
-    build: { chunkSizeWarningLimit: 1600 },
+    // The lazy RouteGlobe chunk (three.js + react-globe.gl + world atlas, ~2.1 MB / ~590 kB gzip)
+    // is only fetched when the globe mounts; the entry chunk stays well under this limit.
+    build: { chunkSizeWarningLimit: 2400 },
   };
 });

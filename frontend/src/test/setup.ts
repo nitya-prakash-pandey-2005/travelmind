@@ -28,6 +28,9 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 Element.prototype.scrollIntoView ??= function scrollIntoView() {};
 // jsdom defines scrollTo but only logs "Not implemented"; the router calls it on navigation.
 window.scrollTo = (() => {}) as typeof window.scrollTo;
+// jsdom has no canvas: getContext returns null after logging "Not implemented". Return null quietly
+// so the WebGL probe sees "no WebGL", exactly as on a device without it.
+HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 
 afterEach(() => {
   cleanup();
