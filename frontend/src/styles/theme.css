@@ -1,0 +1,55 @@
+/* Design tokens. The only place colour values live; everything else uses these variables. */
+:root,
+[data-theme="dark"] {
+  --tm-void: #05070d;
+  --tm-deck: #0a0f1c;
+  --tm-raised: #0f1729;
+  --tm-line: #1c2a44;
+  --tm-grid-line: rgb(56 189 248 / 0.07);
+  --tm-text: #e6f1ff;
+  --tm-text-dim: #8aa0bf;
+  --tm-primary: #22d3ee;
+  --tm-primary-ink: #03141a;
+  --tm-warn: #fbbf24;
+  --tm-ai: #e879f9;
+  --tm-ok: #34d399;
+  --tm-danger: #fb7185;
+  --tm-globe-land: #1f6f8b;
+  --tm-globe-ocean: #07101f;
+}
+
+[data-theme="daylight"] {
+  --tm-void: #f3f6fb;
+  --tm-deck: #ffffff;
+  --tm-raised: #eef3fa;
+  --tm-line: #cfd9e8;
+  --tm-grid-line: rgb(14 116 144 / 0.06);
+  --tm-text: #0b1526;
+  --tm-text-dim: #4a5b75;
+  --tm-primary: #0e7490;
+  --tm-primary-ink: #ffffff;
+  --tm-warn: #b45309;
+  --tm-ai: #a21caf;
+  --tm-ok: #047857;
+  --tm-danger: #be123c;
+  --tm-globe-land: #6aa8c2;
+  --tm-globe-ocean: #e3edf7;
+}
+
+@theme inline {
+  --color-void: var(--tm-void);
+  --color-deck: var(--tm-deck);
+  --color-raised: var(--tm-raised);
+  --color-line: var(--tm-line);
+  --color-ink: var(--tm-text);
+  --color-dim: var(--tm-text-dim);
+  --color-primary: var(--tm-primary);
+  --color-primary-ink: var(--tm-primary-ink);
+  --color-warn: var(--tm-warn);
+  --color-ai: var(--tm-ai);
+  --color-ok: var(--tm-ok);
+  --color-danger: var(--tm-danger);
+  --font-display: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
