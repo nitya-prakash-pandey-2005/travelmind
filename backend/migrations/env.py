@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 import travelmind.audit.models  # noqa: F401  (register tables)
 import travelmind.identity.models  # noqa: F401
+import travelmind.reference.models  # noqa: F401
 from travelmind.config import get_settings
 from travelmind.db import Base
 
