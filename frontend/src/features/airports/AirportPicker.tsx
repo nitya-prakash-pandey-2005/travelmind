@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
 import type { Airport } from "../../api/types";
 import { Button } from "../../ui/Button";
@@ -19,6 +19,16 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const { results, enabled, isSearching, isStale, error } = useAirportSearch(term);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const changeRef = useRef<HTMLButtonElement>(null);
+  // Picking or pressing Change swaps the input and the button, so focus would fall to <body>.
+  // Only the user's own action moves focus; a value set elsewhere (palette, recent route) must not.
+  const pendingFocus = useRef<"change" | "input" | null>(null);
+  useEffect(() => {
+    if (pendingFocus.current === "change") changeRef.current?.focus();
+    else if (pendingFocus.current === "input") inputRef.current?.focus();
+    pendingFocus.current = null;
+  });
 
   if (value) {
     return (
@@ -31,7 +41,16 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
           </p>
           <p className="truncate text-xs text-dim">{[value.city, value.country_name].filter(Boolean).join(", ")}</p>
         </div>
-        <Button variant="ghost" size="sm" aria-label={`Change ${label}`} onClick={() => onChange(null)}>
+        <Button
+          ref={changeRef}
+          variant="ghost"
+          size="sm"
+          aria-label={`Change ${label}`}
+          onClick={() => {
+            pendingFocus.current = "input";
+            onChange(null);
+          }}
+        >
           Change
         </Button>
       </div>
@@ -39,6 +58,7 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
   }
 
   const choose = (airport: Airport) => {
+    pendingFocus.current = "change";
     onChange(airport);
     setTerm("");
     setOpen(false);
@@ -56,6 +76,7 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
         {label}
       </label>
       <input
+        ref={inputRef}
         id={id}
         role="combobox"
         aria-expanded={showList}

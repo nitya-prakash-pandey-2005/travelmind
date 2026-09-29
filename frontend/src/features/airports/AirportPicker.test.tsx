@@ -104,3 +104,38 @@ test("backspacing below two letters closes the list immediately", async () => {
   expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   expect(screen.getByText("Type at least 2 letters")).toBeInTheDocument();
 });
+
+test("focus follows the pick to the Change button, and Change returns it to the search box", async () => {
+  mockApi({ "GET /api/v1/reference/airports": goaResults });
+  const { user } = renderWithClient(<Harness />);
+  await user.type(screen.getByRole("combobox", { name: "From" }), "goa");
+  await screen.findByRole("option", { name: /GOI/ });
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("button", { name: "Change From" })).toHaveFocus();
+
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("combobox", { name: "From" })).toHaveFocus();
+});
+
+test("clicking an option and then Change keeps focus inside the picker", async () => {
+  mockApi({ "GET /api/v1/reference/airports": goaResults });
+  const { user } = renderWithClient(<Harness />);
+  await user.type(screen.getByRole("combobox", { name: "From" }), "goa");
+  await user.click(await screen.findByRole("option", { name: /GOX/ }));
+  expect(screen.getByRole("button", { name: "Change From" })).toHaveFocus();
+  await user.click(screen.getByRole("button", { name: "Change From" }));
+  expect(screen.getByRole("combobox", { name: "From" })).toHaveFocus();
+});
+
+test("an airport set by someone else does not steal focus", async () => {
+  const outside = document.createElement("button");
+  document.body.append(outside);
+  outside.focus();
+  const { rerender } = renderWithClient(<AirportPicker label="From" value={AIRPORTS.DEL} onChange={() => {}} />);
+  expect(outside).toHaveFocus();
+  rerender(<AirportPicker label="From" value={null} onChange={() => {}} />);
+  expect(outside).toHaveFocus();
+  rerender(<AirportPicker label="From" value={AIRPORTS.BOM} onChange={() => {}} />);
+  expect(outside).toHaveFocus();
+  outside.remove();
+});
