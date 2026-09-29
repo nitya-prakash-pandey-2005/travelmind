@@ -98,11 +98,12 @@ async def test_unknown_flights_fall_back_to_route_typical(respx_mock):
     assert (offer.co2_kg_per_passenger, offer.co2_source) == (296, "google_tim_typical")
 
 
+@pytest.mark.respx(assert_all_called=False)
 async def test_supplier_figures_are_kept_unless_flight_data_exists(respx_mock):
     respx_mock.post(FLIGHTS).mock(
         return_value=httpx.Response(200, json={"flightEmissions": [{"flight": {}}]})
     )
-    respx_mock.post(TYPICAL).mock(
+    typical = respx_mock.post(TYPICAL).mock(
         return_value=httpx.Response(
             200,
             json={
@@ -124,6 +125,68 @@ async def test_supplier_figures_are_kept_unless_flight_data_exists(respx_mock):
     finally:
         await redis.aclose()
     assert (offer.co2_kg_per_passenger, offer.co2_source) == (105, "supplier")
+    # Typical data can never replace a supplier figure, so it isn't even requested.
+    assert typical.call_count == 0
+
+
+async def test_flight_data_replaces_a_supplier_figure(respx_mock):
+    respx_mock.post(FLIGHTS).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "flightEmissions": [
+                    {"emissionsGramsPerPax": grams(410_000)},
+                    {"emissionsGramsPerPax": grams(820_000)},
+                ]
+            },
+        )
+    )
+    supplied = known_connection().model_copy(
+        update={"co2_kg_per_passenger": 1500, "co2_source": "supplier"}
+    )
+    redis = await redis_client()
+    try:
+        [offer] = await TimClient("tim-key", redis).enrich([supplied], "economy")
+    finally:
+        await redis.aclose()
+    assert (offer.co2_kg_per_passenger, offer.co2_source) == (1230, "google_tim")
+
+
+async def test_one_unknown_leg_means_route_typical_for_the_whole_offer(respx_mock):
+    respx_mock.post(FLIGHTS).mock(
+        return_value=httpx.Response(
+            200,
+            json={"flightEmissions": [{"emissionsGramsPerPax": grams(410_000)}, {"flight": {}}]},
+        )
+    )
+    typical = respx_mock.post(TYPICAL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "typicalFlightEmissions": [
+                    {
+                        "market": {"origin": "LHR", "destination": "DXB"},
+                        "emissionsGramsPerPax": grams(300_000),
+                    },
+                    {
+                        "market": {"origin": "DXB", "destination": "SYD"},
+                        "emissionsGramsPerPax": grams(700_000),
+                    },
+                ]
+            },
+        )
+    )
+    redis = await redis_client()
+    try:
+        [offer] = await TimClient("tim-key", redis).enrich([known_connection()], "economy")
+    finally:
+        await redis.aclose()
+    assert (offer.co2_kg_per_passenger, offer.co2_source) == (1000, "google_tim_typical")
+    sent = json.loads(typical.calls.last.request.content)["markets"]
+    assert sorted((m["origin"], m["destination"]) for m in sent) == [
+        ("DXB", "SYD"),
+        ("LHR", "DXB"),
+    ]
 
 
 async def test_results_are_cached(respx_mock):

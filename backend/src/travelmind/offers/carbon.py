@@ -121,12 +121,23 @@ class TimClient:
         }
         if not candidates:
             return offers
-        segments = {
-            id(s): s for o in offers if id(o) in candidates for sl in o.slices for s in sl.segments
+        legs_of = {
+            id(o): [s for sl in o.slices for s in sl.segments]
+            for o in offers
+            if id(o) in candidates
         }
+        segments = {id(s): s for legs in legs_of.values() for s in legs}
         flights = await self._flight_emissions([s for s in segments.values() if _flight_key(s)])
+        per_flight_kg = {
+            oid: _kg([(flights.get(_flight_key(s) or "") or {}).get(field) for s in legs])
+            for oid, legs in legs_of.items()
+        }
+        # Typical data only fills offers without a figure, and then covers every leg of the offer.
         needs_typical = [
-            s for s in segments.values() if not (flights.get(_flight_key(s) or "") or {}).get(field)
+            s
+            for o in offers
+            if id(o) in candidates and o.co2_source != "supplier" and per_flight_kg[id(o)] is None
+            for s in legs_of[id(o)]
         ]
         markets = await self._typical_emissions(needs_typical) if needs_typical else {}
 
@@ -135,8 +146,8 @@ class TimClient:
             if id(offer) not in candidates:
                 enriched.append(offer)
                 continue
-            legs = [s for sl in offer.slices for s in sl.segments]
-            per_flight = _kg([(flights.get(_flight_key(s) or "") or {}).get(field) for s in legs])
+            legs = legs_of[id(offer)]
+            per_flight = per_flight_kg[id(offer)]
             if per_flight is not None:
                 update = {"co2_kg_per_passenger": per_flight, "co2_source": "google_tim"}
                 enriched.append(offer.model_copy(update=update))
@@ -160,7 +171,7 @@ class TimClient:
         try:
             values = await self._redis.mget([f"{prefix}{k}" for k in keys])
         except RedisError as exc:
-            log.warning("tim_cache_unavailable", error=str(exc))
+            log.warning("tim_cache_unavailable", error_type=type(exc).__name__)
             return found
         for key, raw in zip(keys, values, strict=True):
             if raw is None:
@@ -183,7 +194,7 @@ class TimClient:
                     )
                 await pipe.execute()
         except RedisError as exc:
-            log.warning("tim_cache_unavailable", error=str(exc))
+            log.warning("tim_cache_unavailable", error_type=type(exc).__name__)
 
     async def _post(self, method: str, body: dict[str, Any]) -> dict[str, Any] | None:
         try:
