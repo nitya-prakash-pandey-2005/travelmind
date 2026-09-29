@@ -18,7 +18,7 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
   const [term, setTerm] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const { results, enabled, isSearching, error } = useAirportSearch(term);
+  const { results, enabled, isSearching, isStale, error } = useAirportSearch(term);
 
   if (value) {
     return (
@@ -44,8 +44,10 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
     setOpen(false);
   };
   const showList = open && enabled;
-  const activeOption = showList ? results[active] : undefined;
-  const errorMessage = error ? (error instanceof ApiError ? error.message : "Airport search failed.") : null;
+  // Results from an earlier term stay visible (dimmed) but cannot be picked until the live term's results arrive.
+  const activeOption = showList && !isStale ? results[active] : undefined;
+  const errorMessage =
+    error && !isStale ? (error instanceof ApiError ? error.message : "Airport search failed.") : null;
   const trimmed = term.trim();
 
   return (
@@ -103,14 +105,18 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
               key={airport.iata_code}
               id={`${id}-opt-${index}`}
               role="option"
-              aria-selected={index === active}
+              aria-selected={!isStale && index === active}
+              aria-disabled={isStale || undefined}
               className={cn(
-                "flex cursor-pointer items-baseline gap-3 px-3 py-2 text-sm",
-                index === active ? "bg-primary/15 text-ink" : "text-dim",
+                "flex items-baseline gap-3 px-3 py-2 text-sm",
+                isStale ? "cursor-wait opacity-50" : "cursor-pointer",
+                !isStale && index === active ? "bg-primary/15 text-ink" : "text-dim",
               )}
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => setActive(index)}
-              onClick={() => choose(airport)}
+              onClick={() => {
+                if (!isStale) choose(airport);
+              }}
             >
               <span className="w-10 shrink-0 font-mono text-primary">{airport.iata_code}</span>
               <span className="min-w-0 flex-1">
@@ -121,12 +127,12 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
               </span>
             </li>
           ))}
-          {isSearching && results.length === 0 && (
+          {(isStale || (isSearching && results.length === 0)) && (
             <li role="presentation" className="px-3 py-2 font-mono text-xs uppercase tracking-[0.2em] text-dim">
               Scanning…
             </li>
           )}
-          {!isSearching && !errorMessage && results.length === 0 && (
+          {!isStale && !isSearching && !errorMessage && results.length === 0 && (
             <li role="presentation" className="px-3 py-2 text-sm text-dim">
               No airports match “{trimmed}”
             </li>
