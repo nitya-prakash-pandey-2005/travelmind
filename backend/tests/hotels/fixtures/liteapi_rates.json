@@ -1,0 +1,46 @@
+{
+  "data": [
+    {
+      "hotelId": "lp1897",
+      "roomTypes": [
+        {
+          "offerId": "offer-king",
+          "offerRetailRate": { "amount": 9420.5, "currency": "INR" },
+          "rates": [
+            {
+              "rateId": "r1",
+              "name": "Deluxe King Room",
+              "boardType": "BB",
+              "boardName": "Bed & Breakfast",
+              "retailRate": { "total": [{ "amount": 9420.5, "currency": "INR" }] },
+              "cancellationPolicies": {
+                "refundableTag": "RFN",
+                "cancelPolicyInfos": [{ "cancelTime": "2026-11-18 12:00:00", "amount": 9420.5, "currency": "INR", "type": "amount", "timezone": "GMT" }]
+              }
+            }
+          ]
+        },
+        {
+          "offerId": "offer-suite",
+          "offerRetailRate": { "amount": 15800, "currency": "INR" },
+          "rates": [{ "rateId": "r2", "name": "Suite", "boardType": "RO", "boardName": "Room Only", "retailRate": { "total": [{ "amount": 15800, "currency": "INR" }] }, "cancellationPolicies": { "refundableTag": "NRFN", "cancelPolicyInfos": [] } }]
+        }
+      ]
+    },
+    {
+      "hotelId": "lp2044",
+      "roomTypes": [
+        {
+          "offerId": "offer-twin",
+          "offerRetailRate": { "amount": 6100, "currency": "INR" },
+          "rates": [{ "rateId": "r3", "name": "Standard Twin", "boardType": "RO", "boardName": "Room Only", "retailRate": { "total": [{ "amount": 6100, "currency": "INR" }] }, "cancellationPolicies": { "refundableTag": "NRFN", "cancelPolicyInfos": [] } }]
+        }
+      ]
+    }
+  ],
+  "sandbox": true,
+  "hotels": [
+    { "id": "lp1897", "name": "Harbour View Mumbai", "address": "12 Marine Drive, Mumbai", "stars": 5, "rating": 8.9, "main_photo": "https://static.example/lp1897.jpg" },
+    { "id": "lp2044", "name": "Airport Lodge Andheri", "address": "Andheri East, Mumbai", "stars": 3, "rating": 7.4, "main_photo": null }
+  ]
+}

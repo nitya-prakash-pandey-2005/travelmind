@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from travelmind.config import get_settings
 from travelmind.health import router as health_router
+from travelmind.hotels.router import hotels_router
 from travelmind.identity.router import auth_router, invitations_router, team_router
 from travelmind.middleware import (
     REQUEST_ID_HEADER,
@@ -45,4 +46,5 @@ def create_app() -> FastAPI:
     app.include_router(reference_router)
     app.include_router(flights_router)
     app.include_router(suppliers_router)
+    app.include_router(hotels_router)
     return app
