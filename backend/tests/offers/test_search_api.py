@@ -4,11 +4,13 @@ from pathlib import Path
 
 import httpx
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from tests.helpers import exec_as_tenant, make_client, signup
 from tests.offers.offer_factory import make_offer
 from travelmind.config import get_settings
-from travelmind.offers import router as offers_router
+from travelmind.fareintel.models import FareSnapshot
+from travelmind.offers import service as offers_service
 from travelmind.offers.fx import ECB_DAILY_URL
 from travelmind.offers.money import Money
 from travelmind.offers.suppliers.base import SupplierError
@@ -32,12 +34,14 @@ class StubSupplier:
         error: SupplierError | None = None,
         delay: float = 0,
         price=None,
+        price_delay: float = 0,
     ):
         self.code = code
         self._offers = offers or []
         self._error = error
         self._delay = delay
         self._price = price
+        self._price_delay = price_delay
 
     async def search(self, request):
         if self._delay:
@@ -47,6 +51,8 @@ class StubSupplier:
         return self._offers
 
     async def price(self, supplier_ref):
+        if self._price_delay:
+            await asyncio.sleep(self._price_delay)
         if isinstance(self._price, SupplierError):
             raise self._price
         return self._price
@@ -56,7 +62,7 @@ def use_suppliers(monkeypatch, *extra):
     def factory(settings, lookup):
         return [SandboxFlightSupplier(lookup), *extra]
 
-    monkeypatch.setattr(offers_router, "flight_suppliers", factory)
+    monkeypatch.setattr(offers_service, "flight_suppliers", factory)
 
 
 async def test_search_requires_sign_in(client, airports):
@@ -167,7 +173,7 @@ async def test_a_slow_supplier_times_out_alone(client, airports, monkeypatch):
 
 
 async def test_no_suppliers_is_a_plain_503(client, airports, monkeypatch):
-    monkeypatch.setattr(offers_router, "flight_suppliers", lambda settings, lookup: [])
+    monkeypatch.setattr(offers_service, "flight_suppliers", lambda settings, lookup: [])
     await signup(client)
     r = await client.post(SEARCH, json=trip())
     assert r.status_code == 503
@@ -184,7 +190,7 @@ async def test_mixed_currencies_sort_by_display_price(client, airports, monkeypa
         currency="USD",
     )
     monkeypatch.setattr(
-        offers_router,
+        offers_service,
         "flight_suppliers",
         lambda settings, lookup: [SandboxFlightSupplier(lookup), StubSupplier("stub", [cheap_usd])],
     )
@@ -307,9 +313,116 @@ class RecordingTim:
 async def test_emissions_enrichment_is_capped_at_four_seconds(client, airports, monkeypatch):
     RecordingTim.created = []
     monkeypatch.setattr(get_settings(), "google_tim_api_key", "tim-key")
-    monkeypatch.setattr(offers_router, "TimClient", RecordingTim)
+    monkeypatch.setattr(offers_service, "TimClient", RecordingTim)
     await signup(client)
     body = (await client.post(SEARCH, json=trip())).json()
     assert RecordingTim.created == [{"timeout_s": 4.0}]
     assert {o["co2_kg_per_passenger"] for o in body["offers"]} == {77}
     assert "tim-key" not in str(body)
+
+
+def live_offer(ref: str = "live", total_minor: int = 500000):
+    return make_offer(
+        [("DEL", "BOM", "AI", "101", "2026-11-20T06:00")],
+        offer_ref=ref,
+        total_minor=total_minor,
+        provenance="LIVE",
+    )
+
+
+async def test_identical_market_fares_are_recorded_once(client, airports, monkeypatch):
+    agency = (await signup(client)).json()["agency"]["id"]
+    use_suppliers(monkeypatch, StubSupplier("stub", [live_offer("a"), live_offer("b", 610000)]))
+    sandbox_per_search = 0
+    for _ in range(2):
+        r = await client.post(SEARCH, json=trip())
+        assert r.status_code == 200
+        sandbox_per_search = next(
+            s["offer_count"] for s in r.json()["sources"] if s["supplier"] == "sandbox"
+        )
+    counts = dict(
+        await exec_as_tenant(
+            agency, "SELECT provenance, count(*) FROM fare_snapshots GROUP BY provenance"
+        )
+    )
+    assert counts["LIVE"] == 2  # two distinct fares, each recorded once across both searches
+    assert counts["SANDBOX"] == 2 * sandbox_per_search  # the demo gauge still counts repeats
+
+
+class BrokenPipeline:
+    async def __aenter__(self):
+        raise RedisConnectionError("Redis is down")
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class BrokenRedis:
+    def pipeline(self, transaction=True):
+        return BrokenPipeline()
+
+
+async def test_without_redis_market_fares_are_skipped_not_duplicated():
+    today = datetime.now(UTC).date()
+
+    def row(provenance):
+        return FareSnapshot(
+            origin="DEL",
+            destination="BOM",
+            departure_date=today + timedelta(days=30),
+            days_to_departure=30,
+            cabin="economy",
+            carrier="AI",
+            stops=0,
+            total_minor=500000,
+            currency="INR",
+            provenance=provenance,
+            source="stub",
+        )
+
+    kept = await offers_service.new_observations(BrokenRedis(), [row("LIVE"), row("SANDBOX")])
+    assert [r.provenance for r in kept] == ["SANDBOX"]
+
+
+async def test_an_unexpected_supplier_crash_is_contained(client, airports, monkeypatch):
+    use_suppliers(monkeypatch, StubSupplier("crashy", error=RuntimeError("boom")))
+    await signup(client)
+    r = await client.post(SEARCH, json=trip())
+    assert r.status_code == 200
+    crashy = next(s for s in r.json()["sources"] if s["supplier"] == "crashy")
+    assert crashy["status"] == "error"
+    assert crashy["message"] == "This supplier failed unexpectedly."
+    assert "boom" not in r.text
+
+
+async def test_reprice_supplier_failure_is_a_502(client, airports, monkeypatch):
+    offer = make_offer([("DEL", "BOM", "ZZ", "1", "2026-11-20T06:00")], offer_ref="flaky")
+    down = SupplierError("unavailable", "Stub Air is having a problem.")
+    use_suppliers(monkeypatch, StubSupplier("stub", [offer], price=down))
+    await signup(client)
+    await client.post(SEARCH, json=trip())
+    r = await client.post("/api/v1/flights/offers/stub~flaky/price")
+    assert r.status_code == 502
+    assert r.json()["detail"] == "Stub Air is having a problem."
+
+
+async def test_reprice_gives_up_after_the_deadline(client, airports, monkeypatch):
+    monkeypatch.setattr(offers_service, "REPRICE_TIMEOUT_SECONDS", 0.2)
+    offer = make_offer([("DEL", "BOM", "ZZ", "1", "2026-11-20T06:00")], offer_ref="slow")
+    use_suppliers(monkeypatch, StubSupplier("stub", [offer], price=offer, price_delay=5))
+    await signup(client)
+    await client.post(SEARCH, json=trip())
+    r = await client.post("/api/v1/flights/offers/stub~slow/price")
+    assert r.status_code == 502
+    assert r.json()["detail"] == "Couldn't confirm the price in time. Try again."
+
+
+async def test_reprice_when_the_supplier_was_disconnected(client, airports, monkeypatch):
+    offer = make_offer([("DEL", "BOM", "ZZ", "1", "2026-11-20T06:00")], offer_ref="orphan")
+    use_suppliers(monkeypatch, StubSupplier("stub", [offer], price=offer))
+    await signup(client)
+    await client.post(SEARCH, json=trip())
+    use_suppliers(monkeypatch)  # the stub supplier is no longer connected
+    r = await client.post("/api/v1/flights/offers/stub~orphan/price")
+    assert r.status_code == 409
+    assert r.json()["detail"] == "The supplier for this offer is no longer connected."
