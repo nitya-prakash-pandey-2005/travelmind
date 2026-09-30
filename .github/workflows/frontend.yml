@@ -60,6 +60,8 @@ jobs:
             --countries-file tests/reference/fixtures/countries.csv
       - name: Start the API
         working-directory: backend
+        env:
+          TM_FX_ENABLED: "false"
         run: |
           nohup uv run python -m uvicorn travelmind.main:create_app --factory --port 8010 > ../api.log 2>&1 &
           for i in $(seq 1 30); do curl -sf http://localhost:8010/health && break; sleep 1; done

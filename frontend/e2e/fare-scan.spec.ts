@@ -1,0 +1,28 @@
+import { expect, test } from "@playwright/test";
+import { newOwner, pickAirport, signUp } from "./support";
+
+test("an agent scans sandbox fares, verifies a price and checks the supplier links", async ({ page }) => {
+  await signUp(page, newOwner("fares"));
+
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Fare scan" }).click();
+  await pickAirport(page, "From", "DEL");
+  await pickAirport(page, "To", "BOM");
+  await page.getByRole("button", { name: "Scan fares" }).click();
+
+  const board = page.getByRole("list", { name: "Flight offers" });
+  await expect(board.getByRole("article").first()).toBeVisible();
+  await expect(page.getByRole("list", { name: "Supplier sweep" })).toContainText("sandbox · OK");
+  const first = board.getByRole("article").first();
+  await expect(first).toContainText("Sandbox · not bookable");
+  await expect(first).toContainText(/₹[\d,]+/);
+
+  await first.getByRole("button", { name: "Verify price" }).click();
+  await expect(first.getByText(/Price confirmed/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Fastest" }).click();
+  await expect(page.getByRole("button", { name: "Fastest" })).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Suppliers" }).click();
+  const links = page.getByRole("table", { name: "Supplier connections" });
+  await expect(links.getByRole("row", { name: /Sandbox inventory/ })).toContainText("Connected");
+});
