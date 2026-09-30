@@ -18,6 +18,10 @@
     outline: 2px solid var(--tm-primary);
     outline-offset: 2px;
   }
+  /* In-page links on the landing page glide (reduced motion turns this off below). */
+  html:has(.tm-landing) {
+    scroll-behavior: smooth;
+  }
   /* A modal dialog or drawer is open: the page behind it must not scroll. */
   html:has(dialog[open]) {
     overflow: hidden;
@@ -143,6 +147,34 @@
   animation: tm-grow-x 600ms var(--ease-tm) both;
 }
 
+/* Landing hero entrance: a slower, taller rise for the one orchestrated moment on the page. */
+@utility tm-rise {
+  animation: tm-rise 700ms var(--ease-tm) both;
+  animation-delay: calc(var(--tm-enter-index, 0) * 90ms);
+}
+
+/* Blueprint grid that fades out towards the edges (the landing hero and closing band). */
+@utility tm-grid-fade {
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
+}
+
+/* Soft light behind the hero globe. */
+@utility tm-hero-glow {
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--tm-primary) 22%, transparent),
+    color-mix(in oklab, var(--tm-ai) 8%, transparent) 60%,
+    transparent 100%
+  );
+}
+
+/* Indeterminate progress: a light segment sweeping along the track; a steady partial fill under reduced motion. */
+@utility tm-progress-sweep {
+  width: 38%;
+  animation: tm-sweep 1.4s var(--ease-tm) infinite;
+}
+
 /* Modal surfaces (<dialog>): themed backdrop and a short pop-in. */
 @utility tm-modal {
   box-shadow: var(--tm-shadow-pop);
@@ -170,6 +202,22 @@
   }
   to {
     background-position: -50% 0;
+  }
+}
+
+@keyframes tm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+@keyframes tm-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(265%);
   }
 }
 
@@ -244,7 +292,13 @@
     animation: none !important;
     background-image: none;
   }
+  .tm-progress-sweep {
+    animation: none !important;
+    transform: none;
+    width: 60%;
+  }
   .tm-enter,
+  .tm-rise,
   .tm-draw,
   .tm-fade-in,
   .tm-grow-x,

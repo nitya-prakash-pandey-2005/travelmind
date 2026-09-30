@@ -1,12 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { authApi, type SignupInput } from "../api/auth";
+import { authApi, SIGNUP_COUNTRIES, type SignupCountryCode, type SignupInput } from "../api/auth";
 import { ApiError, needsGeneralError } from "../api/client";
 import { qk } from "../api/queries";
 import { APP_HOME } from "../app/paths";
 import { Button } from "../ui/Button";
 import { FormError } from "../ui/FormError";
+import { SelectField } from "../ui/SelectField";
 import { TextField } from "../ui/TextField";
 import { AuthFrame } from "./AuthFrame";
 import { resetSessionState } from "./resetSessionState";
@@ -17,9 +18,10 @@ const INLINE_FIELDS = [
   "full_name",
   "email",
   "password",
+  "country_code",
 ] as const satisfies readonly (keyof SignupInput)[];
 
-const EMPTY: SignupInput = { agency_name: "", full_name: "", email: "", password: "" };
+const EMPTY: SignupInput = { agency_name: "", full_name: "", email: "", password: "", country_code: "IN" };
 
 export function SignupPage() {
   const navigate = useNavigate();
@@ -38,7 +40,7 @@ export function SignupPage() {
   const error = signup.error instanceof ApiError ? signup.error : null;
   const fieldErrors = error?.fieldErrors ?? {};
   const showGeneralError = error ? needsGeneralError(error, INLINE_FIELDS) : false;
-  const update = (field: keyof SignupInput) => (event: React.ChangeEvent<HTMLInputElement>) =>
+  const update = (field: Exclude<keyof SignupInput, "country_code">) => (event: React.ChangeEvent<HTMLInputElement>) =>
     setForm((current) => ({ ...current, [field]: event.target.value }));
 
   return (
@@ -64,6 +66,21 @@ export function SignupPage() {
           onChange={update("password")}
           error={fieldErrors.password}
         />
+        <SelectField
+          label="Country"
+          hint="Sets your currency and time zone."
+          value={form.country_code}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, country_code: event.target.value as SignupCountryCode }))
+          }
+          error={fieldErrors.country_code}
+        >
+          {SIGNUP_COUNTRIES.map((country) => (
+            <option key={country.code} value={country.code}>
+              {country.name}
+            </option>
+          ))}
+        </SelectField>
         {error && showGeneralError && <FormError error={error} />}
         <Button type="submit" loading={signup.isPending}>
           Create command deck

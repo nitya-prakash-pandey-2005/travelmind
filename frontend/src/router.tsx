@@ -13,14 +13,15 @@ import { setUnauthorizedHandler } from "./api/queryClient";
 import { NotFound } from "./app/NotFound";
 import { RootRouteError } from "./app/RouteError";
 import { APP_HOME } from "./app/paths";
-import { PublicHome } from "./app/PublicHome";
 import { AcceptInvitePage } from "./auth/AcceptInvitePage";
 import { LoginPage } from "./auth/LoginPage";
 import { resetSessionState } from "./auth/resetSessionState";
 import { SignupPage } from "./auth/SignupPage";
 import { CommandCenterPage } from "./features/command/CommandCenterPage";
+import { DemoLaunchPage } from "./features/demo/DemoLaunchPage";
 import { FareScanPage } from "./features/fares/FareScanPage";
 import { HotelScanPage } from "./features/hotels/HotelScanPage";
+import { LandingPage } from "./features/landing/LandingPage";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
 import { TeamPage } from "./features/team/TeamPage";
 import { AppShell } from "./shell/AppShell";
@@ -72,7 +73,14 @@ const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: redirectIfSignedIn,
-  component: PublicHome,
+  component: LandingPage,
+});
+
+// No beforeLoad: the page shows its progress straight away and checks for an existing session itself.
+const demoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/demo",
+  component: DemoLaunchPage,
 });
 
 const loginRoute = createRoute({
@@ -139,6 +147,7 @@ function legacyRedirect(path: "/fares" | "/hotels" | "/suppliers" | "/team" | "/
 
 export const routeTree = rootRoute.addChildren([
   homeRoute,
+  demoRoute,
   loginRoute,
   signupRoute,
   inviteRoute,
@@ -151,7 +160,7 @@ export const routeTree = rootRoute.addChildren([
 ]);
 
 /** Public pages: an expired session there needs no trip to the login page. */
-const PUBLIC_PATHS = ["/"];
+const PUBLIC_PATHS = ["/", "/demo"];
 const PUBLIC_PREFIXES = ["/login", "/signup", "/invite/"];
 
 export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {
