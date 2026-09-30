@@ -3,6 +3,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from travelmind.config import get_settings
+from travelmind.dashboard.router import (
+    dashboard_router,
+    notifications_router,
+    onboarding_router,
+    search_router,
+)
 from travelmind.health import router as health_router
 from travelmind.hotels.router import hotels_router
 from travelmind.identity.router import auth_router, invitations_router, team_router
@@ -55,4 +61,8 @@ def create_app() -> FastAPI:
     app.include_router(clients_router)
     app.include_router(enquiries_router)
     app.include_router(quotes_router)
+    app.include_router(dashboard_router)
+    app.include_router(notifications_router)
+    app.include_router(onboarding_router)
+    app.include_router(search_router)
     return app

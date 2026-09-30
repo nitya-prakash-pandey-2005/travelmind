@@ -224,3 +224,54 @@ async def team_names(
         select(User.id, User.full_name).where(User.agency_id == agency_id, User.id.in_(wanted))
     )
     return {row.id: row.full_name for row in rows}
+
+
+@dataclass(frozen=True)
+class AgencySettings:
+    """What other packages need to know about an agency to compute its figures."""
+
+    id: UUID
+    currency: str
+    timezone: str
+    is_demo: bool
+
+
+async def get_agency_settings(db: AsyncSession, agency_id: UUID) -> AgencySettings:
+    agency = await db.get_one(Agency, agency_id)
+    return AgencySettings(
+        id=agency.id, currency=agency.currency, timezone=agency.timezone, is_demo=agency.is_demo
+    )
+
+
+@dataclass(frozen=True)
+class ActiveMember:
+    """An active teammate with their role (for team figures): no email or credentials."""
+
+    id: UUID
+    full_name: str
+    role: str
+
+
+async def list_active_members(db: AsyncSession, agency_id: UUID) -> list[ActiveMember]:
+    # `users` has no RLS, so the agency filter here is the isolation boundary.
+    rows = await db.execute(
+        select(User.id, User.full_name, User.role)
+        .where(User.agency_id == agency_id, User.is_active.is_(True))
+        .order_by(User.created_at, User.email)
+    )
+    return [ActiveMember(id=row.id, full_name=row.full_name, role=row.role) for row in rows]
+
+
+async def get_notifications_seen_at(db: AsyncSession, user_id: UUID) -> datetime | None:
+    return await db.scalar(select(User.notifications_seen_at).where(User.id == user_id))
+
+
+async def mark_notifications_seen(
+    db: AsyncSession, user_id: UUID, *, now: datetime | None = None
+) -> None:
+    """Everything up to `now` counts as read for this user. The caller commits."""
+    await db.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(notifications_seen_at=now or datetime.now(UTC))
+    )
