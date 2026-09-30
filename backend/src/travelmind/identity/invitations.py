@@ -12,6 +12,7 @@ from travelmind.identity.models import Agency, Invitation, User
 from travelmind.identity.passwords import hash_password_async
 from travelmind.identity.service import SessionContext, start_session
 from travelmind.identity.tokens import hash_token, make_scoped_token, split_scoped_token
+from travelmind.workspace.activity import record_activity
 
 INVALID_INVITATION_MESSAGE = "This invitation link is invalid or has expired."
 
@@ -105,6 +106,15 @@ async def accept_invitation(
         action="invitation.accepted",
         entity_type="invitation",
         entity_id=str(invitation.id),
+    )
+    await record_activity(
+        db,
+        agency_id=invitation.agency_id,
+        kind="team.joined",
+        summary=f"{user.full_name} joined the team",
+        actor_user_id=user.id,
+        entity_type="user",
+        entity_id=user.id,
     )
     agency = await db.get_one(Agency, invitation.agency_id)
     session_token = start_session(db, user, ctx)

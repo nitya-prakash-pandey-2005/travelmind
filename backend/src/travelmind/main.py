@@ -18,6 +18,7 @@ from travelmind.observability import configure_logging
 from travelmind.offers.router import flights_router, suppliers_router
 from travelmind.reference.router import reference_router
 from travelmind.workspace.agency import agency_router
+from travelmind.workspace.clients import clients_router
 
 
 def create_app() -> FastAPI:
@@ -49,4 +50,5 @@ def create_app() -> FastAPI:
     app.include_router(suppliers_router)
     app.include_router(hotels_router)
     app.include_router(agency_router)
+    app.include_router(clients_router)
     return app

@@ -13,6 +13,7 @@ from travelmind.db import DbSession
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser, CurrentUser, require_role
 from travelmind.identity.schemas import AgencyName, CountryCode
+from travelmind.workspace.activity import record_activity
 from travelmind.workspace.regions import default_currency_for, default_timezone_for
 
 __all__ = [
@@ -94,6 +95,16 @@ async def update_agency_route(
             entity_id=str(current.agency_id),
             before=before,
             after=after,
+        )
+        await record_activity(
+            db,
+            agency_id=current.agency_id,
+            kind="agency.updated",
+            summary="Updated the agency profile",
+            actor_user_id=current.id,
+            entity_type="agency",
+            entity_id=current.agency_id,
+            data={"fields": sorted(after)},
         )
         await db.commit()
     return AgencyProfile.model_validate(agency)
