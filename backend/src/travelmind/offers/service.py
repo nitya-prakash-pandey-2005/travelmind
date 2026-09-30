@@ -8,7 +8,7 @@ import asyncio
 import hashlib
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from redis.asyncio import Redis
@@ -16,6 +16,7 @@ from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.config import Settings
+from travelmind.db import utcnow
 from travelmind.fareintel.models import FareSnapshot
 from travelmind.fareintel.service import (
     PROVENANCES,
@@ -43,10 +44,12 @@ from travelmind.offers.schemas import (
     RepriceResponse,
     SourceStatusOut,
 )
-from travelmind.offers.search import fan_out, rank
-from travelmind.offers.suppliers.base import SupplierError
+from travelmind.offers.search import SourceStatus, fan_out, rank
+from travelmind.offers.suppliers.base import FlightSupplier, SupplierError
 from travelmind.reference.search import AirportRecord
 from travelmind.reference.service import get_airport_index
+from travelmind.workspace.activity import record_activity
+from travelmind.workspace.models import SearchSourceResult
 
 log = structlog.get_logger()
 
@@ -165,6 +168,35 @@ def offer_view(
     )
 
 
+def plural(count: int, noun: str) -> str:
+    """'1 offer', '12 offers'."""
+    return f"{count} {noun}{'' if count == 1 else 's'}"
+
+
+def source_results(
+    agency_id: UUID,
+    kind: str,
+    search_id: UUID | None,
+    sources: Sequence[SourceStatus | SourceStatusOut],
+    occurred_at: datetime,
+) -> list[SearchSourceResult]:
+    """One row per supplier actually called (a not-configured supplier was never called)."""
+    return [
+        SearchSourceResult(
+            agency_id=agency_id,
+            search_kind=kind,
+            search_id=search_id,
+            supplier=s.supplier[:30],
+            status=s.status,
+            offer_count=s.offer_count,
+            latency_ms=s.latency_ms,
+            occurred_at=occurred_at,
+        )
+        for s in sources
+        if s.status != "not_configured"
+    ]
+
+
 def _seen_key(row: FareSnapshot) -> str:
     fields = (
         row.origin,
@@ -209,13 +241,23 @@ async def search_flights(
     *,
     agency_id: UUID,
     user_id: UUID | None,
+    suppliers: Sequence[FlightSupplier] | None = None,
+    enforce_budget: bool = True,
+    occurred_at: datetime | None = None,
 ) -> FlightSearchResponse:
     """Search every connected supplier and return ranked offers with insights.
 
-    `db` must already be bound to `agency_id` (bind_tenant). Commits once, at the end.
+    `db` must already be bound to `agency_id` (bind_tenant). Commits once, at the end, together
+    with one result row per supplier and a `search.flights` activity event.
     Raises RateLimited, UnknownAirport or NoSuppliers.
+
+    Demo seeding only (never exposed over HTTP): `suppliers` replaces the connected suppliers,
+    `enforce_budget=False` skips the per-minute limit and `occurred_at` back-dates the search
+    log, its source results and its activity. Fare history is always observed now.
     """
-    await check_search_budget(redis, settings, f"rl:search:{agency_id}")
+    agency_id = UUID(str(agency_id))
+    if enforce_budget:
+        await check_search_budget(redis, settings, f"rl:search:{agency_id}")
     index = await get_airport_index(db)
     airports: dict[str, AirportRecord] = {}
     for code in (request.origin, request.destination):
@@ -224,7 +266,8 @@ async def search_flights(
             raise UnknownAirport(code)
         airports[code] = record
     origin = airports[request.origin]
-    suppliers = flight_suppliers(settings, index.get)
+    if suppliers is None:
+        suppliers = flight_suppliers(settings, index.get)
     if not suppliers:
         raise NoSuppliers()
 
@@ -305,7 +348,9 @@ async def search_flights(
         ]
         db.add_all(await new_observations(redis, observed))
     cheapest = next((v.display_total.amount_minor for v in views if v.display_total), None)
+    stamp = occurred_at or utcnow()
     log_row = FlightSearchLog(
+        id=uuid4(),
         agency_id=agency_id,
         user_id=user_id,
         origin=request.origin,
@@ -318,8 +363,23 @@ async def search_flights(
         offer_count=len(views),
         display_currency=currency,
         cheapest_minor=cheapest,
+        created_at=stamp,
     )
     db.add(log_row)
+    db.add_all(source_results(agency_id, "flights", log_row.id, sources, stamp))
+    travellers = plural(request.passenger_count, "traveller")
+    await record_activity(
+        db,
+        agency_id=agency_id,
+        kind="search.flights",
+        summary=(
+            f"Searched {request.origin} → {request.destination} for {travellers}"
+            f" · {plural(len(views), 'offer')}"
+        ),
+        actor_user_id=user_id,
+        data={"origin": request.origin, "destination": request.destination, "offers": len(views)},
+        occurred_at=stamp,
+    )
     await db.commit()
     await remember_offers(redis, agency_id, offers)
 
@@ -334,12 +394,19 @@ async def search_flights(
 
 
 async def reprice_offer(
-    db: AsyncSession, redis: Redis, settings: Settings, offer_id: str, *, agency_id: UUID
+    db: AsyncSession,
+    redis: Redis,
+    settings: Settings,
+    offer_id: str,
+    *,
+    agency_id: UUID,
+    user_id: UUID | None = None,
 ) -> RepriceResponse:
     """Confirm a recently returned offer's price with its supplier.
 
-    Only offers this agency was shown can be re-priced. Raises RateLimited, OfferNotFound,
-    SupplierGone, OfferGone or PriceCheckFailed.
+    Only offers this agency was shown can be re-priced. `db` must already be bound to
+    `agency_id`; a confirmed check commits a `supplier.price_checked` activity event.
+    Raises RateLimited, OfferNotFound, SupplierGone, OfferGone or PriceCheckFailed.
     """
     await check_price_budget(redis, settings, agency_id)
     cached = await recall_offer(redis, agency_id, offer_id)
@@ -371,9 +438,31 @@ async def reprice_offer(
     origin = index.get(fresh.slices[0].origin) if fresh.slices else None
     currency = display_currency_for(origin.country_code) if origin else fresh.total.currency
     fx = await get_fx_rates(redis, enabled=settings.fx_enabled)
+    changed = fresh.total != cached.total
+    route = (fresh.slices or cached.slices)[:1]
+    origin_code = route[0].origin if route else ""
+    destination_code = route[0].destination if route else ""
+    await record_activity(
+        db,
+        agency_id=agency_id,
+        kind="supplier.price_checked",
+        summary=(
+            f"Checked price for {fresh.owner_carrier} {origin_code}→{destination_code}: "
+            f"{'changed' if changed else 'confirmed'}"
+        ),
+        actor_user_id=user_id,
+        data={
+            "supplier": fresh.supplier,
+            "carrier": fresh.owner_carrier,
+            "origin": origin_code,
+            "destination": destination_code,
+            "price_changed": changed,
+        },
+    )
+    await db.commit()
     await remember_offers(redis, agency_id, [fresh])
     return RepriceResponse(
         offer=offer_view(fresh, display_money(fresh.total, currency, fx), None),
-        price_changed=fresh.total != cached.total,
+        price_changed=changed,
         previous_total=cached.total,
     )

@@ -25,6 +25,7 @@ async def search_hotels_route(
             body,
             agency_id=current.agency_id,
             guest_nationality=agency.country_code,
+            user_id=current.id,
         )
     except service.RateLimited as exc:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, exc.message) from None
