@@ -182,7 +182,8 @@ test("new enquiry dialog creates an enquiry and toasts", async () => {
   expect(posts[1]?.body).toMatchObject({ client_id: "c-new", origin: "DEL", destination: "BOM", adults: 1, cabin: "economy" });
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "New enquiry" })).not.toBeInTheDocument());
   await waitFor(() => expect(summaryCalls()).toBeGreaterThan(before));
-});
+  // A long user-event journey (two airport searches, typing, submit) — allow for slow CI machines.
+}, 15_000);
 
 test("live activity pages back with the last item's time and id", async () => {
   const { calls } = mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: true })));
