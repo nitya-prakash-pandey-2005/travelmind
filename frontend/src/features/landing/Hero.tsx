@@ -12,15 +12,15 @@ const enter = (index: number) => ({ "--tm-enter-index": index }) as CSSPropertie
 function OrbitalSketch() {
   return (
     <svg viewBox="0 0 200 200" aria-hidden="true" className="h-full w-full">
-      <circle cx="100" cy="100" r="62" fill="none" stroke="var(--tm-globe-land)" strokeWidth="1" />
-      <ellipse cx="100" cy="100" rx="62" ry="22" fill="none" stroke="var(--tm-line)" strokeWidth="0.8" />
-      <ellipse cx="100" cy="100" rx="24" ry="62" fill="none" stroke="var(--tm-line)" strokeWidth="0.8" />
-      <path d="M62 86 Q 96 40 138 78" fill="none" stroke="var(--tm-primary)" strokeWidth="1.4" strokeLinecap="round" />
-      <path d="M70 118 Q 110 84 146 112" fill="none" stroke="var(--tm-ai)" strokeWidth="1.2" strokeLinecap="round" />
-      <circle cx="62" cy="86" r="2.4" fill="var(--tm-primary)" />
-      <circle cx="138" cy="78" r="2.4" fill="var(--tm-primary)" />
-      <circle cx="70" cy="118" r="2.2" fill="var(--tm-ai)" />
-      <circle cx="146" cy="112" r="2.2" fill="var(--tm-ai)" />
+      <circle cx="100" cy="100" r="70" fill="none" stroke="var(--tm-globe-land)" strokeWidth="1" />
+      <ellipse cx="100" cy="100" rx="70" ry="24" fill="none" stroke="var(--tm-border)" strokeWidth="1" />
+      <ellipse cx="100" cy="100" rx="28" ry="70" fill="none" stroke="var(--tm-border)" strokeWidth="1" />
+      <path d="M64 88 Q 98 46 140 80" fill="none" stroke="var(--tm-primary)" strokeWidth="1" strokeLinecap="round" />
+      <path d="M72 118 Q 110 90 146 114" fill="none" stroke="var(--tm-primary)" strokeOpacity="0.5" strokeWidth="1" strokeLinecap="round" />
+      <circle cx="64" cy="88" r="2" fill="var(--tm-primary)" />
+      <circle cx="140" cy="80" r="2" fill="var(--tm-primary)" />
+      <circle cx="72" cy="118" r="2" fill="var(--tm-text-2)" />
+      <circle cx="146" cy="114" r="2" fill="var(--tm-text-2)" />
     </svg>
   );
 }
@@ -36,38 +36,16 @@ class GlobeBoundary extends Component<{ children: ReactNode }, { failed: boolean
   }
 }
 
-/** Instrument reticle drawn around the globe: range rings, bearing ticks and crosshair marks. */
-function Reticle() {
-  const ticks = Array.from({ length: 72 }, (_, index) => index * 5);
+/** Four small corner ticks: the one instrument-frame flourish the design direction allows (hero globe only). */
+function CornerTicks() {
+  const tick = "pointer-events-none absolute h-2.5 w-2.5 border-primary/70";
   return (
-    <svg viewBox="0 0 400 400" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
-      <circle cx="200" cy="200" r="196" fill="none" stroke="var(--tm-line)" strokeWidth="1" />
-      <circle cx="200" cy="200" r="172" fill="none" stroke="var(--tm-line)" strokeWidth="1" strokeDasharray="2 7" />
-      <g>
-        {ticks.map((deg) => (
-          <line
-            key={deg}
-            x1="200"
-            y1={deg % 45 === 0 ? 4 : 10}
-            x2="200"
-            y2="18"
-            stroke={deg % 45 === 0 ? "var(--tm-primary)" : "var(--tm-line)"}
-            strokeWidth={deg % 45 === 0 ? 1.5 : 1}
-            transform={`rotate(${deg} 200 200)`}
-          />
-        ))}
-      </g>
-      {[0, 90, 180, 270].map((deg) => (
-        <path
-          key={deg}
-          d="M200 26 v14"
-          stroke="var(--tm-primary)"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          transform={`rotate(${deg} 200 200)`}
-        />
-      ))}
-    </svg>
+    <>
+      <span aria-hidden="true" className={`${tick} left-0 top-0 border-l border-t`} />
+      <span aria-hidden="true" className={`${tick} right-0 top-0 border-r border-t`} />
+      <span aria-hidden="true" className={`${tick} bottom-0 left-0 border-b border-l`} />
+      <span aria-hidden="true" className={`${tick} bottom-0 right-0 border-b border-r`} />
+    </>
   );
 }
 
@@ -75,12 +53,17 @@ function HeroGlobe() {
   const [webgl] = useState(hasWebGL);
   const captionId = useId();
   return (
-    <figure className="tm-fade-in relative mx-auto flex w-full max-w-[34rem] flex-col items-center" style={{ animationDuration: "1200ms" }}>
-      <div className="relative aspect-square w-full">
-        <div aria-hidden="true" className="tm-hero-glow absolute inset-[4%] rounded-full" />
-        <Reticle />
+    <figure className="tm-rise relative mx-auto w-full max-w-[32rem] p-1.5" style={enter(3)}>
+      <CornerTicks />
+      <div className="overflow-hidden rounded-lg border border-line bg-bg/60">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
+          <span id={captionId} className="text-[13px] font-medium text-ink">
+            Popular routes
+          </span>
+          <span className="text-xs text-faint">Illustration</span>
+        </div>
         {/* Decorative: the page scrolls (and swipes) straight past it. */}
-        <div className="pointer-events-none absolute inset-[7%]">
+        <div aria-hidden="true" className="pointer-events-none relative mx-auto aspect-square w-[88%]">
           {webgl ? (
             <GlobeBoundary>
               <Suspense fallback={<OrbitalSketch />}>
@@ -91,60 +74,60 @@ function HeroGlobe() {
             <OrbitalSketch />
           )}
         </div>
+        <figcaption className="border-t border-line px-4 py-3">
+          <ul aria-labelledby={captionId} className="flex flex-wrap gap-1.5">
+            {POPULAR_ROUTES.map(({ from, to }) => (
+              <li
+                key={`${from.iata_code}-${to.iata_code}`}
+                className="rounded-[4px] border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] text-dim"
+              >
+                <span className="sr-only">
+                  {from.city} to {to.city},{" "}
+                </span>
+                {from.iata_code} → {to.iata_code}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-faint">Busy routes from our launch markets. Your own routes appear in the Command Center.</p>
+        </figcaption>
       </div>
-      <figcaption className="mt-2 w-full text-center">
-        <p id={captionId} className="font-display text-sm tracking-wide text-ink">
-          Popular routes
-        </p>
-        <p className="mt-0.5 text-xs text-dim">For illustration. Your own enquiry routes appear in the Command Center.</p>
-        <ul aria-labelledby={captionId} className="mt-3 flex flex-wrap justify-center gap-1.5">
-          {POPULAR_ROUTES.map(({ from, to }) => (
-            <li
-              key={`${from.iata_code}-${to.iata_code}`}
-              className="rounded-sm border border-line bg-void/40 px-2 py-0.5 font-mono text-xs text-dim"
-            >
-              <span className="sr-only">
-                {from.city} to {to.city},{" "}
-              </span>
-              {from.iata_code} → {to.iata_code}
-            </li>
-          ))}
-        </ul>
-      </figcaption>
     </figure>
   );
 }
 
+const HERO_TITLE = "Answer travel enquiries with fares you can explain";
+const HERO_LEAD =
+  "TravelMind searches your airline and hotel suppliers in one pass, shows whether each fare is good for its route, and keeps every enquiry in one pipeline. Every price says whether it is live, cached or sandbox.";
+
 export function Hero() {
   return (
-    <section aria-labelledby="landing-title" className="relative isolate overflow-hidden">
-      <div aria-hidden="true" className="tm-grid tm-grid-fade absolute inset-0 -z-10" />
-      <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-16 pt-12 sm:px-6 sm:pt-16 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:pb-24 lg:pt-20">
+    <section aria-labelledby="landing-title" className="relative isolate overflow-hidden border-b border-line">
+      <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-10" />
+      <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-16 lg:pb-24 lg:pt-24">
         <div className="min-w-0">
-          <p className="tm-rise mb-6 inline-flex rounded-sm border border-line bg-void/40 px-2.5 py-1 text-xs text-dim" style={enter(0)}>
-            For travel agencies and corporate travel desks
+          <p className="tm-rise mb-5 text-[13px] text-dim" style={enter(0)}>
+            For travel management companies and agency teams
           </p>
           <h1
             id="landing-title"
-            className="tm-rise font-display text-[2.5rem] font-semibold leading-[1.02] tracking-[-0.01em] text-balance text-ink sm:text-6xl lg:text-[4.5rem]"
+            className="tm-rise max-w-[16ch] text-[2.5rem] font-semibold leading-[1.05] tracking-[-0.02em] text-ink sm:text-[3.25rem] lg:text-[3.5rem]"
             style={enter(1)}
           >
-            The mission control for modern travel agencies
+            {HERO_TITLE}
           </h1>
-          <p className="tm-rise mt-6 max-w-[34rem] text-lg leading-relaxed text-dim" style={enter(2)}>
-            Search live airline and hotel inventory, see what every fare really means, and track every enquiry from
-            first message to won trip — every price labelled with where it came from.
+          <p className="tm-rise mt-6 max-w-[36rem] text-base leading-7 text-dim sm:text-[17px]" style={enter(2)}>
+            {HERO_LEAD}
           </p>
-          <div className="tm-rise mt-9 flex flex-col gap-3 sm:flex-row sm:items-center" style={enter(3)}>
+          <div className="tm-rise mt-8 flex flex-col gap-3 sm:flex-row sm:items-center" style={enter(3)}>
             <CtaLink to="/demo" size="lg">
-              Explore live demo
+              Open demo workspace
             </CtaLink>
-            <CtaLink to="/signup" size="lg" variant="ghost">
-              Start free
+            <CtaLink to="/signup" size="lg" variant="secondary">
+              Create workspace
             </CtaLink>
           </div>
-          <p className="tm-rise mt-4 text-sm text-dim" style={enter(4)}>
-            The demo opens a private workspace with sample data. No sign-up needed.
+          <p className="tm-rise mt-4 text-[13px] text-faint" style={enter(4)}>
+            The demo is a private workspace with sample data. No sign-up; deleted after 7 days.
           </p>
         </div>
         <HeroGlobe />

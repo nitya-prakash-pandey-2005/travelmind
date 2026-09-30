@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { CircleAlert } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { authApi } from "../../api/auth";
 import { asApiError } from "../../api/client";
 import { meQueryOptions, qk } from "../../api/queries";
@@ -9,26 +10,33 @@ import { resetSessionState } from "../../auth/resetSessionState";
 import { useDocumentTitle } from "../../lib/useDocumentTitle";
 import { Button } from "../../ui/Button";
 import { CtaLink } from "../landing/CtaLink";
+import { Wordmark } from "../landing/Wordmark";
 
-/** What the server does while the visitor waits (see the demo generator). */
+/**
+ * What the server does while the visitor waits (see the demo generator). It answers once, at the end,
+ * so the list says what happens rather than pretending to track each step.
+ */
 const STEPS = [
-  "Creating a private demo agency and team",
-  "Adding sample clients and enquiries",
-  "Pricing each trip with real sandbox searches",
-  "Opening your Command Center",
+  "Create a private demo agency and team",
+  "Add sample clients and enquiries",
+  "Price each trip with real sandbox searches",
+  "Open the Command Center",
 ];
 
-function LaunchMark({ failed }: { failed: boolean }) {
-  return (
-    <svg viewBox="0 0 120 120" aria-hidden="true" className="h-24 w-24">
-      <circle cx="60" cy="60" r="56" fill="none" stroke="var(--tm-line)" strokeWidth="1" strokeDasharray="2 6" />
-      <circle cx="60" cy="60" r="34" fill="none" stroke={failed ? "var(--tm-danger)" : "var(--tm-primary)"} strokeWidth="1.4" />
-      <g className={failed ? undefined : "tm-spin-slow"} style={{ transformOrigin: "60px 60px", animationDuration: "6s" }}>
-        <ellipse cx="60" cy="60" rx="54" ry="18" fill="none" stroke="var(--tm-ai)" strokeWidth="1" transform="rotate(-24 60 60)" />
-        <circle cx="109" cy="40" r="3.5" fill={failed ? "var(--tm-danger)" : "var(--tm-primary)"} />
-      </g>
-    </svg>
-  );
+/** The current time, ticking once a second while `running`: drives the elapsed readout. */
+function useNow(running: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+  return now;
+}
+
+function formatElapsed(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 /**
@@ -63,61 +71,84 @@ export function DemoLaunchPage() {
 
   const error = demo.isError ? asApiError(demo.error) : null;
   const rateLimited = error?.status === 429;
+  const now = useNow(demo.isPending);
+  const elapsed = demo.submittedAt > 0 ? Math.max(0, Math.floor((now - demo.submittedAt) / 1000)) : 0;
 
   return (
-    <main className="tm-grid tm-scanlines flex min-h-dvh items-center justify-center px-4 py-12 sm:px-6">
-      <div className="tm-glass tm-edge relative w-full max-w-lg rounded-lg p-6 sm:p-10">
-        <LaunchMark failed={Boolean(error)} />
-        {error ? (
-          <>
-            <h1 className="mt-6 font-display text-2xl font-semibold tracking-wide text-ink sm:text-3xl">
-              The demo couldn't start
-            </h1>
-            <p role="alert" className="mt-3 leading-relaxed text-dim">
-              {error.message}
-            </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-              {rateLimited ? (
-                <CtaLink to="/signup">Start free instead</CtaLink>
-              ) : (
-                <Button onClick={() => launch()}>Try again</Button>
-              )}
-              <Link to="/" className="text-sm text-dim hover:text-ink">
-                Back to the home page
-              </Link>
+    <div className="relative isolate flex min-h-dvh flex-col bg-bg px-4 py-6 sm:px-10">
+      <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-10" />
+      <header>
+        <Link to="/" className="rounded-sm">
+          <Wordmark />
+        </Link>
+      </header>
+      <main className="flex flex-1 items-center justify-center py-10">
+        <div className="w-full max-w-md rounded-lg border border-line bg-surface">
+          {error ? (
+            <div className="p-6">
+              <span
+                aria-hidden="true"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-danger/40 bg-danger/10 text-danger"
+              >
+                <CircleAlert size={18} strokeWidth={1.75} />
+              </span>
+              <h1 className="mt-4 text-lg font-semibold text-ink">The demo couldn't start</h1>
+              <p role="alert" className="mt-1.5 text-sm leading-6 text-dim">
+                {error.message}
+              </p>
+              {error.traceId && <p className="mt-2 font-mono text-xs text-faint">Trace ID: {error.traceId}</p>}
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+                {rateLimited ? (
+                  <CtaLink to="/signup">Create a workspace instead</CtaLink>
+                ) : (
+                  <Button onClick={() => launch()}>Try again</Button>
+                )}
+                <Link to="/" className="rounded-sm text-[13px] text-dim hover:text-ink">
+                  Back to the home page
+                </Link>
+              </div>
             </div>
-          </>
-        ) : (
-          <>
-            <h1 className="mt-6 font-display text-2xl font-semibold tracking-wide text-ink sm:text-3xl">
-              Preparing your demo workspace…
-            </h1>
-            <p className="mt-3 leading-relaxed text-dim">
-              A private agency with sample data, labelled as a demo everywhere and removed automatically.
-            </p>
-            <div
-              role="progressbar"
-              aria-label="Preparing your demo workspace"
-              className="mt-8 h-1 overflow-hidden rounded-full bg-line"
-            >
-              <div className="tm-progress-sweep h-full rounded-full bg-linear-to-r from-primary to-ai" />
-            </div>
-            <ol aria-label="Demo setup steps" className="mt-8 flex flex-col gap-3">
-              {STEPS.map((step, index) => (
-                <li key={step} className="flex items-center gap-3 text-sm text-dim">
-                  <span
-                    aria-hidden="true"
-                    className="tm-tint inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] text-primary"
-                  >
-                    {index + 1}
-                  </span>
-                  {step}
-                </li>
-              ))}
-            </ol>
-          </>
-        )}
-      </div>
-    </main>
+          ) : (
+            <>
+              <div className="p-6">
+                <p className="flex items-center gap-2 text-[13px] text-dim">
+                  <span aria-hidden="true" className="tm-live h-1.5 w-1.5 rounded-full bg-warn text-warn" />
+                  Demo workspace
+                </p>
+                <h1 className="mt-3 text-lg font-semibold text-ink">Preparing your demo workspace…</h1>
+                <p className="mt-1.5 text-sm leading-6 text-dim">
+                  A private agency with sample data, labelled as a demo on every screen and deleted after 7 days. Pricing
+                  the sample trips can take a minute.
+                </p>
+                <div
+                  role="progressbar"
+                  aria-label="Preparing your demo workspace"
+                  className="mt-5 h-1 overflow-hidden rounded-full bg-surface-2"
+                >
+                  <div className="tm-progress-sweep h-full rounded-full bg-primary" />
+                </div>
+              </div>
+              <div className="border-t border-line px-6 py-5">
+                <p className="tm-micro">What happens now</p>
+                <ol aria-label="Demo setup steps" className="mt-3 flex flex-col gap-2.5">
+                  {STEPS.map((step, index) => (
+                    <li key={step} className="flex items-center gap-3 text-[13px] text-dim">
+                      <span aria-hidden="true" className="w-4 shrink-0 font-mono text-xs text-faint">
+                        {index + 1}
+                      </span>
+                      {step}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-line px-6 py-3 font-mono text-xs text-faint">
+                <span>Sandbox inventory · not bookable</span>
+                <span className="tabular-nums">Elapsed {formatElapsed(elapsed)}</span>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
+    </div>
   );
 }

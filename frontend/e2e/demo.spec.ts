@@ -7,7 +7,7 @@ test("a visitor explores the live demo from the landing page and exits back to i
 
   await page.goto("/");
   // Repeated calls to action carry extra screen-reader context; the hero's is the plain one.
-  await page.getByRole("link", { name: "Explore live demo", exact: true }).click();
+  await page.getByRole("link", { name: "Open demo workspace", exact: true }).click();
   await expect(page).toHaveURL(APP_HOME, { timeout: 60_000 });
 
   await expect(page.getByRole("banner").getByText("Demo", { exact: true })).toBeVisible();
@@ -25,7 +25,7 @@ test("a visitor explores the live demo from the landing page and exits back to i
 
   await page.getByRole("region", { name: "Demo workspace" }).getByRole("button", { name: "Exit demo" }).click();
   await expect(page).toHaveURL((url) => url.pathname === "/");
-  await expect(page.getByRole("link", { name: "Explore live demo", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open demo workspace", exact: true })).toBeVisible();
 
   // The demo session is gone: the app sends the visitor to sign in.
   await page.goto("/app");

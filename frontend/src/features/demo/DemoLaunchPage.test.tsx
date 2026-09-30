@@ -19,7 +19,7 @@ test("demo rate limit is explained", async () => {
   mockApi(withSession(null, { "POST /api/v1/demo": { status: 429, body: { detail: "Too many demo workspaces from your network. Please try again later." } } }));
   renderApp("/demo");
   expect(await screen.findByRole("alert")).toHaveTextContent("Too many demo workspaces");
-  expect(screen.getByRole("link", { name: "Start free instead" })).toHaveAttribute("href", "/signup");
+  expect(screen.getByRole("link", { name: "Create a workspace instead" })).toHaveAttribute("href", "/signup");
 });
 
 test("the demo workspace is created once and its user is signed in from the response", async () => {
@@ -64,7 +64,7 @@ test("other demo failures offer a retry", async () => {
   );
   const { router, user } = renderApp("/demo");
   expect(await screen.findByRole("alert")).toHaveTextContent("Demo workspaces are unavailable right now.");
-  expect(screen.queryByRole("link", { name: "Start free instead" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Create a workspace instead" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Try again" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
   expect(attempts).toBe(2);

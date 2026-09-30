@@ -1,20 +1,33 @@
 import { ThemeToggle } from "../../ui/ThemeToggle";
 import { CtaLink } from "./CtaLink";
+import { Wordmark } from "./Wordmark";
+
+const SECTION_LINK = "rounded-sm text-[13px] text-dim transition-colors duration-150 ease-tm hover:text-ink";
 
 export function LandingFooter() {
   return (
     <footer className="border-t border-line">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <div className="flex flex-col gap-1">
-          <p className="font-display text-sm tracking-[0.4em] text-primary">TRAVELMIND</p>
-          <p className="text-sm text-dim">© 2026 TravelMind</p>
+      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6 md:flex-row md:items-start md:justify-between">
+        <div className="flex flex-col gap-2">
+          <Wordmark />
+          <p className="max-w-xs text-[13px] leading-5 text-dim">Fare search and enquiry pipeline for travel agencies.</p>
+          <p className="text-xs text-faint">© 2026 TravelMind</p>
         </div>
         <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <CtaLink to="/login" variant="text" size="sm" className="px-0" context=" to your agency">
+          <a href="#features" className={SECTION_LINK}>
+            Features
+          </a>
+          <a href="#how-it-works" className={SECTION_LINK}>
+            How it works
+          </a>
+          <a href="#security" className={SECTION_LINK}>
+            Security
+          </a>
+          <CtaLink to="/login" variant="text" context=" to your workspace">
             Sign in
           </CtaLink>
-          <CtaLink to="/signup" variant="text" size="sm" className="px-0" context=": create an agency account">
-            Start free
+          <CtaLink to="/signup" variant="text" context=" for your agency">
+            Create workspace
           </CtaLink>
           <ThemeToggle />
         </nav>
