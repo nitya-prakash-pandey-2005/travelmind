@@ -1,0 +1,36 @@
+{
+  "data": {
+    "id": "off_0000CONNECT",
+    "live_mode": false,
+    "total_amount": "640.10",
+    "total_currency": "GBP",
+    "base_amount": "500.00",
+    "base_currency": "GBP",
+    "tax_amount": "140.10",
+    "tax_currency": "GBP",
+    "total_emissions_kg": null,
+    "expires_at": "2026-11-01T11:12:00Z",
+    "owner": { "name": "Emirates", "iata_code": "EK" },
+    "conditions": {},
+    "passengers": [{ "id": "pas_1", "type": "adult" }, { "id": "pas_2", "age": 8 }],
+    "slices": [
+      {
+        "fare_brand_name": "Saver",
+        "duration": "P1DT1H5M",
+        "origin": { "iata_code": "LHR" },
+        "destination": { "iata_code": "SYD" },
+        "segments": [
+          {
+            "origin": { "iata_code": "LHR" },
+            "destination": { "iata_code": "SYD" },
+            "departing_at": "2026-11-20T08:30:00",
+            "arriving_at": "2026-11-21T18:00:00",
+            "duration": "P1DT1H5M",
+            "marketing_carrier": { "iata_code": "EK", "name": "Emirates" },
+            "marketing_carrier_flight_number": "2"
+          }
+        ]
+      }
+    ]
+  }
+}

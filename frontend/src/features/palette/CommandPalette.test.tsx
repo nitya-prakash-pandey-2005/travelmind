@@ -49,6 +49,19 @@ test("typing a command and pressing Enter navigates", async () => {
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
+test("the hotel and supplier commands navigate", async () => {
+  const { user, router } = renderApp("/");
+  await screen.findByRole("banner");
+  await user.keyboard("{Control>}k{/Control}");
+  await user.type(await screen.findByPlaceholderText(/command or an airport/i), "accommodation");
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(router.state.location.pathname).toBe("/hotels"));
+  await user.keyboard("{Control>}k{/Control}");
+  await user.type(await screen.findByPlaceholderText(/command or an airport/i), "liteapi");
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(router.state.location.pathname).toBe("/suppliers"));
+});
+
 test("the theme command switches themes", async () => {
   const { user } = renderApp("/");
   await screen.findByRole("banner");
@@ -110,7 +123,7 @@ test("closing with Ctrl+K clears the search, so reopening starts fresh", async (
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   await user.keyboard("{Control>}k{/Control}");
   expect(await screen.findByPlaceholderText(/command or an airport/i)).toHaveValue("");
-  for (const name of ["Mission Control", "Crew roster", "Design system", "Switch to daylight theme", "Sign out"]) {
+  for (const name of ["Mission Control", "Fare scan", "Hotel scan", "Suppliers", "Crew roster", "Design system", "Switch to daylight theme", "Sign out"]) {
     expect(screen.getByRole("option", { name })).toBeInTheDocument();
   }
 });

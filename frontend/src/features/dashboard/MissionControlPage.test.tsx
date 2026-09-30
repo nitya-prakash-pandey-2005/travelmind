@@ -98,3 +98,17 @@ test("agents never request the invitation list", async () => {
   await screen.findByRole("region", { name: "Alpha Travels" });
   expect(calls.some((c) => c.path === "/api/v1/invitations")).toBe(false);
 });
+
+test("a plotted route can be sent to the fare scanner", async () => {
+  routeStore.set({ origin: AIRPORTS.DEL, destination: AIRPORTS.BOM });
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": { status: 200, body: TEAM },
+      "GET /api/v1/invitations": { status: 200, body: [] },
+    }),
+  );
+  const { user, router } = renderApp("/");
+  await user.click(await screen.findByRole("button", { name: "Scan fares for this route" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/fares"));
+  expect(await screen.findByRole("heading", { name: "Scan live fares" })).toBeInTheDocument();
+});

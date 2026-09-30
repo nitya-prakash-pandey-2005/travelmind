@@ -1,0 +1,106 @@
+{
+  "data": {
+    "id": "orq_0000AUTEST",
+    "live_mode": false,
+    "offers": [
+      {
+        "id": "off_0000CONNECT",
+        "live_mode": false,
+        "total_amount": "612.40",
+        "total_currency": "GBP",
+        "base_amount": "480.00",
+        "base_currency": "GBP",
+        "tax_amount": "132.40",
+        "tax_currency": "GBP",
+        "total_emissions_kg": null,
+        "expires_at": "2026-11-01T10:42:14.545Z",
+        "owner": { "name": "Emirates", "iata_code": "EK" },
+        "conditions": {
+          "refund_before_departure": null,
+          "change_before_departure": { "allowed": true, "penalty_amount": "75.00", "penalty_currency": "GBP" }
+        },
+        "passengers": [{ "id": "pas_1", "type": "adult" }, { "id": "pas_2", "age": 8 }],
+        "slices": [
+          {
+            "fare_brand_name": "Saver",
+            "duration": "P1DT1H5M",
+            "origin": { "iata_code": "LHR" },
+            "destination": { "iata_code": "SYD" },
+            "segments": [
+              {
+                "origin": { "iata_code": "LHR" },
+                "destination": { "iata_code": "DXB" },
+                "departing_at": "2026-11-20T08:30:00",
+                "arriving_at": "2026-11-20T19:25:00",
+                "duration": "PT6H55M",
+                "marketing_carrier": { "iata_code": "EK", "name": "Emirates" },
+                "marketing_carrier_flight_number": "2",
+                "operating_carrier": { "iata_code": "EK", "name": "Emirates" },
+                "operating_carrier_flight_number": "2",
+                "passengers": [
+                  { "passenger_id": "pas_1", "cabin_class": "economy", "baggages": [{ "type": "checked", "quantity": 2 }, { "type": "carry_on", "quantity": 1 }] }
+                ]
+              },
+              {
+                "origin": { "iata_code": "DXB" },
+                "destination": { "iata_code": "SYD" },
+                "departing_at": "2026-11-20T21:45:00",
+                "arriving_at": "2026-11-21T18:00:00",
+                "duration": "PT14H15M",
+                "marketing_carrier": { "iata_code": "EK", "name": "Emirates" },
+                "marketing_carrier_flight_number": "414",
+                "operating_carrier": { "iata_code": "EK", "name": "Emirates" },
+                "operating_carrier_flight_number": "414",
+                "passengers": [
+                  { "passenger_id": "pas_1", "cabin_class": "economy", "baggages": [{ "type": "checked", "quantity": 2 }, { "type": "carry_on", "quantity": 1 }] }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "off_0000NONSTOP",
+        "live_mode": false,
+        "total_amount": "1045.00",
+        "total_currency": "GBP",
+        "base_amount": "880.00",
+        "base_currency": "GBP",
+        "tax_amount": null,
+        "tax_currency": null,
+        "total_emissions_kg": "1840",
+        "expires_at": "2026-11-01T10:42:14.545Z",
+        "owner": { "name": "British Airways", "iata_code": "BA" },
+        "conditions": {
+          "refund_before_departure": { "allowed": true, "penalty_amount": "150.00", "penalty_currency": "GBP" },
+          "change_before_departure": { "allowed": true, "penalty_amount": null, "penalty_currency": null }
+        },
+        "passengers": [{ "id": "pas_1", "type": "adult" }, { "id": "pas_2", "age": 8 }],
+        "slices": [
+          {
+            "fare_brand_name": "Economy Flex",
+            "duration": "PT22H5M",
+            "origin": { "iata_code": "LHR" },
+            "destination": { "iata_code": "SYD" },
+            "segments": [
+              {
+                "origin": { "iata_code": "LHR" },
+                "destination": { "iata_code": "SYD" },
+                "departing_at": "2026-11-20T11:00:00",
+                "arriving_at": "2026-11-21T19:05:00",
+                "duration": "PT22H5M",
+                "marketing_carrier": { "iata_code": "BA", "name": "British Airways" },
+                "marketing_carrier_flight_number": "15",
+                "operating_carrier": { "iata_code": "QF", "name": "Qantas" },
+                "operating_carrier_flight_number": "2",
+                "passengers": [
+                  { "passenger_id": "pas_1", "cabin_class": "economy", "baggages": [{ "type": "checked", "quantity": 1 }] }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

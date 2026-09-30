@@ -17,10 +17,18 @@ dependencies = [
   "structlog>=24.4",
   "httpx>=0.28",
   "rapidfuzz>=3.10",
+  "defusedxml>=0.7.1",
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.8", "mypy>=1.13"]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "respx>=0.23.1",
+    "types-defusedxml>=0.7.0.20260504",
+]
 
 [build-system]
 requires = ["hatchling"]

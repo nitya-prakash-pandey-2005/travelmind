@@ -16,6 +16,9 @@ import { LoginPage } from "./auth/LoginPage";
 import { resetSessionState } from "./auth/resetSessionState";
 import { SignupPage } from "./auth/SignupPage";
 import { MissionControlPage } from "./features/dashboard/MissionControlPage";
+import { FareScanPage } from "./features/fares/FareScanPage";
+import { HotelScanPage } from "./features/hotels/HotelScanPage";
+import { SuppliersPage } from "./features/suppliers/SuppliersPage";
 import { TeamPage } from "./features/team/TeamPage";
 import { AppShell } from "./shell/AppShell";
 import { DesignGallery } from "./ui/DesignGallery";
@@ -100,12 +103,15 @@ const appRoute = createRoute({
 const missionRoute = createRoute({ getParentRoute: () => appRoute, path: "/", component: MissionControlPage });
 const teamRoute = createRoute({ getParentRoute: () => appRoute, path: "/team", component: TeamPage });
 const designRoute = createRoute({ getParentRoute: () => appRoute, path: "/design", component: DesignGallery });
+const faresRoute = createRoute({ getParentRoute: () => appRoute, path: "/fares", component: FareScanPage });
+const hotelsRoute = createRoute({ getParentRoute: () => appRoute, path: "/hotels", component: HotelScanPage });
+const suppliersRoute = createRoute({ getParentRoute: () => appRoute, path: "/suppliers", component: SuppliersPage });
 
 export const routeTree = rootRoute.addChildren([
   loginRoute,
   signupRoute,
   inviteRoute,
-  appRoute.addChildren([missionRoute, teamRoute, designRoute]),
+  appRoute.addChildren([missionRoute, faresRoute, hotelsRoute, suppliersRoute, teamRoute, designRoute]),
 ]);
 
 const PUBLIC_PREFIXES = ["/login", "/signup", "/invite/"];

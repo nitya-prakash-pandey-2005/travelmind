@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { pickAirport, signUp } from "./support";
 
 // The second test signs in as the owner the first one creates, so they run (and retry) together.
 test.describe.configure({ mode: "serial" });
@@ -11,23 +12,8 @@ const owner = {
   password: "e2e-password-123",
 };
 
-async function signUp(page: Page) {
-  await page.goto("/signup");
-  await page.getByLabel("Agency name").fill(owner.agency);
-  await page.getByLabel("Your name").fill(owner.name);
-  await page.getByLabel("Email").fill(owner.email);
-  await page.getByLabel("Password").fill(owner.password);
-  await page.getByRole("button", { name: "Create command deck" }).click();
-  await expect(page.getByRole("banner").getByText(owner.agency)).toBeVisible();
-}
-
-async function pickAirport(page: Page, label: "From" | "To", code: string) {
-  await page.getByRole("combobox", { name: label }).fill(code);
-  await page.getByRole("option", { name: new RegExp(code) }).first().click();
-}
-
 test("an owner plots a route, invites an agent, and the agent joins the crew", async ({ page, browser }) => {
-  await signUp(page);
+  await signUp(page, owner);
 
   await pickAirport(page, "From", "DEL");
   await pickAirport(page, "To", "BOM");

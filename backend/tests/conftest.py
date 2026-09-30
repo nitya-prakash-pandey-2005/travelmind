@@ -10,6 +10,18 @@ os.environ["TM_MIGRATION_DATABASE_URL"] = os.environ.get(
     "postgresql+asyncpg://travelmind_owner:owner_dev_pw@localhost:5433/travelmind_test",
 )
 os.environ["TM_REDIS_URL"] = os.environ.get("TM_TEST_REDIS_URL", "redis://localhost:6380/15")
+# Process env beats backend/.env, so these switch off any real supplier keys and the FX feed a
+# developer's .env may hold. TM_SANDBOX_SUPPLIER is only unset here, so a value for it in
+# backend/.env still applies: tests that depend on it build Settings(_env_file=None).
+for _key in (
+    "TM_DUFFEL_TOKEN",
+    "TM_LITEAPI_KEY",
+    "TM_GOOGLE_TIM_API_KEY",
+    "TM_TRAVELPAYOUTS_TOKEN",
+):
+    os.environ[_key] = ""
+os.environ["TM_FX_ENABLED"] = "false"
+os.environ.pop("TM_SANDBOX_SUPPLIER", None)
 
 from pathlib import Path  # noqa: E402
 
@@ -75,3 +87,24 @@ async def clean_redis():
     await client.flushdb()
     await client.aclose()
     yield
+
+
+@pytest.fixture
+async def airports():
+    """Load the reference fixture airports (DEL, BOM, GOI, GOX, GOA, GRU, …) and a fresh index."""
+    from tests.reference.data import fixture_text
+    from travelmind.reference.importer import load_reference_data, parse_airports, parse_countries
+    from travelmind.reference.service import reset_airport_index
+
+    reset_airport_index()
+    engine = create_async_engine(os.environ["TM_MIGRATION_DATABASE_URL"], poolclass=NullPool)
+    try:
+        await load_reference_data(
+            engine,
+            parse_countries(fixture_text("countries.csv")),
+            parse_airports(fixture_text("airports.csv")),
+        )
+    finally:
+        await engine.dispose()
+    yield
+    reset_airport_index()

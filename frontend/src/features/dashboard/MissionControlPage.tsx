@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { GlobePanel } from "../globe/GlobePanel";
@@ -10,6 +11,7 @@ import { RecentRoutesPanel } from "./RecentRoutesPanel";
 
 export function MissionControlPage() {
   const me = useCurrentUser();
+  const navigate = useNavigate();
   const selection = useRouteSelection();
   const { routes, record } = useRecentRoutes(me?.user.id ?? "anonymous");
 
@@ -35,7 +37,7 @@ export function MissionControlPage() {
         <GlobePanel arcs={arcs} />
       </div>
       <div className="flex flex-col gap-4">
-        <RouteScanner onRouteReady={record} />
+        <RouteScanner onRouteReady={record} onScanFares={() => void navigate({ to: "/fares" })} />
         <RecentRoutesPanel
           routes={routes}
           onSelect={(route) => routeStore.set({ origin: route.origin, destination: route.destination })}

@@ -1,8 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { Palette, Radar, Users } from "lucide-react";
+import { BedDouble, Palette, Plane, PlugZap, Radar, Users } from "lucide-react";
 
 const ITEMS = [
   { to: "/", label: "Mission Control", icon: Radar },
+  { to: "/fares", label: "Fare scan", icon: Plane },
+  { to: "/hotels", label: "Hotel scan", icon: BedDouble },
+  { to: "/suppliers", label: "Suppliers", icon: PlugZap },
   { to: "/team", label: "Crew roster", icon: Users },
   { to: "/design", label: "Design system", icon: Palette },
 ] as const;
