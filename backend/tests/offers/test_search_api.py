@@ -8,7 +8,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 
 from tests.helpers import exec_as_tenant, make_client, run_as_owner, signup
 from tests.offers.offer_factory import make_offer
-from travelmind.config import get_settings
+from travelmind.config import Settings, get_settings
 from travelmind.db import get_sessionmaker
 from travelmind.fareintel.models import FareSnapshot
 from travelmind.offers import service as offers_service
@@ -219,6 +219,37 @@ async def test_without_rates_foreign_prices_are_not_converted(client, airports, 
     foreign = next(o for o in body["offers"] if o["id"] == "stub~usd")
     assert foreign["display_total"] is None
     assert body["offers"][-1]["id"] == "stub~usd"  # unconverted prices sort after comparable ones
+
+
+async def test_price_checks_are_rate_limited_per_agency(client, airports, monkeypatch):
+    monkeypatch.setattr(get_settings(), "reprice_max_per_minute", 2)
+    await signup(client)
+    offer = (await client.post(SEARCH, json=trip())).json()["offers"][0]
+    price = f"/api/v1/flights/offers/{offer['id']}/price"
+    assert (await client.post(price)).status_code == 200
+    assert (await client.post(price)).status_code == 200
+    blocked = await client.post(price)
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == (
+        "Too many price checks in a minute. Please wait a moment and try again."
+    )
+
+
+async def test_price_checks_and_searches_have_separate_budgets(client, airports, monkeypatch):
+    monkeypatch.setattr(get_settings(), "search_max_per_minute", 2)
+    monkeypatch.setattr(get_settings(), "reprice_max_per_minute", 1)
+    await signup(client)
+    offer = (await client.post(SEARCH, json=trip())).json()["offers"][0]
+    price = f"/api/v1/flights/offers/{offer['id']}/price"
+    assert (await client.post(price)).status_code == 200
+    assert (await client.post(price)).status_code == 429
+    # Price checks spent none of the search budget, and a spent price budget blocks no search.
+    assert (await client.post(SEARCH, json=trip())).status_code == 200
+    assert (await client.post(SEARCH, json=trip())).status_code == 429
+
+
+def test_price_checks_default_to_sixty_a_minute():
+    assert Settings(_env_file=None).reprice_max_per_minute == 60
 
 
 async def test_reprice_confirms_an_unchanged_price(client, airports):

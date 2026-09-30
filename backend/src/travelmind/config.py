@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     fx_enabled: bool = True
     search_timeout_seconds: float = 25.0
     search_max_per_minute: int = 30
+    reprice_max_per_minute: int = 60  # price checks call the supplier too; a separate budget
     log_level: str = "INFO"
 
     @property

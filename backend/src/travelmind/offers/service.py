@@ -56,6 +56,8 @@ REPRICE_TIMEOUT_SECONDS = 20.0
 # so repeat searches don't flood the history and insights don't compare offers with themselves.
 MARKET_SEEN_TTL_SECONDS = 6 * 3600
 _MARKET_PROVENANCES = frozenset(PROVENANCES["market"])
+SEARCH_LIMIT_MESSAGE = "Too many searches in a minute. Please wait a moment and try again."
+PRICE_CHECK_LIMIT_MESSAGE = "Too many price checks in a minute. Please wait a moment and try again."
 
 
 class OfferServiceError(Exception):
@@ -67,15 +69,28 @@ class OfferServiceError(Exception):
 
 
 class RateLimited(OfferServiceError):
-    def __init__(self) -> None:
-        super().__init__("Too many searches in a minute. Please wait a moment and try again.")
+    def __init__(self, message: str = SEARCH_LIMIT_MESSAGE) -> None:
+        super().__init__(message)
+
+
+async def _spend_budget(redis: Redis, key: str, per_minute: int, message: str) -> None:
+    if not await LoginRateLimiter(redis, per_minute, 60).hit(key):
+        raise RateLimited(message)
 
 
 async def check_search_budget(redis: Redis, settings: Settings, key: str) -> None:
     """Count one search against a per-minute budget; raise RateLimited once it is spent."""
-    limiter = LoginRateLimiter(redis, settings.search_max_per_minute, 60)
-    if not await limiter.hit(key):
-        raise RateLimited()
+    await _spend_budget(redis, key, settings.search_max_per_minute, SEARCH_LIMIT_MESSAGE)
+
+
+async def check_price_budget(redis: Redis, settings: Settings, agency_id: UUID) -> None:
+    """Count one price check against the agency's own per-minute budget (separate from search)."""
+    await _spend_budget(
+        redis,
+        f"rl:price:{agency_id}",
+        settings.reprice_max_per_minute,
+        PRICE_CHECK_LIMIT_MESSAGE,
+    )
 
 
 class UnknownAirport(OfferServiceError):
@@ -324,9 +339,10 @@ async def reprice_offer(
 ) -> RepriceResponse:
     """Confirm a recently returned offer's price with its supplier.
 
-    Only offers this agency was shown can be re-priced. Raises OfferNotFound, SupplierGone,
-    OfferGone or PriceCheckFailed.
+    Only offers this agency was shown can be re-priced. Raises RateLimited, OfferNotFound,
+    SupplierGone, OfferGone or PriceCheckFailed.
     """
+    await check_price_budget(redis, settings, agency_id)
     cached = await recall_offer(redis, agency_id, offer_id)
     if cached is None:
         raise OfferNotFound()
