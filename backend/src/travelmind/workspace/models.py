@@ -143,6 +143,8 @@ class Quote(Base):
     number: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(12), default="draft", server_default="draft")
     current_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # The version the client was sent (and the share link shows); later drafts wait for a re-send.
+    sent_version: Mapped[int | None] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(3))
     markup_kind: Mapped[str] = mapped_column(String(8), default="percent", server_default="percent")
     markup_value: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")

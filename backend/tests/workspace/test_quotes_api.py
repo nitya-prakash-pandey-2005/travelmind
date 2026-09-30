@@ -328,6 +328,93 @@ async def test_expired_quote_can_be_resent(client, airports):
     assert (await client.get(f"/api/v1/quotes/{quote['id']}")).json()["status"] == "sent"
 
 
+async def test_new_version_waits_for_a_resend(client, airports):
+    enquiry, offers, quote = await setup_quote(client)
+    url = f"/api/v1/quotes/{quote['id']}"
+    agency = (await client.get("/api/v1/agency")).json()["id"]
+    await client.post(f"{url}/versions", json={"offer_ids": [offers[0]["id"]], "message": "v1"})
+    first = (await client.post(f"{url}/send")).json()["token"]
+    got = (await client.get(url)).json()
+    assert (got["current_version"], got["sent_version"], got["status"]) == (1, 1, "sent")
+    r = await client.post(f"{url}/versions", json={"offer_ids": [offers[1]["id"]], "message": "v2"})
+    got = r.json()
+    assert (got["current_version"], got["sent_version"], got["status"]) == (2, 1, "sent")
+    # The share link still works and still shows version 1 until the agent re-sends.
+    first_hash = hashlib.sha256(first.encode()).hexdigest()
+    assert await exec_as_tenant(agency, "SELECT share_token_hash FROM quotes") == [(first_hash,)]
+    listed = (await client.get("/api/v1/quotes")).json()["items"][0]
+    assert (listed["current_version"], listed["sent_version"]) == (2, 1)
+    await client.post(f"{url}/send")
+    got = (await client.get(url)).json()
+    assert (got["current_version"], got["sent_version"], got["status"]) == (2, 2, "sent")
+    fresh = (await client.post("/api/v1/quotes", json={"enquiry_id": enquiry["id"]})).json()
+    assert fresh["sent_version"] is None
+
+
+async def test_closed_enquiry_takes_no_versions_or_sends(client, airports):
+    enquiry, offers, a = await setup_quote(client)
+    b = (await client.post("/api/v1/quotes", json={"enquiry_id": enquiry["id"]})).json()
+    offer = {"offer_ids": [offers[0]["id"]], "message": ""}
+    for q in (a, b):
+        await client.post(f"/api/v1/quotes/{q['id']}/versions", json=offer)
+        await client.post(f"/api/v1/quotes/{q['id']}/send")
+    decide = lambda q, s: client.post(f"/api/v1/quotes/{q['id']}/status", json={"status": s})  # noqa: E731
+    enquiry_url = f"/api/v1/enquiries/{enquiry['id']}"
+    assert (await decide(a, "expired")).status_code == 200
+    # An expired quote is still in play (it can be re-sent), so declining B keeps the enquiry.
+    assert (await decide(b, "declined")).status_code == 200
+    assert (await client.get(enquiry_url)).json()["status"] == "quoted"
+    await client.post(f"{enquiry_url}/status", json={"status": "lost", "lost_reason": "Went quiet"})
+    closed = "This enquiry is closed. Reopen it before quoting."
+    for r in (
+        await client.post(f"/api/v1/quotes/{a['id']}/send"),
+        await client.post(f"/api/v1/quotes/{a['id']}/versions", json=offer),
+    ):
+        assert r.status_code == 409 and r.json()["detail"] == closed
+    got = (await client.get(f"/api/v1/quotes/{a['id']}")).json()
+    assert (got["status"], got["current_version"]) == ("expired", 1)
+    await client.post(f"{enquiry_url}/status", json={"status": "new"})
+    assert (await client.post(f"/api/v1/quotes/{a['id']}/send")).status_code == 200
+    assert (await client.get(enquiry_url)).json()["status"] == "quoted"
+
+
+async def test_won_enquiry_takes_no_more_versions(client, airports):
+    enquiry, offers, a = await setup_quote(client)
+    b = (await client.post("/api/v1/quotes", json={"enquiry_id": enquiry["id"]})).json()
+    offer = {"offer_ids": [offers[0]["id"]], "message": ""}
+    await client.post(f"/api/v1/quotes/{a['id']}/versions", json=offer)
+    await client.post(f"/api/v1/quotes/{a['id']}/send")
+    await client.post(f"/api/v1/quotes/{a['id']}/status", json={"status": "accepted"})
+    r = await client.post(f"/api/v1/quotes/{b['id']}/versions", json=offer)
+    assert r.status_code == 409
+    assert r.json()["detail"] == "This enquiry is closed. Reopen it before quoting."
+
+
+async def test_other_agencies_cannot_reach_quotes_or_offers(client, app, airports):
+    _, offers, quote = await setup_quote(client)
+    async with make_client(app) as other:
+        await signup(other, email="owner@betatrips.com", agency_name="Beta Trips")
+        body = {"offer_ids": [offers[0]["id"]], "message": ""}
+        assert (
+            await other.post(f"/api/v1/quotes/{quote['id']}/versions", json=body)
+        ).status_code == 404
+        assert (
+            await other.post(f"/api/v1/quotes/{quote['id']}/status", json={"status": "accepted"})
+        ).status_code == 404
+        # Beta never searched, so Alpha's offer isn't in Beta's offer cache.
+        e = (
+            await other.post("/api/v1/enquiries", json={"origin": "DEL", "destination": "BOM"})
+        ).json()
+        mine = (await other.post("/api/v1/quotes", json={"enquiry_id": e["id"]})).json()
+        r = await other.post(f"/api/v1/quotes/{mine['id']}/versions", json=body)
+        assert r.status_code == 422
+        assert r.json()["detail"] == (
+            f"Offer {offers[0]['id']} is no longer available. Run the search again."
+        )
+    detail = (await client.get(f"/api/v1/quotes/{quote['id']}")).json()
+    assert (detail["status"], detail["current_version"]) == ("draft", 0)
+
+
 async def test_list_filters(client, airports):
     await signup(client)
     c = (await client.post("/api/v1/clients", json={"name": "Priya"})).json()

@@ -6,9 +6,11 @@ are always computed here from the cached offer's total and the markup, never tak
 client. Share tokens are returned once, on send, and stored only as their sha256.
 
 Lifecycle: draft → sent (→ viewed, by the public page) → accepted | declined | expired.
-Re-sending (from sent, viewed or expired) rotates the share token. The enquiry follows along
-where its pipeline allows: new → quoting on the first quote, → quoted on send, → won on accept,
-→ lost on decline (unless another of its quotes is still open).
+Sending shares the current version (`sent_version`); versions added later wait until the agent
+re-sends (from sent, viewed or expired), which also rotates the share token. The enquiry follows
+along where its pipeline allows: new → quoting on the first quote, → quoted on send, → won on
+accept, → lost on decline (unless another of its quotes is still open). A won or lost enquiry
+takes no new quotes, versions or sends until it is reopened.
 """
 
 from collections.abc import Sequence
@@ -81,7 +83,8 @@ DECLINED_REASON = "Quote declined"
 # Quotes that can still be revised and (re-)sent; accepted and declined are final.
 _REVISABLE = frozenset({"draft", "sent", "viewed", "expired"})
 _DECIDABLE = frozenset({"sent", "viewed"})
-_OPEN = frozenset({"draft", "sent", "viewed"})
+# Quotes still in play for their enquiry; an expired quote can be revised and re-sent.
+_OPEN = frozenset({"draft", "sent", "viewed", "expired"})
 
 NOT_FOUND_MESSAGE = "Quote not found."
 ENQUIRY_CLOSED_MESSAGE = "This enquiry is closed. Reopen it before quoting."
@@ -177,6 +180,7 @@ class QuoteSummary(BaseModel):
     client: ClientRef | None
     enquiry: EnquiryRef
     current_version: int
+    sent_version: int | None
     min_sell_minor: int | None
     sent_at: datetime | None
     created_at: datetime
@@ -256,9 +260,18 @@ async def _log(
     )
 
 
+async def _open_enquiry(db: AsyncSession, quote: Quote) -> Enquiry:
+    """The quote's enquiry, row-locked, or QuoteConflict when it is won or lost: a closed
+    enquiry takes no new quotes, versions or sends until the agent reopens it."""
+    enquiry = await load_enquiry(db, quote.enquiry_id, for_update=True)
+    if enquiry.status in CLOSED_STATUSES:
+        raise QuoteConflict(ENQUIRY_CLOSED_MESSAGE)
+    return enquiry
+
+
 async def _move_enquiry_if_allowed(
     db: AsyncSession,
-    enquiry_id: UUID,
+    enquiry: Enquiry,
     from_statuses: frozenset[str],
     to_status: str,
     actor_user_id: UUID | None,
@@ -266,9 +279,8 @@ async def _move_enquiry_if_allowed(
     *,
     lost_reason: str | None = None,
 ) -> None:
-    """Move the enquiry along with its quote, but only from `from_statuses` and only when the
-    pipeline allows it; otherwise leave it where the agent put it."""
-    enquiry = await load_enquiry(db, enquiry_id, for_update=True)
+    """Move the (row-locked) enquiry along with its quote, but only from `from_statuses` and
+    only when the pipeline allows it; otherwise leave it where the agent put it."""
     if enquiry.status in from_statuses and to_status in ALLOWED[enquiry.status]:
         await set_enquiry_status(
             db, enquiry, to_status, actor_user_id, lost_reason=lost_reason, now=at
@@ -349,9 +361,11 @@ async def add_version_from_views(
     now: datetime | None = None,
 ) -> QuoteVersion:
     """Freeze a new version from these offers: each option keeps the offer as shown plus its
-    markup and sell price in the quote's currency. Lock the quote (`load_quote(...,
+    markup and sell price in the quote's currency. Status and share link are left alone: a sent
+    quote keeps showing `sent_version` until it is re-sent. Lock the quote (`load_quote(...,
     for_update=True)`) first; the caller commits."""
     _check_revisable(quote)
+    await _open_enquiry(db, quote)
     if not 1 <= len(views) <= MAX_OPTIONS or len({v.id for v in views}) != len(views):
         raise InvalidQuote(OPTIONS_MESSAGE)
     markups = list(option_markups) if option_markups is not None else [None] * len(views)
@@ -423,6 +437,7 @@ async def add_version(
 ) -> QuoteVersion:
     """Add a version from offers this agency was recently shown (the per-agency offer cache)."""
     _check_revisable(quote)
+    await _open_enquiry(db, quote)
     views: list[OfferView] = []
     for offer_id in data.offer_ids:
         offer = await recall_offer(redis, quote.agency_id, offer_id)
@@ -443,17 +458,20 @@ async def add_version(
 async def send_quote(
     db: AsyncSession, quote: Quote, actor_user_id: UUID | None, *, now: datetime | None = None
 ) -> str:
-    """Issue a fresh share token (replacing any earlier one) valid for SHARE_TTL and mark the
-    quote sent; the enquiry moves to `quoted`. Returns the token: it is never stored or shown
-    again. Lock the quote first; the caller commits."""
+    """Send the current version: issue a fresh share token (replacing any earlier one) valid for
+    SHARE_TTL, record it as `sent_version` and mark the quote sent; the enquiry moves to
+    `quoted`. Returns the token: it is never stored or shown again. Lock the quote first; the
+    caller commits."""
     _check_revisable(quote)
     if quote.current_version < 1:
         raise QuoteConflict(NO_VERSION_MESSAGE)
+    enquiry = await _open_enquiry(db, quote)
     at = now or utcnow()
     token = new_token()
     quote.share_token_hash = hash_token(token)
     quote.share_expires_at = at + SHARE_TTL
     quote.status = "sent"
+    quote.sent_version = quote.current_version
     quote.sent_at = quote.sent_at or at
     quote.updated_at = at
     await db.flush()
@@ -467,7 +485,7 @@ async def send_quote(
         {"version": quote.current_version},
     )
     await _move_enquiry_if_allowed(
-        db, quote.enquiry_id, frozenset({"new", "quoting"}), "quoted", actor_user_id, at
+        db, enquiry, frozenset({"new", "quoting"}), "quoted", actor_user_id, at
     )
     return token
 
@@ -512,6 +530,8 @@ async def decide_quote(
         if quote.status in _REVISABLE:
             raise QuoteConflict(NOT_SENT_MESSAGE.format(status=to_status))
         raise QuoteConflict(QUOTE_CLOSED_MESSAGE.format(status=quote.status))
+    # Lock the enquiry before looking at its other quotes, so two declines can't race.
+    enquiry = await load_enquiry(db, quote.enquiry_id, for_update=True)
     at = now or utcnow()
     quote.status = to_status
     quote.decided_at = at
@@ -521,13 +541,11 @@ async def decide_quote(
         db, quote, _DECISION_KIND[to_status], f"{_label(quote)} {to_status}", actor_user_id, at
     )
     if to_status == "accepted":
-        await _move_enquiry_if_allowed(
-            db, quote.enquiry_id, frozenset({"quoted"}), "won", actor_user_id, at
-        )
+        await _move_enquiry_if_allowed(db, enquiry, frozenset({"quoted"}), "won", actor_user_id, at)
     elif to_status == "declined" and not await _other_open_quotes(db, quote):
         await _move_enquiry_if_allowed(
             db,
-            quote.enquiry_id,
+            enquiry,
             frozenset({"new", "quoting", "quoted"}),
             "lost",
             actor_user_id,
@@ -575,6 +593,7 @@ def _summary_fields(
             depart_date=enquiry.depart_date,
         ),
         "current_version": quote.current_version,
+        "sent_version": quote.sent_version,
         "min_sell_minor": min_sell,
         "sent_at": quote.sent_at,
         "created_at": quote.created_at,

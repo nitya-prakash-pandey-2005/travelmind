@@ -148,6 +148,7 @@ def upgrade() -> None:
         sa.Column("number", sa.Integer, nullable=False),
         sa.Column("status", sa.String(12), server_default="draft", nullable=False),
         sa.Column("current_version", sa.Integer, server_default="0", nullable=False),
+        sa.Column("sent_version", sa.Integer, nullable=True),
         sa.Column("currency", sa.String(3), nullable=False),
         sa.Column("markup_kind", sa.String(8), server_default="percent", nullable=False),
         sa.Column("markup_value", sa.BigInteger, server_default="0", nullable=False),
