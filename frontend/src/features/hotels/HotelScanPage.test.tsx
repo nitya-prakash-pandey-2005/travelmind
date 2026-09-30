@@ -231,3 +231,12 @@ test("the scan waits for a destination", async () => {
   open({});
   expect(await screen.findByRole("button", { name: "Scan hotels" })).toBeDisabled();
 });
+
+test("the results header summarises the stay and reports each supplier", async () => {
+  await scanAndList({ [SEARCH]: { status: 200, body: response({}) } });
+  const results = screen.getByRole("region", { name: /Results/ });
+  expect(results).toHaveTextContent("1 hotel");
+  expect(results).toHaveTextContent("Near BOM");
+  expect(results).toHaveTextContent("2 adults, 1 room");
+  expect(within(results).getByRole("list", { name: "Supplier status" })).toHaveTextContent("liteapi · OK");
+});
