@@ -46,7 +46,7 @@ test("grouped navigation and collapse", async () => {
   mockApi(withSession(ME_OWNER, { ...commandCenterMocks() }));
   const { user } = renderApp("/app");
   const nav = await screen.findByRole("navigation", { name: "Primary" });
-  for (const name of ["Command Center", "Fare scan", "Hotel scan", "Crew roster", "Suppliers", "Design system"]) {
+  for (const name of ["Command Center", "Fare search", "Hotel search", "Team", "Suppliers", "Design system"]) {
     expect(within(nav).getByRole("link", { name })).toBeInTheDocument();
   }
   await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
@@ -63,7 +63,7 @@ test("navigation is grouped under Operate, Market and Admin, and the collapse is
     "Admin",
   ]);
   expect(within(nav).getByRole("link", { name: "Command Center" })).toHaveAttribute("aria-current", "page");
-  expect(within(nav).getByRole("link", { name: "Crew roster" })).toHaveAttribute("href", "/app/team");
+  expect(within(nav).getByRole("link", { name: "Team" })).toHaveAttribute("href", "/app/team");
   expect(screen.getByRole("button", { name: "Collapse sidebar" })).toHaveAttribute("aria-expanded", "true");
   await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
   expect(window.localStorage.getItem("tm-sidebar")).toBe("collapsed");
@@ -267,7 +267,7 @@ test("palette navigation covers every sidebar item", async () => {
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   const navigate = await screen.findByRole("group", { name: "Navigate" });
-  for (const name of ["Command Center", "Fare scan", "Hotel scan", "Crew roster", "Suppliers", "Design system"]) {
+  for (const name of ["Command Center", "Fare search", "Hotel search", "Team", "Suppliers", "Design system"]) {
     expect(within(navigate).getByRole("option", { name })).toBeInTheDocument();
   }
 });

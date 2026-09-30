@@ -124,7 +124,7 @@ test("closing with Ctrl+K clears the search, so reopening starts fresh", async (
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   await user.keyboard("{Control>}k{/Control}");
   expect(await screen.findByPlaceholderText(/command or an airport/i)).toHaveValue("");
-  for (const name of ["Command Center", "Fare scan", "Hotel scan", "Suppliers", "Crew roster", "Design system", "Switch to daylight theme", "Sign out"]) {
+  for (const name of ["Command Center", "Fare search", "Hotel search", "Suppliers", "Team", "Design system", "Switch to daylight theme", "Sign out"]) {
     expect(screen.getByRole("option", { name })).toBeInTheDocument();
   }
 });

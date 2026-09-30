@@ -26,7 +26,7 @@ test("a new agency logs its first enquiry and fare scan and sees them on the Com
   await expect(checklist.getByRole("button", { name: /^Add a client\s*\(done\)$/ })).toBeVisible();
   await expect(checklist).toContainText("1 of 6 done");
 
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Fare scan" }).click();
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Fare search" }).click();
   await expect(page).toHaveURL(/\/app\/fares$/);
   await pickAirport(page, "From", "DEL");
   await pickAirport(page, "To", "BOM");

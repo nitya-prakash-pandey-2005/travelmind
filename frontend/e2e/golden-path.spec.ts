@@ -26,7 +26,7 @@ test("an owner plots a route, invites an agent, and the agent joins the crew", a
   await expect(page.getByRole("region", { name: "Recent routes" }).getByText("DEL → BOM")).toBeVisible();
 
   // The Command Center may link to the roster too; use the sidebar's entry.
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Crew roster" }).click();
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Team" }).click();
   await expect(page).toHaveURL(/\/app\/team$/);
   await page.getByLabel("Crew member email").fill(`agent-${stamp}@e2etravels.com`);
   await page.getByRole("button", { name: "Generate invitation" }).click();

@@ -27,14 +27,14 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Market",
     items: [
-      { to: "/app/fares", label: "Fare scan", icon: Plane },
-      { to: "/app/hotels", label: "Hotel scan", icon: BedDouble },
+      { to: "/app/fares", label: "Fare search", icon: Plane },
+      { to: "/app/hotels", label: "Hotel search", icon: BedDouble },
     ],
   },
   {
     label: "Admin",
     items: [
-      { to: "/app/team", label: "Crew roster", icon: Users },
+      { to: "/app/team", label: "Team", icon: Users },
       { to: "/app/suppliers", label: "Suppliers", icon: PlugZap },
       { to: "/app/design", label: "Design system", icon: Palette },
     ],

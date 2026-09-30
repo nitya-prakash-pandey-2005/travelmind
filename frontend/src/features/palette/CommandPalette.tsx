@@ -65,9 +65,9 @@ export function CommandPalette() {
 
   const commands: PaletteCommand[] = [
     { id: "nav-command", group: "Navigate", label: "Command Center", keywords: "home dashboard mission control metrics globe route", run: () => void navigate({ to: "/app" }) },
-    { id: "nav-fares", group: "Navigate", label: "Fare scan", keywords: "flights fares prices offers search", run: () => void navigate({ to: "/app/fares" }) },
-    { id: "nav-hotels", group: "Navigate", label: "Hotel scan", keywords: "hotels rooms stay accommodation", run: () => void navigate({ to: "/app/hotels" }) },
-    { id: "nav-team", group: "Navigate", label: "Crew roster", keywords: "team members invite crew", run: () => void navigate({ to: "/app/team" }) },
+    { id: "nav-fares", group: "Navigate", label: "Fare search", keywords: "flights fares prices offers scan", run: () => void navigate({ to: "/app/fares" }) },
+    { id: "nav-hotels", group: "Navigate", label: "Hotel search", keywords: "hotels rooms stay accommodation scan", run: () => void navigate({ to: "/app/hotels" }) },
+    { id: "nav-team", group: "Navigate", label: "Team", keywords: "team members invite crew roster", run: () => void navigate({ to: "/app/team" }) },
     { id: "nav-suppliers", group: "Navigate", label: "Suppliers", keywords: "suppliers connections keys duffel liteapi data", run: () => void navigate({ to: "/app/suppliers" }) },
     { id: "nav-design", group: "Navigate", label: "Design system", keywords: "styles components tokens", run: () => void navigate({ to: "/app/design" }) },
     {

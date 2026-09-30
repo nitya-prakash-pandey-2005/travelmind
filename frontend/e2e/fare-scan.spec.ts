@@ -4,7 +4,7 @@ import { newOwner, pickAirport, signUp } from "./support";
 test("an agent scans sandbox fares, verifies a price and checks the supplier links", async ({ page }) => {
   await signUp(page, newOwner("fares"));
 
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Fare scan" }).click();
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Fare search" }).click();
   await expect(page).toHaveURL(/\/app\/fares$/);
   await pickAirport(page, "From", "DEL");
   await pickAirport(page, "To", "BOM");
