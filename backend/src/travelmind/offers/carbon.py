@@ -1,8 +1,8 @@
 """Per-passenger CO₂ from Google's Travel Impact Model (data: CC BY-SA 4.0 — attribute in the UI).
 
 Enrichment is best-effort: any HTTP, Redis or parse failure, or running past `timeout_s`, leaves
-the offers as they were. The API key travels in the URL, so errors are logged by type and status
-only — never with the exception text, which can contain the full URL.
+the offers as they were. The API key travels in the `X-Goog-Api-Key` header, never the URL, and
+HTTP errors are still logged by type and status only — never with the exception text.
 """
 
 import asyncio
@@ -200,12 +200,14 @@ class TimClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout_s) as client:
                 response = await client.post(
-                    f"{self._base_url}/flights:{method}", params={"key": self._api_key}, json=body
+                    f"{self._base_url}/flights:{method}",
+                    headers={"X-Goog-Api-Key": self._api_key},
+                    json=body,
                 )
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPStatusError as exc:
-            # str(exc) would include the request URL, and with it the API key.
+            # Logged by status only: exception text carries request details we don't want in logs.
             log.warning("tim_unavailable", method=method, status=exc.response.status_code)
             return None
         except (httpx.HTTPError, ValueError) as exc:

@@ -35,14 +35,14 @@ async def remember_offers(redis: Redis, agency_id: UUID, offers: Iterable[Flight
                 pipe.set(_key(agency_id, offer.id), offer.model_dump_json(), ex=_ttl(offer))
             await pipe.execute()
     except RedisError as exc:
-        log.warning("offer_cache_unavailable", error=str(exc))
+        log.warning("offer_cache_unavailable", error_type=type(exc).__name__)
 
 
 async def recall_offer(redis: Redis, agency_id: UUID, offer_id: str) -> FlightOffer | None:
     try:
         raw = await redis.get(_key(agency_id, offer_id))
     except RedisError as exc:
-        log.warning("offer_cache_unavailable", error=str(exc))
+        log.warning("offer_cache_unavailable", error_type=type(exc).__name__)
         return None
     if raw is None:
         return None

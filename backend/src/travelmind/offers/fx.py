@@ -122,26 +122,26 @@ async def get_fx_rates(
         if cached:
             return _load(cached)
     except (RedisError, ValueError) as exc:
-        log.warning("fx_cache_unavailable", error=str(exc))
+        log.warning("fx_cache_unavailable", error_type=type(exc).__name__)
     try:
         if await redis.exists(FAILURE_KEY):
             return None
     except RedisError as exc:
-        log.warning("fx_cache_unavailable", error=str(exc))
+        log.warning("fx_cache_unavailable", error_type=type(exc).__name__)
     try:
         async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
             response = await client.get(url)
         response.raise_for_status()
         rates = parse_ecb_xml(response.text)
     except (httpx.HTTPError, ValueError) as exc:
-        log.warning("fx_rates_unavailable", error=str(exc))
+        log.warning("fx_rates_unavailable", error_type=type(exc).__name__)
         try:
             await redis.set(FAILURE_KEY, "1", ex=FAILURE_TTL_SECONDS)
         except RedisError as marker_exc:
-            log.warning("fx_cache_unavailable", error=str(marker_exc))
+            log.warning("fx_cache_unavailable", error_type=type(marker_exc).__name__)
         return None
     try:
         await redis.set(CACHE_KEY, _dump(rates), ex=CACHE_TTL_SECONDS)
     except RedisError as exc:
-        log.warning("fx_cache_unavailable", error=str(exc))
+        log.warning("fx_cache_unavailable", error_type=type(exc).__name__)
     return rates

@@ -128,7 +128,8 @@ class DuffelFlightSupplier:
         return offers[:MAX_OFFERS]
 
     async def price(self, supplier_ref: str) -> FlightOffer:
-        # The ref comes from a client-supplied offer id; never let it steer the request path.
+        # The ref comes from this agency's offer cache (what search returned), not the client.
+        # Still checked as defence in depth: it must never be able to steer the request path.
         if not _OFFER_REF.fullmatch(supplier_ref):
             raise SupplierError(
                 "offer_unavailable", "This offer is no longer available. Search again."

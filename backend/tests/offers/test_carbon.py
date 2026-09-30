@@ -62,7 +62,9 @@ async def test_known_flights_use_per_flight_emissions(respx_mock):
         await redis.aclose()
     assert (offer.co2_kg_per_passenger, offer.co2_source) == (1230, "google_tim")
     sent = route.calls.last.request
-    assert sent.url.params["key"] == "tim-key"
+    # The key travels in a header: URLs end up in access and client logs, headers don't.
+    assert sent.headers["X-Goog-Api-Key"] == "tim-key"
+    assert "key" not in sent.url.params
     body = json.loads(sent.content)["flights"]
     assert body[0] == {
         "origin": "LHR",

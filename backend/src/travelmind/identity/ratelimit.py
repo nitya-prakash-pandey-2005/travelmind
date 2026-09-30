@@ -31,7 +31,7 @@ class LoginRateLimiter:
                 pipe.expire(key, self._window, nx=True)
                 count, _ = await pipe.execute()
         except RedisError as exc:
-            log.warning("rate_limiter_unavailable", error=str(exc))
+            log.warning("rate_limiter_unavailable", error_type=type(exc).__name__)
             return True
         return int(count) <= self._max
 
@@ -39,11 +39,11 @@ class LoginRateLimiter:
         try:
             await self._redis.delete(key)
         except RedisError as exc:
-            log.warning("rate_limiter_unavailable", error=str(exc))
+            log.warning("rate_limiter_unavailable", error_type=type(exc).__name__)
 
     async def refund(self, key: str) -> None:
         """Give back one attempt, e.g. after a successful login."""
         try:
             await self._redis.eval(_REFUND_SCRIPT, 1, key)
         except RedisError as exc:
-            log.warning("rate_limiter_unavailable", error=str(exc))
+            log.warning("rate_limiter_unavailable", error_type=type(exc).__name__)
