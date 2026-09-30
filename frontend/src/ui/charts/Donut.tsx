@@ -46,14 +46,13 @@ export function Donut({
   const total = shown.reduce((sum, s) => sum + s.value, 0);
   const gap = shown.filter((s) => s.value > 0).length > 1 ? GAP : 0;
 
-  let offset = 0;
-  const arcs = shown.map((slice, i) => {
-    const length = total > 0 ? (slice.value / total) * CIRCUMFERENCE : 0;
-    const dash = Math.max(0, length - gap);
-    const arc = { slice, dash, offset, color: sliceColor(i) };
-    offset += length;
-    return arc;
-  });
+  const lengths = shown.map((slice) => (total > 0 ? (slice.value / total) * CIRCUMFERENCE : 0));
+  const arcs = shown.map((slice, i) => ({
+    slice,
+    dash: Math.max(0, (lengths[i] ?? 0) - gap),
+    offset: lengths.slice(0, i).reduce((sum, length) => sum + length, 0),
+    color: sliceColor(i),
+  }));
 
   const summary = total > 0 ? shown.map((s) => `${s.label} ${share(s.value, total)}%`).join(", ") : "no data";
   const focus = active === null ? null : shown[active];

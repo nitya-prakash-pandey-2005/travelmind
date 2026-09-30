@@ -1,5 +1,5 @@
 import { Outlet } from "@tanstack/react-router";
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { useCurrentUser } from "../auth/useCurrentUser";
 import { DemoBanner } from "./DemoBanner";
 import { Sidebar } from "./Sidebar";
@@ -29,13 +29,15 @@ export function AppShell() {
   const sidebarId = useId();
   const isDesktop = useIsDesktop();
   const [navOpen, setNavOpen] = useState(false);
+  const [wasDesktop, setWasDesktop] = useState(isDesktop);
   const navButtonRef = useRef<HTMLButtonElement>(null);
   // The drawer only exists on small screens: widening the window closes it (and un-inerts the page).
-  const drawerOpen = navOpen && !isDesktop;
-
-  useEffect(() => {
+  // Adjusted during render rather than in an effect, so there is no extra render pass.
+  if (wasDesktop !== isDesktop) {
+    setWasDesktop(isDesktop);
     if (isDesktop) setNavOpen(false);
-  }, [isDesktop]);
+  }
+  const drawerOpen = navOpen && !isDesktop;
 
   if (!me) return null;
 
