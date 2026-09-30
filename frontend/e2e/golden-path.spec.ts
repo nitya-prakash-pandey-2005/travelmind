@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { pickAirport, signUp } from "./support";
+import { APP_HOME, pickAirport, signOut, signUp } from "./support";
 
 // The second test signs in as the owner the first one creates, so they run (and retry) together.
 test.describe.configure({ mode: "serial" });
@@ -15,6 +15,7 @@ const owner = {
 test("an owner plots a route, invites an agent, and the agent joins the crew", async ({ page, browser }) => {
   await signUp(page, owner);
 
+  // The route scanner sits on the Command Center.
   await pickAirport(page, "From", "DEL");
   await pickAirport(page, "To", "BOM");
   // Real OurAirports coordinates (local dev) and the CI fixture CSVs differ by about a kilometre,
@@ -24,15 +25,15 @@ test("an owner plots a route, invites an agent, and the agent joins the crew", a
   await expect(scanner.getByText(/^1h 5\dm$/)).toBeVisible();
   await expect(page.getByRole("region", { name: "Recent routes" }).getByText("DEL → BOM")).toBeVisible();
 
-  // The dashboard also has an "Open crew roster" link; use the navigation rail's entry.
+  // The Command Center may link to the roster too; use the sidebar's entry.
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Crew roster" }).click();
+  await expect(page).toHaveURL(/\/app\/team$/);
   await page.getByLabel("Crew member email").fill(`agent-${stamp}@e2etravels.com`);
   await page.getByRole("button", { name: "Generate invitation" }).click();
   const link = await page.getByLabel("Invitation link").inputValue();
   expect(link).toContain("/invite/");
 
-  await page.getByRole("button", { name: owner.name }).click();
-  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await signOut(page, owner.name);
   await expect(page.getByRole("heading", { name: "Mission access" })).toBeVisible();
 
   const agentContext = await browser.newContext();
@@ -41,11 +42,13 @@ test("an owner plots a route, invites an agent, and the agent joins the crew", a
   await agentPage.getByLabel("Your name").fill("Arjun Agent");
   await agentPage.getByLabel("Password").fill("agent-password-123");
   await agentPage.getByRole("button", { name: "Join the crew" }).click();
+  await expect(agentPage).toHaveURL(APP_HOME);
   await expect(agentPage.getByRole("banner").getByText(owner.agency)).toBeVisible();
 
   await agentPage.keyboard.press("Control+k");
   await agentPage.getByPlaceholder(/command or an airport/i).fill("crew");
   await agentPage.keyboard.press("Enter");
+  await expect(agentPage).toHaveURL(/\/app\/team$/);
   const table = agentPage.getByRole("table", { name: "Crew members" });
   await expect(table.getByRole("row")).toHaveCount(3);
   await expect(agentPage.getByText(/ask an agency owner or admin/i)).toBeVisible();
