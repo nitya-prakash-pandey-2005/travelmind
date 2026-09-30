@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -368,16 +368,31 @@ async def list_active_members(db: AsyncSession, agency_id: UUID) -> list[ActiveM
     return [ActiveMember(id=row.id, full_name=row.full_name, role=row.role) for row in rows]
 
 
-async def get_notifications_seen_at(db: AsyncSession, user_id: UUID) -> datetime | None:
-    return await db.scalar(select(User.notifications_seen_at).where(User.id == user_id))
+async def get_notifications_read_until(db: AsyncSession, user_id: UUID) -> datetime:
+    """Events up to this instant are read for the user: when they last marked notifications
+    seen, else when they joined (a new teammate doesn't inherit the agency's history)."""
+    read_until = await db.scalar(
+        select(func.coalesce(User.notifications_seen_at, User.created_at)).where(User.id == user_id)
+    )
+    assert read_until is not None
+    return read_until
 
 
 async def mark_notifications_seen(
-    db: AsyncSession, user_id: UUID, *, now: datetime | None = None
+    db: AsyncSession, user_id: UUID, *, until: datetime | None = None, now: datetime | None = None
 ) -> None:
-    """Everything up to `now` counts as read for this user. The caller commits."""
+    """Everything up to `until` (the newest event the user was shown), capped at `now`, counts as
+    read; without `until`, everything up to `now`. Never moves back past what was already read
+    (see get_notifications_read_until). The caller commits."""
+    at = now or datetime.now(UTC)
+    if until is not None:
+        at = min(at, until)
     await db.execute(
         update(User)
         .where(User.id == user_id)
-        .values(notifications_seen_at=now or datetime.now(UTC))
+        .values(
+            notifications_seen_at=func.greatest(
+                func.coalesce(User.notifications_seen_at, User.created_at), at
+            )
+        )
     )

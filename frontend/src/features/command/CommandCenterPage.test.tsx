@@ -43,6 +43,11 @@ test("command center empty workspace", async () => {
   mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: false })));
   renderApp("/app");
   expect(await screen.findByRole("group", { name: /Win rate/ })).toHaveTextContent("—");
+  // No option quoted with CO₂ yet: unknown, not zero.
+  const co2 = screen.getByRole("group", { name: /CO₂ quoted/ });
+  expect(co2).toHaveTextContent("—");
+  expect(co2).not.toHaveTextContent(/0/);
+  expect(within(co2).getByText("No CO₂ figures quoted yet")).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "Market pulse" })).toHaveTextContent("trends appear after two weeks");
   expect(screen.getByText("0 of 6 done")).toBeInTheDocument();
   expect(document.body.textContent).not.toMatch(/NaN|undefined/);

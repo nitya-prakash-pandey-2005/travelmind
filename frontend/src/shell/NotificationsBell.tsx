@@ -43,7 +43,7 @@ function NotificationRow({ item }: { item: NotificationItem }) {
 }
 
 /**
- * Bell with the unread count; opening the list marks everything seen. Polls every minute
+ * Bell with the unread count; opening the list marks everything up to its newest item seen. Polls every minute
  * (see notificationsQueryOptions). A disclosure, not a menu: the list is plain content.
  */
 export function NotificationsBell() {
@@ -55,7 +55,7 @@ export function NotificationsBell() {
   const queryClient = useQueryClient();
   const notifications = useQuery(notificationsQueryOptions);
   const markSeen = useMutation({
-    mutationFn: () => workspaceApi.markNotificationsSeen(),
+    mutationFn: (until?: string) => workspaceApi.markNotificationsSeen(until),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.notifications }),
   });
   const unread = notifications.data?.unread ?? 0;
@@ -75,7 +75,8 @@ export function NotificationsBell() {
       return;
     }
     setOpen(true);
-    if (unread > 0) markSeen.mutate();
+    // Only what the list shows is marked read: events that arrive meanwhile stay unread.
+    if (unread > 0) markSeen.mutate(notifications.data?.items[0]?.occurred_at);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {

@@ -72,6 +72,65 @@ async def test_notifications_follow_the_owners_quotes(client, app, airports):
         assert (await _notifications(client))["unread"] == 0
 
 
+async def test_a_new_teammate_does_not_inherit_old_news(client, app):
+    await signup(client)
+    async with make_client(app) as first, make_client(app) as second:
+        await join_agent(client, first)
+        invite = await client.post(
+            "/api/v1/invitations", json={"email": "neha@alphatravels.com", "role": "agent"}
+        )
+        joined = await second.post(
+            "/api/v1/invitations/accept",
+            json={"token": invite.json()["token"], "full_name": "Neha", "password": "x" * 12},
+        )
+        assert joined.status_code == 201
+        # Ravi joined before Neha had an account: listed, but not unread for her.
+        notes = await _notifications(second)
+        assert notes["unread"] == 0
+        assert [(i["summary"], i["read"]) for i in notes["items"]] == [
+            ("Ravi Agent joined the team", True)
+        ]
+        # Ravi hasn't opened the bell yet: Neha joining after him is news to him.
+        assert (await _notifications(first))["unread"] == 1
+
+
+async def test_seen_stops_at_the_newest_event_shown(client, app):
+    await signup(client)
+    async with make_client(app) as agent:
+        await join_agent(client, agent)
+        shown = (await _notifications(client))["items"]
+        newest = shown[0]["occurred_at"]
+        # Someone else joins after the bell was opened but before it was marked seen.
+        invite = await client.post(
+            "/api/v1/invitations", json={"email": "neha@alphatravels.com", "role": "agent"}
+        )
+        async with make_client(app) as late:
+            await late.post(
+                "/api/v1/invitations/accept",
+                json={"token": invite.json()["token"], "full_name": "Neha", "password": "x" * 12},
+            )
+        r = await client.post("/api/v1/notifications/seen", json={"until": newest})
+        assert r.status_code == 204
+        notes = await _notifications(client)
+        assert notes["unread"] == 1
+        assert [(i["summary"], i["read"]) for i in notes["items"]] == [
+            ("Neha joined the team", False),
+            ("Ravi Agent joined the team", True),
+        ]
+        # A time in the future counts only up to now; an older one never un-reads anything.
+        future = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+        assert (
+            await client.post("/api/v1/notifications/seen", json={"until": future})
+        ).status_code == 204
+        assert (await _notifications(client))["unread"] == 0
+        assert (
+            await client.post("/api/v1/notifications/seen", json={"until": newest})
+        ).status_code == 204
+        assert (await _notifications(client))["unread"] == 0
+        bad = await client.post("/api/v1/notifications/seen", json={"until": "yesterday"})
+        assert bad.status_code == 422
+
+
 async def test_assignment_notifies_the_assignee_only(client, app, airports):
     await signup(client)
     async with make_client(app) as agent:

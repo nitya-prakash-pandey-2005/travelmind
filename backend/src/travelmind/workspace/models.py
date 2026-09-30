@@ -199,6 +199,7 @@ class SearchSourceResult(Base):
     __table_args__ = (
         CheckConstraint("search_kind IN ('flights','hotels')", name="ck_ssr_kind"),
         Index("ix_ssr_agency_time", "agency_id", "occurred_at"),
+        Index("ix_ssr_search", "search_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)

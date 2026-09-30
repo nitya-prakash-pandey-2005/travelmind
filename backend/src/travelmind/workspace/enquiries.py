@@ -71,6 +71,7 @@ LOST_REASON_MESSAGE = "Say why the enquiry was lost (up to 200 characters)."
 SAME_AIRPORTS_MESSAGE = "Origin and destination must be different airports."
 RETURN_BEFORE_DEPART_MESSAGE = "The return date can't be before the departure date."
 BUDGET_PAIR_MESSAGE = "A budget needs both an amount and a currency."
+TOO_MANY_TRAVELLERS_MESSAGE = f"A trip can have at most {MAX_PASSENGERS} travellers."
 
 MAX_CHILDREN = 8
 MAX_LOST_REASON = 200
@@ -366,6 +367,12 @@ async def load_enquiry(db: AsyncSession, enquiry_id: UUID, *, for_update: bool =
     return enquiry
 
 
+def _check_travellers(adults: int, children_ages: list[int]) -> None:
+    """Adults and children together fit one booking (as a search allows)."""
+    if adults + len(children_ages) > MAX_PASSENGERS:
+        raise InvalidEnquiry(TOO_MANY_TRAVELLERS_MESSAGE)
+
+
 async def create_enquiry(
     db: AsyncSession,
     agency_id: UUID,
@@ -376,6 +383,7 @@ async def create_enquiry(
 ) -> Enquiry:
     """Add an enquiry (status `new`, next E-number) and its activity. The session must be bound
     to the agency; the caller commits. `now` back-dates the enquiry and its events."""
+    _check_travellers(data.adults, data.children_ages)
     await _check_client(db, agency_id, data.client_id)
     await check_airport(db, data.origin)
     await check_airport(db, data.destination)
@@ -474,6 +482,9 @@ async def update_enquiry(
     problem = trip_problem(**merged)
     if problem:
         raise InvalidEnquiry(problem)
+    _check_travellers(
+        changes.get("adults", enquiry.adults), changes.get("children_ages", enquiry.children_ages)
+    )
     if "client_id" in changes:
         await _check_client(db, enquiry.agency_id, changes["client_id"])
     for field in ("origin", "destination"):

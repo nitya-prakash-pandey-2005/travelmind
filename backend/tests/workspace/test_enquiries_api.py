@@ -45,6 +45,23 @@ async def test_validation(client, airports):
     ] == "That teammate isn't in your agency."
 
 
+async def test_a_trip_has_at_most_nine_travellers(client, airports):
+    await signup(client)
+    too_many = "A trip can have at most 9 travellers."
+    r = await new(client, adults=7, children_ages=[4, 6, 9])
+    assert r.status_code == 422 and r.json()["detail"] == too_many
+    e = (await new(client, adults=7, children_ages=[4, 6])).json()
+    assert (e["adults"], e["children_ages"]) == (7, [4, 6])
+    item = f"{URL}/{e['id']}"
+    # Checked against the enquiry as it will be: 7 adults already there plus 3 children.
+    r = await client.patch(item, json={"children_ages": [4, 6, 9]})
+    assert r.status_code == 422 and r.json()["detail"] == too_many
+    r = await client.patch(item, json={"adults": 8})
+    assert r.status_code == 422 and r.json()["detail"] == too_many
+    r = await client.patch(item, json={"adults": 6, "children_ages": [4, 6, 9]})
+    assert r.status_code == 200 and r.json()["adults"] + len(r.json()["children_ages"]) == 9
+
+
 async def test_filters(client, airports):
     await signup(client)
     await new(client)

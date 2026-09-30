@@ -9,6 +9,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
+from pydantic import BaseModel
 
 from travelmind.config import get_settings
 from travelmind.dashboard import metrics
@@ -117,9 +118,19 @@ async def notifications_route(current: AuthedUser, db: DbSession) -> Notificatio
     return await metrics.notifications(db, agency, current.id)
 
 
+class NotificationsSeen(BaseModel):
+    # The newest event the user was shown: later ones stay unread.
+    until: datetime | None = None
+
+
 @notifications_router.post("/seen", status_code=status.HTTP_204_NO_CONTENT)
-async def notifications_seen_route(current: AuthedUser, db: DbSession) -> Response:
-    await identity_service.mark_notifications_seen(db, current.id)
+async def notifications_seen_route(
+    current: AuthedUser, db: DbSession, body: NotificationsSeen | None = None
+) -> Response:
+    until = body.until if body is not None else None
+    if until is not None and until.tzinfo is None:
+        until = until.replace(tzinfo=UTC)
+    await identity_service.mark_notifications_seen(db, current.id, until=until)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

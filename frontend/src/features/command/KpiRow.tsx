@@ -25,9 +25,15 @@ const RANGE_DAYS: Record<DashboardRange, number> = { "7d": 7, "30d": 30, "90d": 
 const GRID = "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 min-[1600px]:grid-cols-7";
 const TILE = (index: number) => cn("grid min-w-0 tm-enter", index === 0 && "col-span-2 min-[1600px]:col-span-1");
 
+/** Why a tile has no figure: no closed enquiries, no CO₂ on any quoted option, else no quotes sent. */
+const EMPTY_HINTS: Partial<Record<KpiKey, string>> = {
+  win_rate: "No enquiries closed yet",
+  co2_quoted: "No CO₂ figures quoted yet",
+};
+
 /** Why a tile has no value or no comparison yet, in words. */
 function hintFor(kpi: Kpi, range: DashboardRange): string {
-  if (kpi.value === null) return kpi.key === "win_rate" ? "No enquiries closed yet" : "No quotes sent yet";
+  if (kpi.value === null) return EMPTY_HINTS[kpi.key] ?? "No quotes sent yet";
   if (kpi.key === "pipeline_value") return "Quotes out with clients";
   const days = RANGE_DAYS[range] as number | undefined;
   return days ? `vs previous ${days} days` : "vs previous period";

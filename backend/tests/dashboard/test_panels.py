@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from tests.dashboard.fixtures import join_agent
+from tests.dashboard.fixtures import DAY, add_search, join_agent
 from tests.helpers import make_client
 from travelmind.db import bind_tenant, get_sessionmaker
 from travelmind.workspace.enquiries import EnquiryCreate, create_enquiry, set_enquiry_status
@@ -208,3 +208,35 @@ async def test_departures_are_upcoming_won_trips(seeded):
         }
     ]
     assert UUID(items[0]["enquiry_id"])
+
+
+async def test_market_pulse_route_with_sandbox_and_live_sources_is_mixed(seeded):
+    client, agency_id, now = seeded
+    me = (await client.get("/api/v1/auth/me")).json()
+    user_id = UUID(me["user"]["id"])
+    both = [("sandbox", "ok", 4, 100), ("duffel", "ok", 3, 600)]
+    sandbox_only = [("sandbox", "ok", 4, 100), ("duffel", "error", 0, 9000)]
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency_id)
+        for at, route, cheapest, sources in [
+            (1 * DAY, ("GOI", "DEL"), 300000, both),
+            (3 * DAY, ("GOI", "DEL"), 310000, sandbox_only),
+            (10 * DAY, ("GOI", "DEL"), 350000, both),
+            (12 * DAY, ("GOI", "DEL"), 360000, sandbox_only),
+            # A failed live call doesn't make a route's fares live.
+            (1 * DAY, ("BOM", "GOI"), 200000, sandbox_only),
+            (2 * DAY, ("BOM", "GOI"), 210000, sandbox_only),
+            (9 * DAY, ("BOM", "GOI"), 250000, sandbox_only),
+            (11 * DAY, ("BOM", "GOI"), 260000, sandbox_only),
+        ]:
+            await add_search(db, agency_id, user_id, now - at, route, cheapest, sources)
+        await db.commit()
+    routes = {
+        (r["origin"], r["destination"]): r
+        for r in (await client.get("/api/v1/dashboard/market-pulse")).json()["routes"]
+    }
+    assert routes["GOI", "DEL"]["provenance"] == "MIXED"
+    assert routes["GOI", "DEL"]["samples"] == 4
+    assert routes["BOM", "GOI"]["provenance"] == "SANDBOX"
+    assert routes["DEL", "BOM"]["provenance"] == "SANDBOX"
+    assert routes["BOM", "DEL"]["provenance"] == "LIVE"

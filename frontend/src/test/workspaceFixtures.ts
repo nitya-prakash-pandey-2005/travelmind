@@ -30,7 +30,7 @@ const KPIS = [
   { key: "win_rate", label: "Win rate", unit: "percent", empty: null },
   { key: "pipeline_value", label: "Pipeline value", unit: "money", empty: 0 },
   { key: "response_time", label: "Response time", unit: "minutes", empty: null },
-  { key: "co2_quoted", label: "CO₂ quoted", unit: "kg", empty: 0 },
+  { key: "co2_quoted", label: "CO₂ quoted", unit: "kg", empty: null },
   { key: "searches", label: "Searches", unit: "count", empty: 0 },
 ] as const;
 

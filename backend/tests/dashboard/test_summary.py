@@ -59,7 +59,7 @@ async def test_summary_details_30d(seeded):
         "win_rate": None,
         "pipeline_value": None,
         "response_time": None,
-        "co2_quoted": 0,
+        "co2_quoted": None,  # no option quoted before the range carried CO2
         "searches": 0,
     }
     # E-0003 first quoted after 180 min, E-0004 after 60 min.
@@ -114,9 +114,11 @@ async def test_empty_agency_dashboard(client):
         "win_rate": None,
         "pipeline_value": 0,
         "response_time": None,
-        "co2_quoted": 0,
+        "co2_quoted": None,  # nothing quoted with CO2: unknown, not zero
         "searches": 0,
     }
+    co2 = next(k for k in body["kpis"] if k["key"] == "co2_quoted")
+    assert co2["previous"] is None and all(p["value"] == 0 for p in co2["series"])
     for path in ("pipeline", "activity", "market-pulse", "supplier-health", "team", "departures"):
         assert (await client.get(f"/api/v1/dashboard/{path}")).status_code == 200
 

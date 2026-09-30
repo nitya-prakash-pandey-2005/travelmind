@@ -53,7 +53,9 @@ export const MIN_SEARCH_LENGTH = 2;
 export const workspaceApi = {
   agency: (signal?: AbortSignal) => apiFetch<AgencyProfile>("/api/v1/agency", { signal }),
   notifications: (signal?: AbortSignal) => apiFetch<NotificationsResponse>("/api/v1/notifications", { signal }),
-  markNotificationsSeen: () => apiFetch<void>("/api/v1/notifications/seen", { method: "POST" }),
+  /** Marks everything up to `until` (the newest item shown, ISO 8601) as read; later events stay unread. */
+  markNotificationsSeen: (until?: string) =>
+    apiFetch<void>("/api/v1/notifications/seen", { method: "POST", body: until ? { until } : undefined }),
   search: (term: string, signal?: AbortSignal) =>
     apiFetch<SearchResponse>(`/api/v1/search?q=${encodeURIComponent(term)}`, { signal }),
   onboarding: (signal?: AbortSignal) => apiFetch<OnboardingResponse>("/api/v1/onboarding", { signal }),

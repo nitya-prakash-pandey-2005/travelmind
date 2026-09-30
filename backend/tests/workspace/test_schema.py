@@ -55,3 +55,13 @@ async def test_agencies_have_profile_columns_with_defaults():
             )
         ).one()
     assert tuple(row) == ("IN", "INR", "Asia/Kolkata", "#22d3ee", False)
+
+
+async def test_source_results_are_indexed_by_search():
+    async with get_sessionmaker()() as db:
+        definition = (
+            await db.execute(
+                text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_ssr_search'")
+            )
+        ).scalar_one()
+    assert "search_source_results" in definition and "(search_id)" in definition

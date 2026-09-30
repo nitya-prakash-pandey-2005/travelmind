@@ -275,7 +275,7 @@ _RESPONSE_DAILY = _series_sql(
 )
 
 # CO2 of every option of each sent version, for the enquiry's travellers; options without CO2
-# are skipped.
+# are skipped, so a period where no option carried CO2 is NULL (unknown), not 0.
 _CO2_ROWS = f"""
     SELECT q.sent_at,
            (o.item -> 'offer' ->> 'co2_kg_per_passenger')::numeric
@@ -288,8 +288,8 @@ _CO2_ROWS = f"""
 """
 _CO2 = text(
     f"""
-    SELECT COALESCE(sum(kg) FILTER (WHERE sent_at >= :start), 0) AS value,
-           COALESCE(sum(kg) FILTER (WHERE sent_at < :start), 0) AS previous
+    SELECT sum(kg) FILTER (WHERE sent_at >= :start) AS value,
+           sum(kg) FILTER (WHERE sent_at < :start) AS previous
     FROM ({_CO2_ROWS}) AS c
     """
 )
@@ -515,50 +515,56 @@ async def activity(
 # --- market pulse -----------------------------------------------------------------------------
 
 # Adults-only searches billed in the agency currency, one traveller's cheapest fare each, with
-# the week they fall in (0 = the last 7 local days) and whether sandbox / other suppliers
-# answered them.
-_FARES = """
-    WITH fares AS (
-        SELECT f.origin, f.destination,
-               round(f.cheapest_minor::numeric / f.adults) AS fare,
-               (CAST(:today AS date) - (f.created_at AT TIME ZONE :tz)::date) / 7 AS week,
-               EXISTS (
-                   SELECT 1 FROM search_source_results r
-                   WHERE r.agency_id = :agency AND r.search_id = f.id AND r.status = 'ok'
-                     AND r.supplier = 'sandbox'
-               ) AS sandbox,
-               EXISTS (
-                   SELECT 1 FROM search_source_results r
-                   WHERE r.agency_id = :agency AND r.search_id = f.id AND r.status = 'ok'
-                     AND r.supplier <> 'sandbox'
-               ) AS live
-        FROM flight_searches f
-        WHERE f.agency_id = :agency AND f.children = 0 AND f.adults > 0
-          AND f.display_currency = :currency AND f.cheapest_minor IS NOT NULL
-          AND f.created_at >= :since AND f.created_at < :end
+# the week they fall in (0 = the last 7 local days).
+_PULSE_SEARCHES = """
+    searches AS (
+        SELECT id, origin, destination,
+               round(cheapest_minor::numeric / adults) AS fare,
+               (CAST(:today AS date) - (created_at AT TIME ZONE :tz)::date) / 7 AS week
+        FROM flight_searches
+        WHERE agency_id = :agency AND children = 0 AND adults > 0
+          AND display_currency = :currency AND cheapest_minor IS NOT NULL
+          AND created_at >= :since AND created_at < :end
     )
 """
 _MEDIAN_FARE = "percentile_cont(0.5) WITHIN GROUP (ORDER BY fare)"
+# Weeks 0-4 compared, with whether sandbox / other suppliers answered them: each search's
+# sources are aggregated once (ix_ssr_search), not probed per row.
 _MARKET_ROUTES = text(
     f"""
-    {_FARES}
-    SELECT origin, destination,
-           {_MEDIAN_FARE} FILTER (WHERE week = 0) AS current,
-           {_MEDIAN_FARE} FILTER (WHERE week BETWEEN 1 AND 4) AS previous,
+    WITH {_PULSE_SEARCHES},
+    compared AS (SELECT * FROM searches WHERE week <= 4),
+    sources AS (
+        SELECT search_id,
+               bool_or(supplier = 'sandbox') AS has_sandbox,
+               bool_or(supplier <> 'sandbox') AS has_live
+        FROM search_source_results
+        WHERE agency_id = :agency AND status = 'ok'
+          AND search_id IN (SELECT id FROM compared)
+        GROUP BY search_id
+    )
+    SELECT c.origin, c.destination,
+           {_MEDIAN_FARE} FILTER (WHERE c.week = 0) AS current,
+           {_MEDIAN_FARE} FILTER (WHERE c.week BETWEEN 1 AND 4) AS previous,
            count(*) AS samples,
-           bool_or(sandbox) AS sandbox, bool_or(live) AS live
-    FROM fares
-    WHERE week <= 4
-    GROUP BY origin, destination
-    HAVING count(*) FILTER (WHERE week = 0) >= :min_samples
-       AND count(*) FILTER (WHERE week BETWEEN 1 AND 4) >= :min_samples
+           COALESCE(bool_or(s.has_sandbox), false) AS sandbox,
+           COALESCE(bool_or(s.has_live), false) AS live
+    FROM compared c
+    LEFT JOIN sources s ON s.search_id = c.id
+    GROUP BY c.origin, c.destination
+    HAVING count(*) FILTER (WHERE c.week = 0) >= :min_samples
+       AND count(*) FILTER (WHERE c.week BETWEEN 1 AND 4) >= :min_samples
     """
 )
+# Weekly medians for the chosen routes only (`origins[i]` → `destinations[i]`).
 _MARKET_WEEKS = text(
     f"""
-    {_FARES}
+    WITH {_PULSE_SEARCHES}
     SELECT origin, destination, week, {_MEDIAN_FARE} AS median
-    FROM fares
+    FROM searches
+    WHERE (origin, destination) IN (
+        SELECT * FROM unnest(CAST(:origins AS text[]), CAST(:destinations AS text[]))
+    )
     GROUP BY origin, destination, week
     """
 )
@@ -576,7 +582,7 @@ async def market_pulse(
     """The agency's searched routes whose median per-traveller cheapest fare moved most: the
     last 7 local days against days 8–35, with the last 8 weeks' medians (oldest first)."""
     span = window(now, agency.timezone, 7 * MARKET_WEEKS)
-    params = {
+    params: dict[str, Any] = {
         "agency": agency.id,
         "tz": agency.timezone,
         "currency": agency.currency,
@@ -606,8 +612,14 @@ async def market_pulse(
         )
     routes.sort(key=lambda r: (-abs(r.change_pct), -r.samples, r.origin, r.destination))
     routes = routes[:MARKET_ROUTES]
+    if not routes:
+        return MarketPulseOut(currency=agency.currency, routes=[])
     by_route = {(r.origin, r.destination): r for r in routes}
-    for row in await db.execute(_MARKET_WEEKS, params):
+    chosen = params | {
+        "origins": [r.origin for r in routes],
+        "destinations": [r.destination for r in routes],
+    }
+    for row in await db.execute(_MARKET_WEEKS, chosen):
         route = by_route.get((row.origin, row.destination))
         if route is not None and 0 <= row.week < MARKET_WEEKS:
             route.weekly[MARKET_WEEKS - 1 - row.week] = _half_up(row.median)
@@ -821,7 +833,7 @@ _UNREAD = text(
     f"""
     SELECT count(*)
     {_RELEVANT}
-      AND a.occurred_at > COALESCE(CAST(:seen AS timestamptz), '-infinity'::timestamptz)
+      AND a.occurred_at > :seen
     """
 )
 
@@ -829,7 +841,7 @@ _UNREAD = text(
 async def notifications(
     db: AsyncSession, agency: AgencySettings, user_id: UUID
 ) -> NotificationsOut:
-    seen = await identity_service.get_notifications_seen_at(db, user_id)
+    seen = await identity_service.get_notifications_read_until(db, user_id)
     params = {
         "agency": agency.id,
         "user": user_id,
@@ -847,7 +859,7 @@ async def notifications(
                 kind=row.kind,
                 summary=row.summary,
                 occurred_at=row.occurred_at,
-                read=seen is not None and row.occurred_at <= seen,
+                read=row.occurred_at <= seen,
             )
             for row in rows
         ],

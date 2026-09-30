@@ -119,14 +119,21 @@ test("a regular workspace has no demo badge or banner", async () => {
   expect(calls.some((c) => c.path === "/api/v1/agency")).toBe(false);
 });
 
-test("notifications show unread and mark seen", async () => {
+test("notifications show unread and mark seen up to the newest one shown", async () => {
   const { calls } = mockApi(withSession(ME_OWNER, { ...commandCenterMocks(),
-    "GET /api/v1/notifications": { status: 200, body: { unread: 2, items: [{ id: "n1", kind: "quote.viewed", summary: "Priya viewed Q-0004", occurred_at: "2026-09-30T08:00:00Z", read: false }] } },
+    "GET /api/v1/notifications": { status: 200, body: { unread: 2, items: [
+      { id: "n2", kind: "quote.viewed", summary: "Priya viewed Q-0004", occurred_at: "2026-09-30T08:00:00.123456Z", read: false },
+      { id: "n1", kind: "team.joined", summary: "Ravi joined the team", occurred_at: "2026-09-29T08:00:00Z", read: false },
+    ] } },
     "POST /api/v1/notifications/seen": { status: 204 } }));
   const { user } = renderApp("/app");
   await user.click(await screen.findByRole("button", { name: "Notifications, 2 unread" }));
   expect(screen.getByText("Priya viewed Q-0004")).toBeInTheDocument();
   await waitFor(() => expect(calls.some((c) => c.path === "/api/v1/notifications/seen")).toBe(true));
+  // Anything that arrives after the list was shown stays unread.
+  expect(calls.find((c) => c.path === "/api/v1/notifications/seen")?.body).toEqual({
+    until: "2026-09-30T08:00:00.123456Z",
+  });
 });
 
 test("marking notifications seen refreshes the count, and Escape closes the list", async () => {
