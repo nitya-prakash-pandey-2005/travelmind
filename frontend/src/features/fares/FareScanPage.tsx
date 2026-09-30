@@ -166,7 +166,7 @@ export function FareScanPage() {
           // Wide screens: quick routes over the guide, supplier status beside both. Laptops: quick routes across
           // the top (their chips need the width), guide and supplier status side by side. Phones: one column.
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1400px]:grid-cols-[minmax(0,1fr)_22rem]">
-            <div className="min-w-0 lg:col-span-2 min-[1400px]:col-span-1">
+            <div className="min-w-0 lg:max-[1400px]:col-span-2">
               <QuickRoutes recent={recent.routes} />
             </div>
             <ReadingGuide sections={FARE_GUIDE} note={FARE_NOTE} />
