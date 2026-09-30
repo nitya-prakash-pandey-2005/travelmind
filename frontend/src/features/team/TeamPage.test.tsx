@@ -279,3 +279,66 @@ test("a server failure while inviting shows the message and trace ID", async () 
   expect(alert).toHaveTextContent("Something went wrong on our side. Please try again.");
   expect(alert).toHaveTextContent("Trace ID: trace-post-1");
 });
+
+const STATS = {
+  members: [
+    { user: { id: "u-agent", full_name: "Ravi Kumar", role: "agent" }, enquiries: 6, quotes_sent: 5, won_value_minor: 4200000 },
+    { user: { id: "u-owner", full_name: "Asha Rao", role: "owner" }, enquiries: 9, quotes_sent: 0, won_value_minor: 0 },
+  ],
+};
+
+test("each member shows enquiries, quotes sent and won value for the last 30 days", async () => {
+  const { calls } = mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": { status: 200, body: TEAM },
+      "GET /api/v1/invitations": { status: 200, body: [] },
+      "GET /api/v1/dashboard/team": { status: 200, body: STATS },
+    }),
+  );
+  renderApp("/app/team");
+  const table = await screen.findByRole("table", { name: "Team members" });
+  const ravi = await within(table).findByRole("row", { name: /Ravi Kumar/ });
+  await within(ravi).findByText("₹42,000");
+  expect(within(ravi).getByText("6")).toBeInTheDocument();
+  expect(within(ravi).getByText("5")).toBeInTheDocument();
+  const asha = within(table).getByRole("row", { name: /Asha Rao/ });
+  expect(within(asha).getByText("9")).toBeInTheDocument();
+  expect(within(asha).getAllByText("—")).toHaveLength(1);
+  expect(calls.find((c) => c.path === "/api/v1/dashboard/team")?.search.get("range")).toBe("30d");
+
+  const totals = screen.getByRole("region", { name: "Team totals" });
+  expect(within(totals).getByRole("group", { name: "Enquiries: 15" })).toBeInTheDocument();
+  expect(within(totals).getByRole("group", { name: "Won value: ₹42,000" })).toBeInTheDocument();
+  expect(within(totals).getByRole("group", { name: "Members: 2" })).toHaveTextContent("1 owner or admin");
+});
+
+test("when performance figures fail, the members table still loads and says so", async () => {
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/team": { status: 200, body: TEAM },
+      "GET /api/v1/invitations": { status: 200, body: [] },
+      "GET /api/v1/dashboard/team": { status: 500, body: { detail: "Something went wrong on our side." } },
+    }),
+  );
+  renderApp("/app/team");
+  const members = await screen.findByRole("region", { name: "Members" });
+  expect(await within(members).findByText("Performance figures are unavailable right now.")).toBeInTheDocument();
+  expect(within(members).queryByRole("alert")).not.toBeInTheDocument();
+  expect(within(screen.getByRole("region", { name: "Team totals" })).getByRole("group", { name: "Won value: —" })).toBeInTheDocument();
+});
+
+test("roles and permissions reflect what the API allows, with the viewer's role marked", async () => {
+  mockApi(withSession(ME_AGENT, { "GET /api/v1/team": { status: 200, body: TEAM } }));
+  renderApp("/app/team");
+  const panel = await screen.findByRole("region", { name: "Roles and permissions" });
+  const roles = within(panel).getByRole("list", { name: "Roles" });
+  expect(within(roles).getAllByRole("listitem")[2]).toHaveTextContent("AgentYou");
+  const matrix = within(panel).getByRole("table", { name: "Permissions by role" });
+  const cells = (name: string) =>
+    within(within(matrix).getByRole("row", { name: new RegExp(name) }))
+      .getAllByRole("cell")
+      .map((c) => c.textContent);
+  expect(cells("Invite teammates")).toEqual(["Allowed", "Allowed", "Not allowed"]);
+  expect(cells("Change agency details")).toEqual(["Allowed", "Allowed", "Not allowed"]);
+  expect(cells("Work enquiries, quotes and clients")).toEqual(["Allowed", "Allowed", "Allowed"]);
+});
