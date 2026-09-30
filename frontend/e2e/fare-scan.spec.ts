@@ -28,6 +28,6 @@ test("an agent searches sandbox fares, verifies a price and checks the supplier 
 
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Suppliers" }).click();
   await expect(page).toHaveURL(/\/app\/suppliers$/);
-  const links = page.getByRole("table", { name: "Supplier connections" });
+  const links = page.getByRole("table", { name: "Booking suppliers" });
   await expect(links.getByRole("row", { name: /Sandbox inventory/ })).toContainText("Connected");
 });
