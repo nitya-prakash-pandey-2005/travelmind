@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -189,3 +190,37 @@ async def list_team(db: AsyncSession, agency_id: UUID) -> list[User]:
         select(User).where(User.agency_id == agency_id).order_by(User.created_at, User.email)
     )
     return list(result.all())
+
+
+@dataclass(frozen=True)
+class TeamMember:
+    """A teammate as other packages may see them: no email, role or credentials."""
+
+    id: UUID
+    full_name: str
+
+
+async def get_team_member(db: AsyncSession, agency_id: UUID, user_id: UUID) -> TeamMember | None:
+    """The active user `user_id` if they belong to `agency_id` (who work can be assigned to)."""
+    # `users` has no RLS, so the agency filter here is the isolation boundary.
+    row = (
+        await db.execute(
+            select(User.id, User.full_name).where(
+                User.id == user_id, User.agency_id == agency_id, User.is_active.is_(True)
+            )
+        )
+    ).one_or_none()
+    return None if row is None else TeamMember(id=row.id, full_name=row.full_name)
+
+
+async def team_names(
+    db: AsyncSession, agency_id: UUID, user_ids: Iterable[UUID]
+) -> dict[UUID, str]:
+    """Display names for the given users of `agency_id` (deactivated users included)."""
+    wanted = set(user_ids)
+    if not wanted:
+        return {}
+    rows = await db.execute(
+        select(User.id, User.full_name).where(User.agency_id == agency_id, User.id.in_(wanted))
+    )
+    return {row.id: row.full_name for row in rows}

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Query, Response, status
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -20,7 +20,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from travelmind.db import DbSession, utcnow
 from travelmind.identity.deps import AuthedUser
 from travelmind.identity.schemas import NormalizedEmail, PersonName
-from travelmind.reference.service import get_airport_index
+from travelmind.workspace._common import (
+    SINGLE_LINE,
+    Notes,
+    OptionalAirport,
+    WorkspaceError,
+    blank_to_none,
+    check_airport,
+    escape_like,
+    http_error,
+    strip_lower,
+)
 from travelmind.workspace.activity import record_activity
 from travelmind.workspace.models import Client, Enquiry, Quote
 
@@ -44,51 +54,25 @@ HAS_QUOTES_MESSAGE = "This client has quotes, so it can't be deleted."
 MAX_TAGS = 10
 
 
-def _strip_upper(value: object) -> object:
-    return value.strip().upper() if isinstance(value, str) else value
-
-
-def _strip_lower(value: object) -> object:
-    return value.strip().lower() if isinstance(value, str) else value
-
-
-def _blank_to_none(value: object) -> object:
-    if isinstance(value, str):
-        value = value.strip()
-        return value or None
-    return value
-
-
 def _dedupe(tags: list[str]) -> list[str]:
     return list(dict.fromkeys(tags))
 
 
 ClientKind = Literal["individual", "company"]
-AirportCode = Annotated[
-    str, BeforeValidator(_strip_upper), StringConstraints(pattern=r"^[A-Z]{3}$")
-]
 Tag = Annotated[
     str,
-    BeforeValidator(_strip_lower),
+    BeforeValidator(strip_lower),
     StringConstraints(min_length=1, max_length=40, pattern=r"^[^\x00-\x1f\x7f]+$"),
 ]
 Tags = Annotated[list[Tag], Field(max_length=MAX_TAGS), AfterValidator(_dedupe)]
-# Postgres rejects NUL, so free text never carries it; single-line fields refuse all control chars.
-_SINGLE_LINE = r"^[^\x00-\x1f\x7f]*$"
-_NO_NUL = r"^[^\x00]*$"
-OptionalEmail = Annotated[NormalizedEmail | None, BeforeValidator(_blank_to_none)]
+OptionalEmail = Annotated[NormalizedEmail | None, BeforeValidator(blank_to_none)]
 Phone = Annotated[
-    Annotated[str, StringConstraints(max_length=40, pattern=_SINGLE_LINE)] | None,
-    BeforeValidator(_blank_to_none),
+    Annotated[str, StringConstraints(max_length=40, pattern=SINGLE_LINE)] | None,
+    BeforeValidator(blank_to_none),
 ]
 CompanyName = Annotated[
-    Annotated[str, StringConstraints(max_length=200, pattern=_SINGLE_LINE)] | None,
-    BeforeValidator(_blank_to_none),
-]
-OptionalAirport = Annotated[AirportCode | None, BeforeValidator(_blank_to_none)]
-Notes = Annotated[
-    Annotated[str, StringConstraints(max_length=2000, pattern=_NO_NUL)] | None,
-    BeforeValidator(_blank_to_none),
+    Annotated[str, StringConstraints(max_length=200, pattern=SINGLE_LINE)] | None,
+    BeforeValidator(blank_to_none),
 ]
 
 
@@ -149,12 +133,8 @@ class ClientList(BaseModel):
     total: int
 
 
-class ClientError(Exception):
-    status_code = status.HTTP_400_BAD_REQUEST
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
+class ClientError(WorkspaceError):
+    pass
 
 
 class ClientNotFound(ClientError):
@@ -178,13 +158,6 @@ class ClientHasQuotes(ClientError):
         super().__init__(HAS_QUOTES_MESSAGE)
 
 
-class UnknownAirport(ClientError):
-    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-
-    def __init__(self, code: str) -> None:
-        super().__init__(f"Unknown airport code {code}.")
-
-
 _ENQUIRY_COUNT = (
     select(func.count(Enquiry.id))
     .where(Enquiry.client_id == Client.id)
@@ -206,15 +179,6 @@ def _with_counts() -> Select[Client, int, int]:
 def _to_out(client: Client, enquiry_count: int, quote_count: int) -> ClientOut:
     fields = {name: getattr(client, name) for name in _CLIENT_FIELDS}
     return ClientOut(**fields, enquiry_count=enquiry_count, quote_count=quote_count)
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-async def _check_airport(db: AsyncSession, code: str | None) -> None:
-    if code is not None and (await get_airport_index(db)).get(code) is None:
-        raise UnknownAirport(code)
 
 
 async def _check_email_free(db: AsyncSession, email: str | None, *, exclude: UUID | None) -> None:
@@ -254,7 +218,7 @@ async def create_client(
 ) -> Client:
     """Add a client and its `client.created` activity. The session must be bound to the agency;
     the caller commits."""
-    await _check_airport(db, data.home_airport)
+    await check_airport(db, data.home_airport)
     await _check_email_free(db, data.email, exclude=None)
     at = now or utcnow()
     client = Client(
@@ -281,7 +245,7 @@ async def create_client(
 def _filters(q: str | None, tag: str | None) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = []
     if q:
-        pattern = f"%{_escape_like(q)}%"
+        pattern = f"%{escape_like(q)}%"
         conditions.append(
             or_(
                 Client.name.ilike(pattern, escape="\\"),
@@ -332,7 +296,7 @@ async def update_client(
     }
     if changes:
         if "home_airport" in changes:
-            await _check_airport(db, changes["home_airport"])
+            await check_airport(db, changes["home_airport"])
         if "email" in changes:
             await _check_email_free(db, changes["email"], exclude=client.id)
         for field, value in changes.items():
@@ -372,10 +336,6 @@ async def delete_client(db: AsyncSession, client_id: UUID, actor_user_id: UUID |
 clients_router = APIRouter(prefix="/api/v1/clients", tags=["clients"])
 
 
-def _http_error(exc: ClientError) -> HTTPException:
-    return HTTPException(exc.status_code, exc.message)
-
-
 @clients_router.get("")
 async def list_clients_route(
     current: AuthedUser,
@@ -392,8 +352,8 @@ async def list_clients_route(
 async def create_client_route(body: ClientCreate, current: AuthedUser, db: DbSession) -> ClientOut:
     try:
         client = await create_client(db, current.agency_id, current.id, body)
-    except ClientError as exc:
-        raise _http_error(exc) from None
+    except WorkspaceError as exc:
+        raise http_error(exc) from None
     await db.commit()
     return await get_client(db, client.id)
 
@@ -402,8 +362,8 @@ async def create_client_route(body: ClientCreate, current: AuthedUser, db: DbSes
 async def get_client_route(client_id: UUID, current: AuthedUser, db: DbSession) -> ClientOut:
     try:
         return await get_client(db, client_id)
-    except ClientError as exc:
-        raise _http_error(exc) from None
+    except WorkspaceError as exc:
+        raise http_error(exc) from None
 
 
 @clients_router.patch("/{client_id}")
@@ -412,8 +372,8 @@ async def update_client_route(
 ) -> ClientOut:
     try:
         client = await update_client(db, client_id, current.id, body)
-    except ClientError as exc:
-        raise _http_error(exc) from None
+    except WorkspaceError as exc:
+        raise http_error(exc) from None
     await db.commit()
     return client
 
@@ -422,7 +382,7 @@ async def update_client_route(
 async def delete_client_route(client_id: UUID, current: AuthedUser, db: DbSession) -> Response:
     try:
         await delete_client(db, client_id, current.id)
-    except ClientError as exc:
-        raise _http_error(exc) from None
+    except WorkspaceError as exc:
+        raise http_error(exc) from None
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
