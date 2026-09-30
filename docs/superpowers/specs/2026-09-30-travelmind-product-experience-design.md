@@ -65,7 +65,7 @@ All under `/api/v1`, signed-in, tenant-bound, plain-language errors, rate-limite
 - `GET /dashboard/summary?range=30d` — KPIs with previous-period deltas and daily series: open enquiries, quotes sent, win rate (won/(won+lost) in range), pipeline value (sum of sell totals of quotes in sent|viewed, agency currency, native-currency only), median first-response time (enquiry created → first quote sent), CO₂ quoted (sum of per-passenger CO₂ × pax on sent options), searches run.
 - `GET /dashboard/pipeline` — counts and values per enquiry status.
 - `GET /dashboard/activity?limit=` — recent events (paged).
-- `GET /dashboard/market-pulse` — top routes (agency's searched routes first, then market) by % change of median fare this week vs. the prior 4 weeks, from fare_snapshots (market family only; sandbox family only in demo, labelled).
+- `GET /dashboard/market-pulse` — the agency's own searched routes ranked by % change of the median per-traveller cheapest fare this week vs. the prior 4 weeks, from the tenant's `flight_searches` log (adults-only searches, native display currency), with an 8-week sparkline. Tenant data only, so demo history can be back-dated without touching the global fare history; each route is labelled with the provenance of the offers behind it.
 - `GET /dashboard/supplier-health?range=24h` — per supplier: success rate, p50/p95 latency, offers returned, from search_source_results.
 - `GET /dashboard/team` — per agent: enquiries handled, quotes sent, won value.
 - `GET /dashboard/departures` — next 10 departures from won enquiries.
