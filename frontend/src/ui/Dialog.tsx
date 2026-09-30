@@ -65,8 +65,12 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
       footerRef.current?.querySelector<HTMLElement>(FOCUSABLE) ??
       closeRef.current;
     initial?.focus();
-    // Closed by the platform (e.g. a <form method="dialog">): tell the owner.
-    const onNativeClose = () => onCloseRef.current();
+    // Closed by the platform (e.g. a <form method="dialog">): tell the owner. Browsers fire "close" in a
+    // later task, so one left over from an earlier close (StrictMode re-runs this effect: close, then
+    // showModal) can arrive while the dialog is open again; that one is ignored.
+    const onNativeClose = () => {
+      if (!dialog.open) onCloseRef.current();
+    };
     dialog.addEventListener("close", onNativeClose);
     return () => {
       dialog.removeEventListener("close", onNativeClose);

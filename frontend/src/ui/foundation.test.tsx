@@ -4,10 +4,10 @@ import {
   createRootRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Inbox, Pencil, Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { StrictMode, useState, type ReactNode } from "react";
 import { expect, test, vi } from "vitest";
 import { Avatar, AvatarStack } from "./Avatar";
 import { Dialog } from "./Dialog";
@@ -146,6 +146,41 @@ test("a drag that starts inside the dialog and ends on the backdrop does not clo
   fireEvent.pointerDown(within(dialog).getByLabelText("Notes"));
   fireEvent.click(dialog);
   expect(screen.getByRole("dialog")).toBeInTheDocument();
+});
+
+test("a close event left over from an earlier close does not dismiss the reopened dialog", async () => {
+  // Browsers fire "close" in a later task. React's StrictMode runs the open effect, its cleanup (close) and
+  // the effect again (showModal) in one go, so that late event reaches the dialog while it is open again.
+  const close = vi.spyOn(HTMLDialogElement.prototype, "close").mockImplementation(function (this: HTMLDialogElement) {
+    this.removeAttribute("open");
+    setTimeout(() => this.dispatchEvent(new Event("close")), 0);
+  });
+  try {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(
+      <StrictMode>
+        <DialogHarness onClose={onClose} />
+      </StrictMode>,
+    );
+    await user.click(screen.getByRole("button", { name: "New enquiry" }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole("dialog", { name: "Create enquiry" })).toHaveAttribute("open");
+    expect(onClose).not.toHaveBeenCalled();
+  } finally {
+    close.mockRestore();
+  }
+});
+
+test("dialog tells its owner when the platform closes it", async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<DialogHarness onClose={onClose} />);
+  await user.click(screen.getByRole("button", { name: "New enquiry" }));
+  const dialog = screen.getByRole<HTMLDialogElement>("dialog");
+  act(() => dialog.close());
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
 test("drawer is a labelled modal side panel that closes on Escape", async () => {
