@@ -16,18 +16,32 @@ import { PageHeader } from "../../ui/PageHeader";
 import { ProvenanceBadge } from "../../ui/ProvenanceBadge";
 import { Skeleton } from "../../ui/Skeleton";
 import { TextField } from "../../ui/TextField";
+import { useCurrentUser } from "../../auth/useCurrentUser";
 import { AirportPicker } from "../airports/AirportPicker";
+import { ReadingGuide } from "../fares/ReadingGuide";
 import { SourceStrip } from "../fares/SourceStrip";
+import { SupplierStatusCard } from "../fares/SupplierStatusCard";
+import { loadRecentRoutes } from "../route/recentRoutes";
 import { routeStore } from "../route/routeStore";
+import { HOTEL_GUIDE, HOTEL_NOTE } from "./hotelGuide";
+import { QuickDestinations } from "./QuickDestinations";
 
 /** Adults per room (the field's max). */
 const MAX_ADULTS = 6;
 
 const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 
+const DAY_MS = 86_400_000;
+const utcDay = (date: string) => Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
+
+/** Whole nights from check-in to check-out ("2026-11-20", "2026-11-22" → 2). */
+function nightsBetween(checkin: string, checkout: string): number {
+  return Math.round((utcDay(checkout) - utcDay(checkin)) / DAY_MS);
+}
+
 /** "2026-11-20" → "Fri 20 Nov". */
 function stayDay(date: string): string {
-  return DAY.format(new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)))));
+  return DAY.format(new Date(utcDay(date)));
 }
 
 /** "Near BOM · Fri 20 Nov – Sun 22 Nov · 2 adults, 1 room" */
@@ -142,7 +156,18 @@ function Searching() {
   );
 }
 
+/** Distinct destinations of this user's recent fare searches, newest first (at most eight). */
+function recentDestinations(userId: string): Airport[] {
+  const byCode = new Map<string, Airport>();
+  for (const route of loadRecentRoutes(userId)) {
+    if (!byCode.has(route.destination.iata_code)) byCode.set(route.destination.iata_code, route.destination);
+  }
+  return [...byCode.values()];
+}
+
 export function HotelScanPage() {
+  const me = useCurrentUser();
+  const [recent] = useState(() => recentDestinations(me?.user.id ?? "anonymous"));
   const [destination, setDestination] = useState<Airport | null>(() => routeStore.get().destination);
   const [checkin, setCheckin] = useState(() => isoDateFromNow(14));
   const [checkout, setCheckout] = useState(() => isoDateFromNow(16));
@@ -152,6 +177,7 @@ export function HotelScanPage() {
   const search = useQuery(hotelSearchQueryOptions(request));
   const checkinInPast = checkin !== "" && checkin < isoDateFromNow(0);
   const badDates = checkin !== "" && checkout !== "" && checkout <= checkin;
+  const nights = checkin && checkout ? nightsBetween(checkin, checkout) : 0;
   const ready = destination !== null && checkin !== "" && checkout !== "" && !checkinInPast && !badDates;
   const data = search.data;
   const notConfigured = data?.sources.find((s) => s.status === "not_configured");
@@ -183,11 +209,11 @@ export function HotelScanPage() {
             else setRequest(next);
           }}
         >
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-            <div className="min-w-0 lg:flex-1">
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="min-w-0 grow-[3] basis-[20rem]">
               <AirportPicker label="Near" value={destination} onChange={setDestination} />
             </div>
-            <div className="grid min-w-0 grid-cols-2 items-start gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] lg:flex-[1.2]">
+            <div className="grid min-w-0 grow basis-[24rem] grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem] items-start gap-3">
               <TextField
                 label="Check-in"
                 type="date"
@@ -204,6 +230,7 @@ export function HotelScanPage() {
                 min={checkin}
                 value={checkout}
                 error={badDates ? "Check-out must be after check-in." : undefined}
+                hint={nights > 0 ? `${nights} night${nights === 1 ? "" : "s"}` : undefined}
                 onChange={(e) => setCheckout(e.target.value)}
               />
               <TextField
@@ -217,97 +244,94 @@ export function HotelScanPage() {
               />
             </div>
             {/* 26px = a field label (20px) and its gap (6px): lines the button up with the inputs beside it. */}
-            <Button
-              type="submit"
-              disabled={!ready}
-              loading={search.isFetching}
-              className="w-full sm:w-auto sm:self-end lg:mt-[26px] lg:self-start"
-            >
+            <Button type="submit" disabled={!ready} loading={search.isFetching} className="shrink-0 max-sm:w-full sm:mt-[26px]">
               {!search.isFetching && <Search size={15} aria-hidden="true" />}
               Scan hotels
             </Button>
           </div>
         </form>
 
-        <section aria-labelledby="hotel-results" className="flex flex-col gap-3">
-          <div className="min-w-0">
-            <h2 id="hotel-results" className="text-base font-semibold leading-6 text-ink">
-              Results
-              {showResults && (
-                <span className="tm-num ml-2 text-[13px] font-normal text-dim">
-                  {data.offers.length} hotel{data.offers.length === 1 ? "" : "s"}
-                </span>
-              )}
-            </h2>
-            {request && (
-              <p className="mt-0.5 font-mono text-xs leading-4 text-dim">
-                {stayLine(request)}
-              </p>
-            )}
-          </div>
-
-          {request === null ? (
-            <div className="rounded-lg border border-line bg-surface">
-              <EmptyState
-                icon={BedDouble}
-                title="Search to see rooms"
-                description="Choose an airport and your dates. Rooms from every connected hotel supplier appear here."
-              />
+        {request === null ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+            <QuickDestinations recent={recent} selected={destination} onPick={setDestination} />
+            <SupplierStatusCard booking="hotels" bookingTitle="Hotel suppliers" services={["exchange_rates"]} />
+            <div className="min-w-0 xl:col-span-2">
+              <ReadingGuide sections={HOTEL_GUIDE} note={HOTEL_NOTE} />
             </div>
-          ) : search.isFetching ? (
-            <Searching />
-          ) : search.isError ? (
-            <p
-              role="alert"
-              className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/5 px-4 py-3 text-[13px] leading-5 text-danger"
-            >
-              <CircleAlert size={15} aria-hidden="true" className="mt-0.5 shrink-0" />
-              {asApiError(search.error).message}
-            </p>
-          ) : data ? (
-            <>
-              <SourceStrip sources={data.sources} />
-              {notConfigured && (
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-4 py-3">
-                  <PlugZap size={16} aria-hidden="true" className="shrink-0 text-warn" />
-                  <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink">{notConfigured.message}</p>
-                  <Link to="/app/suppliers" className={buttonClasses({ variant: "secondary", size: "sm" })}>
-                    Open suppliers
-                  </Link>
-                </div>
+          </div>
+        ) : (
+          <section aria-labelledby="hotel-results" className="flex flex-col gap-3">
+            <div className="min-w-0">
+              <h2 id="hotel-results" className="text-base font-semibold leading-6 text-ink">
+                Results
+                {showResults && (
+                  <span className="tm-num ml-2 text-[13px] font-normal text-dim">
+                    {data.offers.length} hotel{data.offers.length === 1 ? "" : "s"}
+                  </span>
+                )}
+              </h2>
+              {request && (
+                <p className="mt-0.5 font-mono text-xs leading-4 text-dim">
+                  {stayLine(request)}
+                </p>
               )}
-              {data.offers.length > 0 ? (
-                <>
-                  <ol aria-label="Hotel offers" className="flex flex-col gap-2">
-                    {data.offers.map((offer) => (
-                      <li key={offer.id}>
-                        <HotelCard offer={offer} />
-                      </li>
-                    ))}
-                  </ol>
-                  <div className="flex flex-col gap-1 text-xs leading-4 text-faint">
-                    <p>Totals in {data.display_currency} for the whole stay.</p>
-                    {data.fx_as_of && (
-                      <p>
-                        ≈ prices converted with ECB reference rates of {data.fx_as_of}; you are billed in the supplier's currency.
-                      </p>
-                    )}
+            </div>
+
+            {search.isFetching ? (
+              <Searching />
+            ) : search.isError ? (
+              <p
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/5 px-4 py-3 text-[13px] leading-5 text-danger"
+              >
+                <CircleAlert size={15} aria-hidden="true" className="mt-0.5 shrink-0" />
+                {asApiError(search.error).message}
+              </p>
+            ) : data ? (
+              <>
+                <SourceStrip sources={data.sources} />
+                {notConfigured && (
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-4 py-3">
+                    <PlugZap size={16} aria-hidden="true" className="shrink-0 text-warn" />
+                    <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink">{notConfigured.message}</p>
+                    <Link to="/app/suppliers" className={buttonClasses({ variant: "secondary", size: "sm" })}>
+                      Open suppliers
+                    </Link>
                   </div>
-                </>
-              ) : (
-                !notConfigured && (
-                  <div className="rounded-lg border border-line bg-surface">
-                    <EmptyState
-                      icon={BedDouble}
-                      title="No rooms for these dates."
-                      description="Try other dates or a nearby airport."
-                    />
-                  </div>
-                )
-              )}
-            </>
-          ) : null}
-        </section>
+                )}
+                {data.offers.length > 0 ? (
+                  <>
+                    <ol aria-label="Hotel offers" className="flex flex-col gap-2">
+                      {data.offers.map((offer) => (
+                        <li key={offer.id}>
+                          <HotelCard offer={offer} />
+                        </li>
+                      ))}
+                    </ol>
+                    <div className="flex flex-col gap-1 text-xs leading-4 text-faint">
+                      <p>Totals in {data.display_currency} for the whole stay.</p>
+                      {data.fx_as_of && (
+                        <p>
+                          ≈ prices converted with ECB reference rates of {data.fx_as_of}; you are billed in the supplier's currency.
+                        </p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  !notConfigured && (
+                    <div className="rounded-lg border border-line bg-surface">
+                      <EmptyState
+                        icon={BedDouble}
+                        title="No rooms for these dates."
+                        description="Try other dates or a nearby airport."
+                      />
+                    </div>
+                  )
+                )}
+              </>
+            ) : null}
+          </section>
+        )}
       </div>
     </>
   );
