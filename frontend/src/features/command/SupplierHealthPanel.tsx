@@ -61,7 +61,10 @@ export function SupplierHealthPanel({ className }: { className?: string }) {
   const health = useQuery(supplierHealthQueryOptions(range));
   const rangeSwitch = <SegmentedControl label="Supplier range" options={RANGES} value={range} onChange={setRange} />;
 
-  if (health.isPending) return <PanelSkeleton title={TITLE} eyebrow={EYEBROW} className={className} />;
+  // The range switch stays in every state, so a failing range can be switched away from.
+  if (health.isPending) {
+    return <PanelSkeleton title={TITLE} eyebrow={EYEBROW} className={className} actions={rangeSwitch} />;
+  }
   if (health.isError && !health.data) {
     return (
       <ErrorPanel
@@ -71,6 +74,7 @@ export function SupplierHealthPanel({ className }: { className?: string }) {
         onRetry={() => void health.refetch()}
         retrying={health.isFetching}
         className={className}
+        actions={rangeSwitch}
       />
     );
   }

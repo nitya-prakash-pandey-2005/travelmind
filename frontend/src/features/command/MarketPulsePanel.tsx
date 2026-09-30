@@ -58,7 +58,7 @@ function PulseRow({ route, currency }: { route: MarketPulseRoute; currency: stri
           className={cn("tm-tint inline-flex items-center gap-1 rounded-sm border px-1.5 py-px font-mono text-[11px] tabular-nums", move.text)}
         >
           {formatChange(route.change_pct)}
-          <span className="sr-only">, {move.label.toLowerCase()} week on week</span>
+          <span className="sr-only">, {move.label.toLowerCase()} vs the previous four weeks</span>
         </span>
       </div>
     </li>

@@ -17,8 +17,8 @@ export function daysUntil(iso: string | null | undefined, now: Date = new Date()
 export function demoNotice(days: number | null): string {
   const base = "You're exploring a demo workspace with sample data.";
   if (days === null) return base;
-  if (days === 0) return `${base} It resets today.`;
-  return `${base} It resets in ${days} ${days === 1 ? "day" : "days"}.`;
+  if (days === 0) return `${base} It's deleted automatically today.`;
+  return `${base} It's deleted automatically in ${days} ${days === 1 ? "day" : "days"}.`;
 }
 
 /** Slim notice above the page in a demo workspace, with the way out. */

@@ -115,8 +115,9 @@ cd frontend
 npm test                 # unit + component tests (Vitest)
 npm run lint && npm run typecheck
 npm run e2e              # Playwright: demo, Command Center, golden path, sandbox fare scan. Needs the API
-                         # running (on :8010, or set TM_API_TARGET) with TM_SIGNUP_MAX_PER_IP=1000 (each
-                         # test signs up; the default is 10/hour). CI also sets TM_FX_ENABLED=false.
+                         # running (on :8010, or set TM_API_TARGET) with TM_SIGNUP_MAX_PER_IP=1000 and
+                         # TM_DEMO_MAX_PER_IP=1000 (tests sign up and start demos; the defaults are 10
+                         # and 5 an hour). CI also sets TM_FX_ENABLED=false.
 ```
 
 First e2e run: `npx playwright install chromium`.

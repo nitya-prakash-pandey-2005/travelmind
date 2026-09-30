@@ -378,6 +378,12 @@ async def get_notifications_read_until(db: AsyncSession, user_id: UUID) -> datet
     return read_until
 
 
+async def set_notifications_seen_at(db: AsyncSession, user_id: UUID, at: datetime) -> None:
+    """Record that the user last saw their notifications at `at` exactly (a demo presenter's
+    starting point). The caller commits."""
+    await db.execute(update(User).where(User.id == user_id).values(notifications_seen_at=at))
+
+
 async def mark_notifications_seen(
     db: AsyncSession, user_id: UUID, *, until: datetime | None = None, now: datetime | None = None
 ) -> None:

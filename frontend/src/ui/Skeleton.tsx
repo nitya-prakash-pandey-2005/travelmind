@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Panel, type PanelVariant } from "./Panel";
 import { cn } from "./cn";
 
@@ -28,14 +29,17 @@ export function PanelSkeleton({
   eyebrow,
   variant = "glass",
   className,
+  actions,
 }: {
   title: string;
   eyebrow?: string;
   variant?: PanelVariant;
   className?: string;
+  /** Controls that stay usable while the panel loads (a range switch). */
+  actions?: ReactNode;
 }) {
   return (
-    <Panel title={title} eyebrow={eyebrow} variant={variant} busy className={className}>
+    <Panel title={title} eyebrow={eyebrow} variant={variant} busy className={className} actions={actions}>
       <span className="sr-only">Loading {title}…</span>
       <Skeleton lines={3} className="py-1" />
     </Panel>

@@ -20,6 +20,17 @@ const KPI_LABELS: ReadonlyArray<{ key: KpiKey; label: string }> = [
 
 const RANGE_DAYS: Record<DashboardRange, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
+/** What each tile's sparkline plots (the daily series, not the headline figure). */
+const TREND_LABELS: Record<KpiKey, string> = {
+  open_enquiries: "New enquiries per day",
+  quotes_sent: "Quotes sent per day",
+  win_rate: "Wins per day",
+  pipeline_value: "Value sent per day",
+  response_time: "Median response time per day",
+  co2_quoted: "CO₂ quoted per day",
+  searches: "Searches per day",
+};
+
 // Two columns on phones, three on tablets, four on laptops, all seven in one row on wide screens.
 // The first tile spans two columns until then, so no row is left with a gap.
 const GRID = "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 min-[1600px]:grid-cols-7";
@@ -88,6 +99,7 @@ export function KpiRow({ range }: { range: DashboardRange }) {
               unit={unit}
               delta={kpiDelta(kpi)}
               series={series.some((v) => v !== 0) ? series : undefined}
+              trendLabel={TREND_LABELS[key]}
               hint={hintFor(kpi, summary.data.range)}
             />
           </div>

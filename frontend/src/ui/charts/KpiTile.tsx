@@ -3,7 +3,19 @@ import { cn } from "../cn";
 import { Skeleton } from "../Skeleton";
 import { Sparkline } from "./Sparkline";
 
-export type KpiDelta = { pct: number | null; direction: "up" | "down" | "flat"; good: boolean };
+/**
+ * Change against the previous period: `pct` is a relative change in percent, or, with `points`, the
+ * difference between two rates in percentage points.
+ */
+export type KpiDelta = { pct: number | null; direction: "up" | "down" | "flat"; good: boolean; points?: boolean };
+
+const POINTS = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+
+/** "8.3 pts" for a rate's change, "20%" for a relative one. */
+function deltaAmount(delta: KpiDelta & { pct: number }): string {
+  const size = Math.abs(delta.pct);
+  return delta.points ? `${POINTS.format(size)} pts` : `${Math.round(size)}%`;
+}
 
 const ARROW = { up: ArrowUpRight, down: ArrowDownRight, flat: ArrowRight };
 
@@ -20,6 +32,7 @@ function deltaTone(delta: KpiDelta): string {
 function deltaPhrase(delta: KpiDelta): string {
   if (delta.pct === null) return "no earlier period to compare";
   if (delta.direction === "flat") return "unchanged";
+  if (delta.points) return `${delta.direction} ${POINTS.format(Math.abs(delta.pct))} percentage points`;
   return `${delta.direction} ${Math.round(Math.abs(delta.pct))}%`;
 }
 
@@ -35,7 +48,7 @@ function DeltaChip({ delta: raw }: { delta: KpiDelta }) {
       )}
     >
       {delta.pct !== null && <Arrow size={12} aria-hidden="true" />}
-      {delta.pct === null ? "—" : `${Math.round(Math.abs(delta.pct))}%`}
+      {delta.pct === null ? "—" : deltaAmount({ ...delta, pct: delta.pct })}
     </span>
   );
 }
@@ -50,6 +63,7 @@ export function KpiTile({
   unit,
   delta,
   series,
+  trendLabel,
   loading = false,
   hint,
 }: {
@@ -58,6 +72,8 @@ export function KpiTile({
   unit?: string;
   delta?: KpiDelta;
   series?: number[];
+  /** What the sparkline plots ("New enquiries per day"): shown under it and used as its name. */
+  trendLabel?: string;
   loading?: boolean;
   hint?: string;
 }) {
@@ -87,7 +103,12 @@ export function KpiTile({
               </span>
             )}
           </div>
-          {series && series.length > 0 && <Sparkline label={`${label} trend`} values={series} />}
+          {series && series.length > 0 && (
+            <>
+              <Sparkline label={trendLabel ?? `${label} trend`} values={series} />
+              {trendLabel && <p className="-mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-dim">{trendLabel}</p>}
+            </>
+          )}
           {hint && <p className="text-xs text-dim">{hint}</p>}
         </>
       )}

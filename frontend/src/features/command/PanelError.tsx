@@ -1,4 +1,5 @@
 import { CircleAlert, RotateCw } from "lucide-react";
+import type { ReactNode } from "react";
 import { asApiError } from "../../api/client";
 import { Button } from "../../ui/Button";
 import { Panel } from "../../ui/Panel";
@@ -31,6 +32,7 @@ export function ErrorPanel({
   onRetry,
   retrying,
   className,
+  actions,
 }: {
   title: string;
   eyebrow?: string;
@@ -38,9 +40,11 @@ export function ErrorPanel({
   onRetry: () => void;
   retrying?: boolean;
   className?: string;
+  /** Controls that stay usable when the panel fails (a range switch). */
+  actions?: ReactNode;
 }) {
   return (
-    <Panel variant="glass" title={title} eyebrow={eyebrow} className={className}>
+    <Panel variant="glass" title={title} eyebrow={eyebrow} className={className} actions={actions}>
       <PanelError error={error} onRetry={onRetry} retrying={retrying} />
     </Panel>
   );

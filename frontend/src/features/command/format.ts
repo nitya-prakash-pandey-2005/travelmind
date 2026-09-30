@@ -30,14 +30,16 @@ export function formatKpiValue(kpi: Kpi, currency: string): { value: string; uni
 const LOWER_IS_BETTER = new Set<Kpi["key"]>(["response_time"]);
 
 /**
- * Change against the previous period, (value − previous) / previous, in percent. Undefined when either
- * period has no figure; `pct` null when the previous period was zero (no base to compare with).
+ * Change against the previous period, (value − previous) / previous, in percent; for a rate (unit
+ * "percent") the difference in percentage points instead (`points`). Undefined when either period has
+ * no figure; `pct` null when the previous period was zero (no base to compare with), except for rates.
  */
 export function kpiDelta(kpi: Kpi): KpiDelta | undefined {
   const { value, previous } = kpi;
   if (!finite(value) || !finite(previous)) return undefined;
   const direction = value > previous ? "up" : value < previous ? "down" : "flat";
   const good = direction === "flat" || (direction === "down") === LOWER_IS_BETTER.has(kpi.key);
+  if (kpi.unit === "percent") return { pct: value - previous, direction, good, points: true };
   if (previous === 0) return { pct: value === 0 ? 0 : null, direction, good };
   return { pct: ((value - previous) * 100) / previous, direction, good };
 }

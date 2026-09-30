@@ -82,7 +82,24 @@ test("demo workspace is badged and can be exited", async () => {
   expect(calls.some((c) => c.path === "/api/v1/demo/exit")).toBe(true);
 });
 
-test("the demo banner says when the workspace resets, and exiting forgets the demo's data", async () => {
+test("if leaving the demo fails, it says so and keeps the workspace", async () => {
+  mockApi(
+    withSession(ME_DEMO, {
+      ...commandCenterMocks(),
+      "POST /api/v1/demo/exit": { status: 500, body: { detail: "Boom" } },
+    }),
+  );
+  const { user, router, queryClient } = renderApp("/app");
+  const banner = await screen.findByRole("region", { name: "Demo workspace" });
+  await user.click(within(banner).getByRole("button", { name: "Exit demo" }));
+  const toast = await screen.findByText("Couldn't leave the demo. Try again.");
+  expect(toast.closest('[aria-live="assertive"]')).not.toBeNull(); // a danger toast
+  expect(router.state.location.pathname).toBe("/app");
+  expect(queryClient.getQueryData(["me"])).toEqual(ME_DEMO);
+  expect(within(banner).getByRole("button", { name: "Exit demo" })).toBeEnabled();
+});
+
+test("the demo banner says when the workspace is deleted, and exiting forgets the demo's data", async () => {
   const expires = new Date(Date.now() + 3 * 86_400_000 - 3_600_000).toISOString();
   mockApi(
     withSession(ME_DEMO, {
@@ -96,7 +113,7 @@ test("the demo banner says when the workspace resets, and exiting forgets the de
   );
   const { user, router, queryClient } = renderApp("/app");
   expect(
-    await screen.findByText("You're exploring a demo workspace with sample data. It resets in 3 days."),
+    await screen.findByText("You're exploring a demo workspace with sample data. It's deleted automatically in 3 days."),
   ).toBeInTheDocument();
   await waitFor(() => expect(queryClient.getQueryData(["notifications"])).toBeDefined());
   await user.click(screen.getByRole("button", { name: "Exit demo" }));

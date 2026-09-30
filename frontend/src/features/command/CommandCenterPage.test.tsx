@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import { AIRPORTS, ME_OWNER } from "../../test/fixtures";
-import { mockApi } from "../../test/mockApi";
+import { mockApi, type MockHandler } from "../../test/mockApi";
 import { renderApp, withSession } from "../../test/renderApp";
 import { commandCenterMocks } from "../../test/workspaceFixtures";
 import type { GlobeArc } from "../globe/RouteGlobe";
@@ -75,6 +75,37 @@ test("KPIs are formatted by unit, with deltas and gaps", async () => {
   expect(screen.getByRole("group", { name: /Open enquiries/ })).toHaveAccessibleName(/up 20%/);
   expect(screen.getByRole("group", { name: /Response time/ })).toHaveAccessibleName(/down 23%/);
   expect(document.body.textContent).not.toMatch(/NaN|undefined/);
+});
+
+test("each KPI trend says what it plots", async () => {
+  mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: true })));
+  renderApp("/app");
+  await screen.findByRole("group", { name: /Open enquiries/ });
+  const trends: [RegExp, string][] = [
+    [/^Open enquiries/, "New enquiries per day"],
+    [/^Quotes sent/, "Quotes sent per day"],
+    [/^Win rate/, "Wins per day"],
+    [/^Pipeline value/, "Value sent per day"],
+    [/^Response time/, "Median response time per day"],
+    [/^CO₂ quoted/, "CO₂ quoted per day"],
+    [/^Searches/, "Searches per day"],
+  ];
+  for (const [tile, trend] of trends) {
+    const group = screen.getByRole("group", { name: tile });
+    expect(within(group).getByText(trend)).toBeInTheDocument();
+    expect(within(group).getByRole("img", { name: new RegExp(`^${trend}: from`) })).toBeInTheDocument();
+    expect(within(group).queryByRole("img", { name: /trend/ })).not.toBeInTheDocument();
+  }
+});
+
+test("the win-rate change is in percentage points", async () => {
+  mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: true })));
+  renderApp("/app");
+  // 58.3% against 50%: 8.3 points up (a relative change would read 17%).
+  const winRate = await screen.findByRole("group", { name: /Win rate/ });
+  expect(winRate).toHaveTextContent("8.3 pts");
+  expect(winRate).not.toHaveTextContent("17%");
+  expect(winRate).toHaveAccessibleName(/up 8\.3 percentage points/);
 });
 
 test("range switch refetches with the new range", async () => {
@@ -192,6 +223,44 @@ test("supplier health switches between 24 hours and 7 days", async () => {
   await user.click(within(panel).getByRole("radio", { name: "7d" }));
   await waitFor(() => expect(within(region("Supplier health")).getByText("98.3%")).toBeInTheDocument());
   expect(calls.some((c) => c.path === "/api/v1/dashboard/supplier-health" && c.search.get("range") === "7d")).toBe(true);
+});
+
+test("the supplier range switch stays while the panel loads and when it fails", async () => {
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const mocks = commandCenterMocks({ populated: true });
+  const loadedHealth = mocks["GET /api/v1/dashboard/supplier-health"] as MockHandler;
+  mockApi(
+    withSession(ME_OWNER, {
+      ...mocks,
+      "GET /api/v1/dashboard/supplier-health": async (call) => {
+        if (call.search.get("range") === "7d") return { status: 500, body: { detail: "Supplier figures are unavailable." } };
+        await ready;
+        return typeof loadedHealth === "function" ? loadedHealth(call) : loadedHealth;
+      },
+    }),
+  );
+  const { user } = renderApp("/app");
+  const loading = await screen.findByRole("region", { name: "Supplier health" });
+  expect(loading).toHaveAttribute("aria-busy", "true");
+  expect(within(loading).getByRole("radio", { name: "24h" })).toBeChecked();
+  await user.click(within(loading).getByRole("radio", { name: "7d" }));
+  expect(await within(region("Supplier health")).findByRole("alert")).toHaveTextContent("Supplier figures are unavailable.");
+  expect(within(region("Supplier health")).getByRole("radio", { name: "7d" })).toBeChecked();
+  await user.click(within(region("Supplier health")).getByRole("radio", { name: "24h" }));
+  release();
+  await waitFor(() => expect(within(region("Supplier health")).getByText("95.2%")).toBeInTheDocument());
+});
+
+test("market pulse says what each change is measured against", async () => {
+  mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: true })));
+  renderApp("/app");
+  await screen.findByRole("region", { name: "Market pulse" });
+  const pulse = await loaded("Market pulse");
+  expect(within(pulse).getAllByText(/vs the previous four weeks$/).length).toBeGreaterThan(0);
+  expect(pulse).not.toHaveTextContent("week on week");
 });
 
 test("an empty workspace explains every panel and offers the next step", async () => {

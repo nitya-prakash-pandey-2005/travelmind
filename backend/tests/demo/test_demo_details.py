@@ -87,6 +87,23 @@ def test_plan_pipeline_mix_dates_and_team_spread():
     assert any(s.at[0] == 0 for s in plan.extra_searches)
 
 
+def test_plan_hands_new_enquiries_to_the_presenter_yesterday():
+    plan = build_demo_plan(seed=42, routes=FIXTURE_ROUTES, today=TODAY)
+    handoffs = [e for e in plan.enquiries if e.creator != e.assignee]
+    assert len(handoffs) == 3
+    assert all(e.assignee == 0 and e.creator != 0 for e in handoffs)
+    assert all(e.status == "new" and e.created[0] == 1 for e in handoffs)
+
+
+async def test_a_fresh_demo_has_unread_news_for_the_presenter(client, airports):
+    await client.post("/api/v1/demo")
+    notes = (await client.get("/api/v1/notifications")).json()
+    assert notes["unread"] >= 3
+    unread = [i for i in notes["items"] if not i["read"]]
+    assert sum(i["kind"] == "enquiry.assigned" for i in unread) >= 3
+    assert all("assigned to Demo Presenter" in i["summary"] for i in unread[:3])
+
+
 async def test_demo_fills_every_panel_in_working_hours(client, airports):
     me = (await client.post("/api/v1/demo")).json()
     agency = me["agency"]["id"]

@@ -34,6 +34,7 @@ from travelmind.demo.data import (
     ROUTES,
     VERSION_MESSAGES,
 )
+from travelmind.identity import service as identity_service
 from travelmind.identity.service import AgencySettings, TeamMember
 from travelmind.offers.db_models import FlightSearchLog
 from travelmind.offers.models import Cabin, FlightSearchRequest
@@ -89,6 +90,10 @@ PULSE_ROUTES = 3
 PULSE_RECENT = 4  # per pulse route, in the last 7 days
 PULSE_EARLIER = 5  # per pulse route, 8–29 days back
 MARKUPS_BP = (500, 750, 800, 1000, 1200)
+# New enquiries a teammate logged yesterday and handed to the presenter: the presenter's bell has
+# fresh news when the demo opens (see NOTIFICATIONS_SEEN_AGO).
+HANDOFFS = 3
+NOTIFICATIONS_SEEN_AGO = timedelta(days=2)
 _COMPANY_CABINS: tuple[Cabin, ...] = ("economy", "economy", "business")
 _PERSONAL_CABINS: tuple[Cabin, ...] = ("economy",) * 8 + ("premium_economy", "business")
 
@@ -186,6 +191,7 @@ class DemoEnquiry:
     budget_minor: int | None  # in the agency currency
     notes: str | None
     assignee: int
+    creator: int  # who logged it: the assignee, or a teammate handing it over
     created: Stamp
     status: EnquiryStatus  # where the plan leaves it
     status_path: tuple[DemoStatusStep, ...]
@@ -353,15 +359,24 @@ def _plan_enquiries(
 ) -> list[DemoEnquiry]:
     outcomes = [outcome for outcome, count in _OUTCOMES for _ in range(count)]
     rng.shuffle(outcomes)
-    dated = []
+    dated: list[tuple[str, Stamp, bool]] = []
+    handoffs = 0
     for outcome in outcomes:
         low, high = _CREATED_DAYS[outcome]
-        dated.append((outcome, (rng.randint(low, high), rng.randint(0, WORKDAY_MINUTES - 1))))
+        handoff = outcome == "new" and handoffs < HANDOFFS
+        handoffs += handoff
+        days = 1 if handoff else rng.randint(low, high)
+        dated.append((outcome, (days, rng.randint(0, WORKDAY_MINUTES - 1)), handoff))
     dated.sort(key=lambda item: _order(item[1]))
     assignees = [i % TEAM_SIZE for i in range(len(dated))]
     rng.shuffle(assignees)
+    # Hand-offs go to the presenter: swap with enquiries the presenter held, keeping the spread.
+    for i, (_, _, handoff) in enumerate(dated):
+        if handoff and assignees[i] != 0:
+            j = next(j for j, a in enumerate(assignees) if a == 0 and not dated[j][2])
+            assignees[i], assignees[j] = 0, assignees[i]
     enquiries: list[DemoEnquiry] = []
-    for (outcome, created), assignee in zip(dated, assignees, strict=True):
+    for (outcome, created, handoff), assignee in zip(dated, assignees, strict=True):
         known = [i for i, c in enumerate(clients) if _order(c.created) < _order(created)]
         client_index = rng.choice(known) if known and rng.random() < 0.95 else None
         company = client_index is not None and clients[client_index].kind == "company"
@@ -394,6 +409,7 @@ def _plan_enquiries(
                 else None,
                 notes=rng.choice(NOTE_TEMPLATES) if rng.random() < 0.5 else None,
                 assignee=assignee,
+                creator=rng.randrange(1, TEAM_SIZE) if handoff else assignee,
                 created=created,
                 status=_FINAL_STATUS[outcome],
                 status_path=_manual_path(rng, outcome, start),
@@ -535,7 +551,7 @@ class _Seeder:
             assignee_user_id=self.user(spec.assignee),
         )
         enquiry = await create_enquiry(
-            self.db, self.agency.id, self.user(spec.assignee), data, now=self.at(spec.created)
+            self.db, self.agency.id, self.user(spec.creator), data, now=self.at(spec.created)
         )
         self.enquiries[index] = enquiry.id
 
@@ -662,7 +678,8 @@ async def seed_demo_workspace(
     users: Sequence[TeamMember],
     now: datetime,
 ) -> DemoSummary:
-    """Fill a (new, empty) demo agency with a month of work, through the services. Commits.
+    """Fill a (new, empty) demo agency with a month of work, through the services, and leave
+    the presenter (`users[0]`) with the last two days' notifications unread. Commits.
 
     Raises DemoUnavailable when the airport reference data can't support the demo.
     """
@@ -673,6 +690,8 @@ async def seed_demo_workspace(
     plan = build_demo_plan(seed=agency.id.int, routes=routes, today=seeder.today)
     for _, action in seeder.actions(plan):
         await action()
+    # The presenter last opened the bell two days ago: what teammates did since is unread.
+    await identity_service.set_notifications_seen_at(db, users[0].id, now - NOTIFICATIONS_SEEN_AGO)
     await db.commit()
     summary = DemoSummary(
         clients=await _count(db, Client),

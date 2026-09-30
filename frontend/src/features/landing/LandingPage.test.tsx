@@ -72,6 +72,18 @@ test("platform facts are hidden when they can't be loaded", async () => {
   expect(screen.queryByText(/Boom|went wrong/)).not.toBeInTheDocument();
 });
 
+test("the hero promises only what ships today", async () => {
+  mockApi(withSession(null, { "GET /api/v1/platform/facts": { status: 200, body: FACTS } }));
+  renderApp("/");
+  expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Search live airline and hotel inventory, see what every fare really means, and track every enquiry from first message to won trip — every price labelled with where it came from.",
+    ),
+  ).toBeInTheDocument();
+  expect(document.body.textContent).not.toMatch(/send polished quotes/);
+});
+
 test("top navigation, features, steps and footer", async () => {
   mockApi(withSession(null, { "GET /api/v1/platform/facts": { status: 200, body: FACTS } }));
   renderApp("/");

@@ -132,8 +132,8 @@ export function Hero() {
             The mission control for modern travel agencies
           </h1>
           <p className="tm-rise mt-6 max-w-[34rem] text-lg leading-relaxed text-dim" style={enter(2)}>
-            Search live airline and hotel inventory, see what every fare really means, and send polished quotes in
-            minutes — every price labelled with where it came from.
+            Search live airline and hotel inventory, see what every fare really means, and track every enquiry from
+            first message to won trip — every price labelled with where it came from.
           </p>
           <div className="tm-rise mt-9 flex flex-col gap-3 sm:flex-row sm:items-center" style={enter(3)}>
             <CtaLink to="/demo" size="lg">

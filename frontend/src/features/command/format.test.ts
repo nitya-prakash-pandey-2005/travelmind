@@ -44,6 +44,17 @@ test("no delta without two comparable periods", () => {
   expect(kpiDelta(kpi({ value: 3, previous: 0 }))).toEqual({ pct: null, direction: "up", good: true });
   expect(kpiDelta(kpi({ key: "pipeline_value", unit: "money", value: 100, previous: null }))).toBeUndefined();
   expect(kpiDelta(kpi({ key: "win_rate", unit: "percent", value: null, previous: 50 }))).toBeUndefined();
+  // Rates move in percentage points, even from a zero base.
+  expect(kpiDelta(kpi({ key: "win_rate", unit: "percent", value: 58.3, previous: 50 }))).toEqual({
+    pct: expect.closeTo(8.3, 5),
+    direction: "up",
+    good: true,
+    points: true,
+  });
+  expect(kpiDelta(kpi({ key: "win_rate", unit: "percent", value: 25, previous: 0 }))).toMatchObject({
+    pct: 25,
+    points: true,
+  });
 });
 
 test("response time days without a first send are gaps, not zero minutes", () => {

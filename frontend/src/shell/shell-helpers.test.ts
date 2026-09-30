@@ -27,7 +27,9 @@ test("the demo notice counts whole days left, rounding up", () => {
   expect(daysUntil("2026-09-30T13:00:00Z", now)).toBe(1);
   expect(daysUntil("2026-09-29T13:00:00Z", now)).toBe(0);
   expect(daysUntil(null, now)).toBeNull();
-  expect(demoNotice(1)).toBe("You're exploring a demo workspace with sample data. It resets in 1 day.");
-  expect(demoNotice(0)).toBe("You're exploring a demo workspace with sample data. It resets today.");
+  expect(demoNotice(1)).toBe(
+    "You're exploring a demo workspace with sample data. It's deleted automatically in 1 day.",
+  );
+  expect(demoNotice(0)).toBe("You're exploring a demo workspace with sample data. It's deleted automatically today.");
   expect(demoNotice(null)).toBe("You're exploring a demo workspace with sample data.");
 });

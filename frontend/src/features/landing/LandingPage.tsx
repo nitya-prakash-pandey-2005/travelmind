@@ -17,10 +17,10 @@ function TopNav() {
         <Link to="/" className="mr-auto font-display text-sm tracking-[0.3em] text-primary sm:text-base sm:tracking-[0.4em]">
           TRAVELMIND
         </Link>
-        <a href="#features" className="hidden text-sm text-dim transition-colors hover:text-ink md:inline">
+        <a href="#features" className="hidden text-sm text-dim transition-colors hover:text-ink sm:inline">
           Features
         </a>
-        <a href="#how-it-works" className="hidden text-sm text-dim transition-colors hover:text-ink md:inline">
+        <a href="#how-it-works" className="hidden text-sm text-dim transition-colors hover:text-ink sm:inline">
           How it works
         </a>
         <Link to="/login" className="text-sm text-dim transition-colors hover:text-ink">
