@@ -46,7 +46,7 @@ test("signing out clears the session and returns to login", async () => {
   await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
   expect(calls.some((c) => c.method === "POST" && c.path === "/api/v1/auth/logout")).toBe(true);
-  expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Sign in to TravelMind" })).toBeInTheDocument();
 });
 
 test("the design gallery is reachable inside the shell", async () => {
@@ -62,7 +62,7 @@ test("the scanners and suppliers are reachable from the navigation", async () =>
   const { user, router } = renderApp("/app");
   await user.click(await screen.findByRole("link", { name: "Hotel search" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/hotels"));
-  expect(screen.getByRole("heading", { name: "Find a stay" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { level: 1, name: "Hotel search" })).toBeInTheDocument();
   await user.click(screen.getByRole("link", { name: "Fare search" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/fares"));
   await user.click(screen.getByRole("link", { name: "Suppliers" }));

@@ -19,9 +19,10 @@ test("a visitor explores the live demo from the landing page and exits back to i
   const activity = page.getByRole("region", { name: "Live activity" }).getByRole("list", { name: "Recent activity" });
   await expect(activity.getByRole("listitem").nth(4)).toBeVisible();
 
-  const marketRows = page.getByRole("region", { name: "Market pulse" }).getByRole("listitem");
-  const supplierRows = page.getByRole("region", { name: "Supplier health" }).getByRole("listitem");
-  await expect(marketRows.or(supplierRows).first()).toBeVisible();
+  // Market pulse and supplier health are tables: row 0 is the header, row 1 the first data row.
+  const marketRow = page.getByRole("region", { name: "Market pulse" }).getByRole("row").nth(1);
+  const supplierRow = page.getByRole("region", { name: "Supplier health" }).getByRole("row").nth(1);
+  await expect(marketRow.or(supplierRow).first()).toBeVisible();
 
   await page.getByRole("region", { name: "Demo workspace" }).getByRole("button", { name: "Exit demo" }).click();
   await expect(page).toHaveURL((url) => url.pathname === "/");
