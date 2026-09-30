@@ -198,7 +198,14 @@ async def test_direct_service_callers_are_rate_limited_too(monkeypatch):
     )
     try:
         with pytest.raises(RateLimited):
-            await hotels_service.search_hotels(None, redis, settings, hotel_stay, agency_id=agency)  # type: ignore[arg-type]
+            await hotels_service.search_hotels(
+                None,  # type: ignore[arg-type]
+                redis,
+                settings,
+                hotel_stay,
+                agency_id=agency,
+                guest_nationality="IN",
+            )
         with pytest.raises(RateLimited):
             await offers_service.search_flights(
                 None,  # type: ignore[arg-type]
@@ -210,3 +217,14 @@ async def test_direct_service_callers_are_rate_limited_too(monkeypatch):
             )
     finally:
         await redis.aclose()
+
+
+async def test_guest_nationality_follows_agency_country(client, airports, monkeypatch, respx_mock):
+    monkeypatch.setattr(get_settings(), "liteapi_key", "sand_abc")
+    route = respx_mock.post(f"{LITEAPI_BASE_URL}/hotels/rates").mock(
+        return_value=httpx.Response(200, json=FIXTURE)
+    )
+    await signup(client)
+    await client.patch("/api/v1/agency", json={"country_code": "AE"})
+    await client.post(SEARCH, json=stay())
+    assert json.loads(route.calls.last.request.content)["guestNationality"] == "AE"

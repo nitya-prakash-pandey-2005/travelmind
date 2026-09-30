@@ -13,7 +13,7 @@ const SUPPLIERS: SupplierStatus[] = [
 
 test("the suppliers page shows each connection and its mode", async () => {
   mockApi(withSession(ME_OWNER, { "GET /api/v1/suppliers": { status: 200, body: SUPPLIERS } }));
-  renderApp("/suppliers");
+  renderApp("/app/suppliers");
   const table = await screen.findByRole("table", { name: "Supplier connections" });
   const rows = within(table).getAllByRole("row").slice(1);
   expect(rows).toHaveLength(3);
@@ -27,7 +27,7 @@ test("the suppliers page shows each connection and its mode", async () => {
 
 test("the sandbox row is findable by name and says it is connected", async () => {
   mockApi(withSession(ME_AGENT, { "GET /api/v1/suppliers": { status: 200, body: SUPPLIERS } }));
-  renderApp("/suppliers");
+  renderApp("/app/suppliers");
   const table = await screen.findByRole("table", { name: "Supplier connections" });
   const sandbox = within(table).getByRole("row", { name: /Sandbox inventory/ });
   expect(sandbox).toHaveTextContent("Connected");
@@ -36,6 +36,6 @@ test("the sandbox row is findable by name and says it is connected", async () =>
 
 test("a failed supplier check shows the reason", async () => {
   mockApi(withSession(ME_OWNER, { "GET /api/v1/suppliers": { status: 503, body: { detail: "Supplier status is unavailable." } } }));
-  renderApp("/suppliers");
+  renderApp("/app/suppliers");
   expect(await screen.findByRole("alert")).toHaveTextContent("Supplier status is unavailable.");
 });

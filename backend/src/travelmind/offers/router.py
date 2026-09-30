@@ -50,7 +50,7 @@ async def reprice_offer_route(
 ) -> RepriceResponse:
     try:
         return await service.reprice_offer(
-            db, redis, get_settings(), offer_id, agency_id=current.agency_id
+            db, redis, get_settings(), offer_id, agency_id=current.agency_id, user_id=current.id
         )
     except service.OfferServiceError as exc:
         raise _http_error(exc) from None

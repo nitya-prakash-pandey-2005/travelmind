@@ -1,13 +1,30 @@
+import { History } from "lucide-react";
 import { formatNumber } from "../../lib/format";
-import { Panel } from "../../ui/Panel";
+import { EmptyState } from "../../ui/EmptyState";
+import { Panel, type PanelVariant } from "../../ui/Panel";
 import { greatCircleKm } from "../route/geo";
 import type { RecentRoute } from "../route/recentRoutes";
 
-export function RecentRoutesPanel({ routes, onSelect }: { routes: RecentRoute[]; onSelect: (route: RecentRoute) => void }) {
+export function RecentRoutesPanel({
+  routes,
+  onSelect,
+  variant,
+  className,
+}: {
+  routes: RecentRoute[];
+  onSelect: (route: RecentRoute) => void;
+  variant?: PanelVariant;
+  className?: string;
+}) {
   return (
-    <Panel eyebrow="Log" title="Recent routes">
+    <Panel eyebrow="Log" title="Recent routes" variant={variant} className={className}>
       {routes.length === 0 ? (
-        <p className="text-sm text-dim">No routes scanned yet. Plot one with the route scanner.</p>
+        <EmptyState
+          icon={History}
+          className="py-6"
+          title="No routes scanned yet"
+          description="Routes you plot with the route scanner are kept here for one-click replay."
+        />
       ) : (
         <ul className="flex flex-col gap-1">
           {routes.map((route) => (

@@ -13,6 +13,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.config import Settings
+from travelmind.db import utcnow
 from travelmind.hotels.liteapi import LiteApiHotelSupplier
 from travelmind.hotels.models import HotelOffer, HotelSearchRequest
 from travelmind.hotels.schemas import HotelOfferView, HotelSearchResponse
@@ -21,9 +22,16 @@ from travelmind.offers.fx import display_currency_for, get_fx_rates
 from travelmind.offers.money import Money
 from travelmind.offers.schemas import SourceStatusOut
 from travelmind.offers.search import SourceState
-from travelmind.offers.service import RateLimited, UnknownAirport, check_search_budget
+from travelmind.offers.service import (
+    RateLimited,
+    UnknownAirport,
+    check_search_budget,
+    plural,
+    source_results,
+)
 from travelmind.offers.suppliers.base import SupplierError
 from travelmind.reference.service import get_airport_index
+from travelmind.workspace.activity import record_activity
 
 log = structlog.get_logger()
 
@@ -40,6 +48,7 @@ async def _search_supplier(
     latitude: float,
     longitude: float,
     currency: str,
+    guest_nationality: str,
 ) -> tuple[list[HotelOffer], SourceStatusOut]:
     supplier = LiteApiHotelSupplier(settings.liteapi_key)
     timeout_s = settings.search_timeout_seconds
@@ -58,6 +67,7 @@ async def _search_supplier(
                 latitude=latitude,
                 longitude=longitude,
                 currency=currency,
+                guest_nationality=guest_nationality,
                 timeout_s=timeout_s,
             ),
             timeout=timeout_s,
@@ -72,6 +82,30 @@ async def _search_supplier(
     return offers, status("ok", len(offers))
 
 
+async def _record(
+    db: AsyncSession,
+    agency_id: UUID,
+    user_id: UUID | None,
+    request: HotelSearchRequest,
+    source: SourceStatusOut,
+) -> None:
+    """Save the supplier result and the activity event, then commit."""
+    now = utcnow()
+    db.add_all(source_results(agency_id, "hotels", None, [source], now))
+    await record_activity(
+        db,
+        agency_id=agency_id,
+        kind="search.hotels",
+        summary=(
+            f"Searched hotels near {request.destination} · {plural(source.offer_count, 'offer')}"
+        ),
+        actor_user_id=user_id,
+        data={"destination": request.destination, "offers": source.offer_count},
+        occurred_at=now,
+    )
+    await db.commit()
+
+
 async def search_hotels(
     db: AsyncSession,
     redis: Redis,
@@ -79,8 +113,14 @@ async def search_hotels(
     request: HotelSearchRequest,
     *,
     agency_id: UUID,
+    guest_nationality: str,
+    user_id: UUID | None = None,
 ) -> HotelSearchResponse:
     """Hotels near the destination airport, cheapest first in the display currency.
+
+    `guest_nationality` (ISO-2) is the agency's country: suppliers price by it. `db` must
+    already be bound to `agency_id`; the search commits its source result and a `search.hotels`
+    activity event.
 
     Raises RateLimited when the agency's per-minute hotel budget (separate from flights) is
     spent, and UnknownAirport when the destination isn't a known airport.
@@ -91,19 +131,16 @@ async def search_hotels(
         raise UnknownAirport(request.destination)
     currency = display_currency_for(airport.country_code)
     if not settings.liteapi_key:
+        source = SourceStatusOut(
+            supplier=SUPPLIER,
+            status="not_configured",
+            offer_count=0,
+            latency_ms=0,
+            message=NOT_CONFIGURED_MESSAGE,
+        )
+        await _record(db, agency_id, user_id, request, source)
         return HotelSearchResponse(
-            display_currency=currency,
-            nights=request.nights,
-            sources=[
-                SourceStatusOut(
-                    supplier=SUPPLIER,
-                    status="not_configured",
-                    offer_count=0,
-                    latency_ms=0,
-                    message=NOT_CONFIGURED_MESSAGE,
-                )
-            ],
-            offers=[],
+            display_currency=currency, nights=request.nights, sources=[source], offers=[]
         )
 
     offers, source = await _search_supplier(
@@ -112,6 +149,7 @@ async def search_hotels(
         latitude=airport.latitude,
         longitude=airport.longitude,
         currency=currency,
+        guest_nationality=guest_nationality,
     )
     needs_fx = any(o.total.currency != currency for o in offers)
     fx = await get_fx_rates(redis, enabled=settings.fx_enabled) if needs_fx else None
@@ -123,6 +161,7 @@ async def search_hotels(
         HotelOfferView.model_validate(o.model_dump() | {"display_total": display(o)})
         for o in rank_by_display(offers, display)
     ]
+    await _record(db, agency_id, user_id, request, source)
     return HotelSearchResponse(
         display_currency=currency,
         fx_as_of=fx.as_of if fx else None,

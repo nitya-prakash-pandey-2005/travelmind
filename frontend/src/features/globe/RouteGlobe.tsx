@@ -5,10 +5,18 @@ import type { Airport } from "../../api/types";
 import { useTheme, type Theme } from "../../ui/theme";
 import { useReducedMotion } from "../../ui/useReducedMotion";
 import { COUNTRIES } from "./countries";
-import { useElementSize } from "./useElementSize";
+import { useElementSize } from "../../lib/useElementSize";
 import { useFlyToActiveRoute } from "./useFlyToActiveRoute";
 
-export type GlobeArc = { from: Airport; to: Airport; active: boolean };
+/** `weight` (default 1) thickens a route with more enquiries on it. */
+export type GlobeArc = { from: Airport; to: Airport; active: boolean; weight?: number };
+
+/** Stroke width: active arcs stand out; others thicken gently with weight, capped. */
+function arcStroke(arc: GlobeArc): number {
+  const weight = Number.isFinite(arc.weight) ? Math.max(1, arc.weight ?? 1) : 1;
+  const extra = Math.min(weight - 1, 4) * 0.12;
+  return (arc.active ? 0.9 : 0.35) + extra;
+}
 
 type GlobeColors = { primary: string; ai: string; dim: string; land: string; ocean: string };
 
@@ -33,8 +41,20 @@ function uniqueAirports(arcs: GlobeArc[]): Airport[] {
   return [...byCode.values()];
 }
 
+/** Where a showcase globe first looks: over the Gulf, with India, Europe and Singapore in view. */
+const SHOWCASE_VIEW = { lat: 24, lng: 52, altitude: 2.15 };
+
+type RouteGlobeProps = {
+  arcs: GlobeArc[];
+  /**
+   * A decorative globe (the landing page): every arc glows, it keeps turning (unless reduced motion),
+   * and it never captures the scroll wheel, so the page scrolls past it.
+   */
+  showcase?: boolean;
+};
+
 /** Hex-dotted 3D globe with animated great-circle arcs. Lazy-loaded (three.js is large). */
-export default function RouteGlobe({ arcs }: { arcs: GlobeArc[] }) {
+export default function RouteGlobe({ arcs, showcase = false }: RouteGlobeProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   const [theme] = useTheme();
@@ -42,20 +62,26 @@ export default function RouteGlobe({ arcs }: { arcs: GlobeArc[] }) {
   const colors = useMemo(() => readColors(theme), [theme]);
   const material = useMemo(() => new MeshPhongMaterial({ color: new Color(colors.ocean), shininess: 6 }), [colors.ocean]);
   const labels = useMemo(() => uniqueAirports(arcs), [arcs]);
-  const active = useMemo(() => arcs.find((arc) => arc.active), [arcs]);
+  const active = useMemo(() => (showcase ? undefined : arcs.find((arc) => arc.active)), [arcs, showcase]);
+  const ready = size.width > 0 && size.height > 0;
 
   useEffect(() => {
     const controls = globeRef.current?.controls();
     if (!controls) return;
     controls.autoRotate = !reducedMotion && !active;
     controls.autoRotateSpeed = 0.35;
-  }, [reducedMotion, active, size.width]);
+    if (showcase) controls.enableZoom = false;
+  }, [reducedMotion, active, size.width, showcase]);
 
-  useFlyToActiveRoute(globeRef, active, size.width > 0 && size.height > 0, reducedMotion);
+  useEffect(() => {
+    if (showcase && ready) globeRef.current?.pointOfView(SHOWCASE_VIEW, 0);
+  }, [showcase, ready]);
+
+  useFlyToActiveRoute(globeRef, active, ready, reducedMotion);
 
   return (
-    <div ref={containerRef} className="h-full min-h-[340px] w-full">
-      {size.width > 0 && size.height > 0 && (
+    <div ref={containerRef} className={showcase ? "h-full w-full" : "h-full min-h-[340px] w-full"}>
+      {ready && (
         <Globe
           ref={globeRef}
           width={size.width}
@@ -74,8 +100,8 @@ export default function RouteGlobe({ arcs }: { arcs: GlobeArc[] }) {
           arcStartLng={(d: object) => (d as GlobeArc).from.longitude}
           arcEndLat={(d: object) => (d as GlobeArc).to.latitude}
           arcEndLng={(d: object) => (d as GlobeArc).to.longitude}
-          arcColor={(d: object) => ((d as GlobeArc).active ? [colors.primary, colors.ai] : colors.dim)}
-          arcStroke={(d: object) => ((d as GlobeArc).active ? 0.9 : 0.35)}
+          arcColor={(d: object) => (showcase || (d as GlobeArc).active ? [colors.primary, colors.ai] : colors.dim)}
+          arcStroke={(d: object) => (showcase ? 0.6 : arcStroke(d as GlobeArc))}
           arcDashLength={0.45}
           arcDashGap={0.18}
           arcDashAnimateTime={reducedMotion ? 0 : 2200}

@@ -1,6 +1,6 @@
 import time
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.reference.models import Airport, Country
@@ -41,3 +41,8 @@ def reset_airport_index() -> None:
     global _index, _loaded_at
     _index = None
     _loaded_at = 0.0
+
+
+async def count_airports(db: AsyncSession) -> int:
+    """How many airports the reference data holds."""
+    return int(await db.scalar(select(func.count()).select_from(Airport)) or 0)

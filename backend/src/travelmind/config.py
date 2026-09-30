@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     login_ip_max_attempts: int = 50
     signup_max_per_ip: int = 10
     signup_window_seconds: int = 3600
+    # One-click demo workspaces: per-IP limit, lifetime and how often expired ones are removed.
+    demo_max_per_ip: int = 5
+    demo_window_seconds: int = 3600
+    demo_ttl_days: int = 7
+    demo_cleanup_interval_seconds: int = 3600
     # Suppliers & market data — an empty value means "not connected".
     duffel_token: str = ""
     duffel_supplier_timeout_ms: int = 12000

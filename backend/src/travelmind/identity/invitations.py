@@ -10,8 +10,9 @@ from travelmind.config import get_settings
 from travelmind.db import bind_tenant
 from travelmind.identity.models import Agency, Invitation, User
 from travelmind.identity.passwords import hash_password_async
-from travelmind.identity.service import SessionContext, start_session
+from travelmind.identity.service import SessionContext, ensure_not_demo, start_session
 from travelmind.identity.tokens import hash_token, make_scoped_token, split_scoped_token
+from travelmind.workspace.activity import record_activity
 
 INVALID_INVITATION_MESSAGE = "This invitation link is invalid or has expired."
 
@@ -27,6 +28,8 @@ class InvalidInvitation(Exception):
 async def create_invitation(
     db: AsyncSession, *, agency_id: UUID, invited_by_user_id: UUID, email: str, role: str
 ) -> tuple[Invitation, str]:
+    """Raises DemoWorkspaceLocked for a demo workspace, InvitationConflict for a known email."""
+    await ensure_not_demo(db, agency_id)
     if await db.scalar(select(User.id).where(User.email == email)) is not None:
         raise InvitationConflict
     token, secret = make_scoped_token(agency_id)
@@ -105,6 +108,15 @@ async def accept_invitation(
         action="invitation.accepted",
         entity_type="invitation",
         entity_id=str(invitation.id),
+    )
+    await record_activity(
+        db,
+        agency_id=invitation.agency_id,
+        kind="team.joined",
+        summary=f"{user.full_name} joined the team",
+        actor_user_id=user.id,
+        entity_type="user",
+        entity_id=user.id,
     )
     agency = await db.get_one(Agency, invitation.agency_id)
     session_token = start_session(db, user, ctx)

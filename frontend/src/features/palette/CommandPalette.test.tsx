@@ -16,12 +16,13 @@ beforeEach(() => {
       "GET /api/v1/team": { status: 200, body: [] },
       "GET /api/v1/invitations": { status: 200, body: [] },
       "GET /api/v1/reference/airports": { status: 200, body: [AIRPORTS.GOI, AIRPORTS.GOX] },
+      "GET /api/v1/search": { status: 200, body: { clients: [], enquiries: [], quotes: [] } },
     }),
   );
 });
 
 test("Ctrl+K opens the palette and Escape closes it", async () => {
-  const { user } = renderApp("/");
+  const { user } = renderApp("/app");
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   expect(await screen.findByRole("dialog")).toBeInTheDocument();
@@ -29,41 +30,41 @@ test("Ctrl+K opens the palette and Escape closes it", async () => {
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 });
 
-test("⌘K opens it too, and the header button does", async () => {
-  const { user } = renderApp("/");
+test("⌘K opens it too, and the top bar search field does", async () => {
+  const { user } = renderApp("/app");
   await screen.findByRole("banner");
   await user.keyboard("{Meta>}k{/Meta}");
   expect(await screen.findByRole("dialog")).toBeInTheDocument();
   await user.keyboard("{Escape}");
-  await user.click(screen.getByRole("button", { name: /command palette/i }));
+  await user.click(screen.getByRole("button", { name: /search clients, quotes, airports/i }));
   expect(await screen.findByRole("dialog")).toBeInTheDocument();
 });
 
 test("typing a command and pressing Enter navigates", async () => {
-  const { user, router } = renderApp("/");
+  const { user, router } = renderApp("/app");
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   await user.type(await screen.findByPlaceholderText(/command or an airport/i), "crew");
   await user.keyboard("{Enter}");
-  await waitFor(() => expect(router.state.location.pathname).toBe("/team"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/team"));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
 test("the hotel and supplier commands navigate", async () => {
-  const { user, router } = renderApp("/");
+  const { user, router } = renderApp("/app");
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   await user.type(await screen.findByPlaceholderText(/command or an airport/i), "accommodation");
   await user.keyboard("{Enter}");
-  await waitFor(() => expect(router.state.location.pathname).toBe("/hotels"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/hotels"));
   await user.keyboard("{Control>}k{/Control}");
   await user.type(await screen.findByPlaceholderText(/command or an airport/i), "liteapi");
   await user.keyboard("{Enter}");
-  await waitFor(() => expect(router.state.location.pathname).toBe("/suppliers"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/suppliers"));
 });
 
 test("the theme command switches themes", async () => {
-  const { user } = renderApp("/");
+  const { user } = renderApp("/app");
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   await user.type(await screen.findByPlaceholderText(/command or an airport/i), "daylight");
@@ -71,19 +72,19 @@ test("the theme command switches themes", async () => {
   expect(document.documentElement.dataset.theme).toBe("daylight");
 });
 
-test("choosing an airport sets it on the route and returns to Mission Control", async () => {
-  const { user, router } = renderApp("/team");
+test("choosing an airport sets it on the route and returns to the Command Center", async () => {
+  const { user, router } = renderApp("/app/team");
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   await user.type(await screen.findByPlaceholderText(/command or an airport/i), "goa");
   await screen.findByRole("option", { name: /GOI/ });
   await user.keyboard("{Enter}");
   expect(routeStore.get().origin?.iata_code).toBe("GOI");
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 });
 
 test("airport results from an earlier term cannot be chosen", async () => {
-  const { user, router } = renderApp("/team");
+  const { user, router } = renderApp("/app/team");
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   const input = await screen.findByPlaceholderText(/command or an airport/i);
@@ -96,7 +97,7 @@ test("airport results from an earlier term cannot be chosen", async () => {
   await screen.findByRole("option", { name: /GOI/ });
   expect(routeStore.get()).toEqual({ origin: null, destination: null });
   expect(screen.getByRole("dialog")).toBeInTheDocument();
-  expect(router.state.location.pathname).toBe("/team");
+  expect(router.state.location.pathname).toBe("/app/team");
 });
 
 test("a failed airport lookup says so instead of offering choices", async () => {
@@ -105,7 +106,7 @@ test("a failed airport lookup says so instead of offering choices", async () => 
       "GET /api/v1/reference/airports": { status: 503, body: { detail: "Airport data is unavailable." } },
     }),
   );
-  const { user } = renderApp("/");
+  const { user } = renderApp("/app");
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   await user.type(await screen.findByPlaceholderText(/command or an airport/i), "goa");
@@ -114,7 +115,7 @@ test("a failed airport lookup says so instead of offering choices", async () => 
 });
 
 test("closing with Ctrl+K clears the search, so reopening starts fresh", async () => {
-  const { user } = renderApp("/");
+  const { user } = renderApp("/app");
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   await user.type(await screen.findByPlaceholderText(/command or an airport/i), "crew");
@@ -123,7 +124,7 @@ test("closing with Ctrl+K clears the search, so reopening starts fresh", async (
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   await user.keyboard("{Control>}k{/Control}");
   expect(await screen.findByPlaceholderText(/command or an airport/i)).toHaveValue("");
-  for (const name of ["Mission Control", "Fare scan", "Hotel scan", "Suppliers", "Crew roster", "Design system", "Switch to daylight theme", "Sign out"]) {
+  for (const name of ["Command Center", "Fare scan", "Hotel scan", "Suppliers", "Crew roster", "Design system", "Switch to daylight theme", "Sign out"]) {
     expect(screen.getByRole("option", { name })).toBeInTheDocument();
   }
 });

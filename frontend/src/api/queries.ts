@@ -1,9 +1,11 @@
-import { queryOptions, skipToken } from "@tanstack/react-query";
+import { queryOptions, skipToken, type QueryClient } from "@tanstack/react-query";
 import { authApi } from "./auth";
+import { dashboardKeys } from "./dashboard";
 import { checkHealth } from "./health";
 import { offersApi, type FlightSearchRequest, type HotelSearchRequest } from "./offers";
 import { referenceApi } from "./reference";
 import { teamApi } from "./team";
+import { workspaceKeys } from "./workspace";
 
 export const qk = {
   me: ["me"] as const,
@@ -47,11 +49,24 @@ export function airportSearchQueryOptions(term: string) {
   });
 }
 
+/**
+ * A search is logged server-side (activity, the Searches figure, supplier health, the setup checklist), so
+ * once one completes the Command Center and the checklist refetch instead of waiting out their stale time.
+ */
+async function recordedSearch<T>(client: QueryClient, run: Promise<T>): Promise<T> {
+  const result = await run;
+  void client.invalidateQueries({ queryKey: dashboardKeys.all });
+  void client.invalidateQueries({ queryKey: workspaceKeys.onboarding });
+  return result;
+}
+
 /** Searches are explicit: idle until a request exists, never retried (a retry would burn rate limit). */
 export function flightSearchQueryOptions(request: FlightSearchRequest | null) {
   return queryOptions({
     queryKey: qk.flights(request),
-    queryFn: request ? ({ signal }) => offersApi.searchFlights(request, signal) : skipToken,
+    queryFn: request
+      ? ({ signal, client }) => recordedSearch(client, offersApi.searchFlights(request, signal))
+      : skipToken,
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -60,7 +75,9 @@ export function flightSearchQueryOptions(request: FlightSearchRequest | null) {
 export function hotelSearchQueryOptions(request: HotelSearchRequest | null) {
   return queryOptions({
     queryKey: qk.hotels(request),
-    queryFn: request ? ({ signal }) => offersApi.searchHotels(request, signal) : skipToken,
+    queryFn: request
+      ? ({ signal, client }) => recordedSearch(client, offersApi.searchHotels(request, signal))
+      : skipToken,
     staleTime: 5 * 60_000,
     retry: false,
   });

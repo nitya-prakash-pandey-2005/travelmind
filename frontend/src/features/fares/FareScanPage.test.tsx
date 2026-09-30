@@ -23,7 +23,7 @@ const airIndia = makeOffer({
 
 function scan(extra: Record<string, MockHandler>) {
   const api = mockApi(withSession(ME_OWNER, extra));
-  const view = renderApp("/fares");
+  const view = renderApp("/app/fares");
   return { ...api, ...view };
 }
 

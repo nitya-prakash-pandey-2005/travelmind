@@ -1,13 +1,29 @@
-import type { Airport, Me } from "../api/types";
+import type { Agency, Airport, Me } from "../api/types";
+
+const ALPHA: Agency = {
+  id: "a-alpha",
+  name: "Alpha Travels",
+  country_code: "IN",
+  currency: "INR",
+  timezone: "Asia/Kolkata",
+  brand_color: "#22d3ee",
+  is_demo: false,
+};
 
 export const ME_OWNER: Me = {
   user: { id: "u-owner", email: "asha@alphatravels.in", full_name: "Asha Rao", role: "owner" },
-  agency: { id: "a-alpha", name: "Alpha Travels" },
+  agency: ALPHA,
+};
+
+/** The owner of a demo workspace: same people, sample data, clearly labelled. */
+export const ME_DEMO: Me = {
+  ...ME_OWNER,
+  agency: { ...ALPHA, is_demo: true },
 };
 
 export const ME_AGENT: Me = {
   user: { id: "u-agent", email: "ravi@alphatravels.in", full_name: "Ravi Kumar", role: "agent" },
-  agency: { id: "a-alpha", name: "Alpha Travels" },
+  agency: ALPHA,
 };
 
 function airport(
@@ -34,5 +50,13 @@ export const AIRPORTS = {
 /** A user of a different agency, for checks that one agency's data never reaches another. */
 export const ME_BETA: Me = {
   user: { id: "u-beta", email: "meera@betatours.in", full_name: "Meera Iyer", role: "owner" },
-  agency: { id: "a-beta", name: "Beta Tours" },
+  agency: {
+    id: "a-beta",
+    name: "Beta Tours",
+    country_code: "IN",
+    currency: "INR",
+    timezone: "Asia/Kolkata",
+    brand_color: "#a78bfa",
+    is_demo: false,
+  },
 };

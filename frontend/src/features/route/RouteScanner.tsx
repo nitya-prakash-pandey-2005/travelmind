@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import type { Airport } from "../../api/types";
 import { formatDuration, formatNumber } from "../../lib/format";
 import { Button } from "../../ui/Button";
-import { Panel } from "../../ui/Panel";
+import { Panel, type PanelVariant } from "../../ui/Panel";
 import { Readout } from "../../ui/Readout";
 import { AirportPicker } from "../airports/AirportPicker";
 import { CRUISE_KMH, KM_PER_NMI, TAXI_CLIMB_DESCENT_MIN, estimateFlightMinutes, greatCircleKm } from "./geo";
@@ -12,9 +12,13 @@ import { routeStore, useRouteSelection } from "./routeStore";
 export function RouteScanner({
   onRouteReady,
   onScanFares,
+  variant,
+  className,
 }: {
   onRouteReady?: (origin: Airport, destination: Airport) => void;
   onScanFares?: () => void;
+  variant?: PanelVariant;
+  className?: string;
 }) {
   const { origin, destination } = useRouteSelection();
   const sameAirport = origin !== null && destination !== null && origin.iata_code === destination.iata_code;
@@ -37,6 +41,8 @@ export function RouteScanner({
     <Panel
       eyebrow="Route scanner"
       title="Plot a route"
+      variant={variant}
+      className={className}
       actions={
         <Button
           variant="ghost"

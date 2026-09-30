@@ -1,5 +1,6 @@
 import { Component, Suspense, lazy, useState, type ReactNode } from "react";
-import { Panel } from "../../ui/Panel";
+import { Panel, type PanelVariant } from "../../ui/Panel";
+import { cn } from "../../ui/cn";
 import type { GlobeArc } from "./RouteGlobe";
 import { hasWebGL } from "./webgl";
 
@@ -13,7 +14,7 @@ function Standby({ message }: { message: string }) {
   );
 }
 
-/** A GPU/WebGL failure must never take down the rest of Mission Control. */
+/** A GPU/WebGL failure must never take down the rest of the Command Center. */
 class GlobeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
@@ -28,10 +29,35 @@ class GlobeBoundary extends Component<{ children: ReactNode }, { failed: boolean
   }
 }
 
-export function GlobePanel({ arcs }: { arcs: GlobeArc[] }) {
+type GlobePanelProps = {
+  arcs: GlobeArc[];
+  title?: string;
+  eyebrow?: string;
+  variant?: PanelVariant;
+  actions?: ReactNode;
+  className?: string;
+  /** Shown under the globe (legend, route list, empty state). */
+  children?: ReactNode;
+};
+
+export function GlobePanel({
+  arcs,
+  title = "Route globe",
+  eyebrow = "Orbital view",
+  variant,
+  actions,
+  className,
+  children,
+}: GlobePanelProps) {
   const [webgl] = useState(hasWebGL);
   return (
-    <Panel eyebrow="Orbital view" title="Route globe" className="flex min-h-[420px] flex-1 flex-col">
+    <Panel
+      eyebrow={eyebrow}
+      title={title}
+      variant={variant}
+      actions={actions}
+      className={cn("flex min-h-[420px] flex-1 flex-col", className)}
+    >
       <div className="flex-1">
         {webgl ? (
           <GlobeBoundary>
@@ -43,6 +69,7 @@ export function GlobePanel({ arcs }: { arcs: GlobeArc[] }) {
           <Standby message="3D globe isn't available on this device. Route data below still works." />
         )}
       </div>
+      {children}
     </Panel>
   );
 }

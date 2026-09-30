@@ -155,7 +155,7 @@ export function HotelScanPage() {
             {notConfigured && (
               <div className="flex flex-col items-start gap-2">
                 <p className="text-sm text-ink">{notConfigured.message}</p>
-                <Link to="/suppliers" className="text-sm text-primary underline underline-offset-4">
+                <Link to="/app/suppliers" className="text-sm text-primary underline underline-offset-4">
                   Open suppliers
                 </Link>
               </div>

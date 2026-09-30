@@ -4,22 +4,30 @@ import { ME_BETA, ME_OWNER } from "../test/fixtures";
 import { mockApi } from "../test/mockApi";
 import { renderApp, withSession } from "../test/renderApp";
 import { safeRedirect } from "../router";
+import { commandCenterMocks } from "../test/workspaceFixtures";
 
 test("signed-out visitors are sent to login with a return path", async () => {
   mockApi(withSession(null));
-  const { router } = renderApp("/team");
+  const { router } = renderApp("/app/team");
   expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
   expect(router.state.location.pathname).toBe("/login");
-  expect(router.state.location.search).toEqual({ redirect: "/team" });
+  expect(router.state.location.search).toEqual({ redirect: "/app/team" });
+});
+
+test("a legacy address still comes back to its /app page after signing in", async () => {
+  mockApi(withSession(null));
+  const { router } = renderApp("/team");
+  expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
+  expect(router.state.location.search).toEqual({ redirect: "/app/team" });
 });
 
 test("returns to the page the user asked for after signing in", async () => {
   mockApi(withSession(null, { "POST /api/v1/auth/login": { status: 200, body: ME_OWNER } }));
-  const { router, user } = renderApp("/login?redirect=%2Fteam");
+  const { router, user } = renderApp("/login?redirect=%2Fapp%2Fteam");
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/team"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/team"));
   expect(await screen.findByRole("banner")).toHaveTextContent("Alpha Travels");
 });
 
@@ -29,7 +37,7 @@ test("ignores redirects to other sites", async () => {
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 });
 
 test.each([
@@ -47,8 +55,8 @@ test.each([
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
-  expect(await screen.findByRole("heading", { name: "Welcome aboard, Asha" })).toBeInTheDocument();
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
+  expect(await screen.findByRole("heading", { level: 1, name: /Asha/ })).toBeInTheDocument();
 });
 
 test.each(["/.//evil.example", "/a/..//evil.example", "/%2e//evil.example"])(
@@ -65,11 +73,11 @@ test("safeRedirect keeps same-site paths with their query and hash", () => {
 
 test("keeps the query string of a same-site redirect", async () => {
   mockApi(withSession(null, { "POST /api/v1/auth/login": { status: 200, body: ME_OWNER } }));
-  const { router, user } = renderApp(`/login?redirect=${encodeURIComponent("/team?tab=crew")}`);
+  const { router, user } = renderApp(`/login?redirect=${encodeURIComponent("/app/team?tab=crew")}`);
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/team"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/team"));
   expect(router.state.location.search).toEqual({ tab: "crew" });
 });
 
@@ -125,7 +133,7 @@ test("signup conflicts show a plain message", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("An account with this email already exists.");
 });
 
-test("a successful signup lands on Mission Control", async () => {
+test("a successful signup lands in the app", async () => {
   const { calls } = mockApi(withSession(null, { "POST /api/v1/auth/signup": { status: 201, body: ME_OWNER } }));
   const { router, user } = renderApp("/signup");
   await user.type(await screen.findByLabelText("Agency name"), "Alpha Travels");
@@ -133,19 +141,80 @@ test("a successful signup lands on Mission Control", async () => {
   await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Create command deck" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
   expect(calls.find((c) => c.path === "/api/v1/auth/signup")?.body).toEqual({
     agency_name: "Alpha Travels",
     full_name: "Asha Rao",
     email: "asha@alphatravels.in",
     password: "correct-horse-battery",
+    country_code: "IN",
   });
+});
+
+test("signup asks for the agency's country, India by default", async () => {
+  mockApi(withSession(null));
+  renderApp("/signup");
+  const country = await screen.findByLabelText("Country");
+  expect(country).toHaveValue("IN");
+  expect(country).toHaveAccessibleDescription("Sets your currency and time zone.");
+  expect(Array.from((country as HTMLSelectElement).options).map((o) => [o.value, o.text])).toEqual([
+    ["IN", "India"],
+    ["US", "United States"],
+  ]);
+});
+
+test("choosing United States sends country_code US", async () => {
+  const { calls } = mockApi(withSession(null, { "POST /api/v1/auth/signup": { status: 201, body: ME_OWNER } }));
+  const { router, user } = renderApp("/signup");
+  await user.type(await screen.findByLabelText("Agency name"), "Alpha Travels");
+  await user.type(screen.getByLabelText("Your name"), "Asha Rao");
+  await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
+  await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
+  await user.selectOptions(screen.getByLabelText("Country"), "United States");
+  await user.click(screen.getByRole("button", { name: "Create command deck" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
+  expect(calls.find((c) => c.path === "/api/v1/auth/signup")?.body).toMatchObject({ country_code: "US" });
+});
+
+test("a server error about the country is shown on the form", async () => {
+  mockApi(
+    withSession(null, {
+      "POST /api/v1/auth/signup": {
+        status: 422,
+        body: {
+          detail: "Some of the information you entered isn't valid.",
+          errors: [{ field: "country_code", message: "String should match pattern '^[A-Z]{2}$'" }],
+        },
+      },
+    }),
+  );
+  const { user } = renderApp("/signup");
+  await user.type(await screen.findByLabelText("Agency name"), "Alpha Travels");
+  await user.type(screen.getByLabelText("Your name"), "Asha Rao");
+  await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
+  await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
+  await user.click(screen.getByRole("button", { name: "Create command deck" }));
+  expect(await screen.findByLabelText("Country")).toHaveAccessibleDescription(
+    "String should match pattern '^[A-Z]{2}$'",
+  );
+});
+
+test("an unsupported country is explained on the form", async () => {
+  const message = "We support agencies in India and the United States for now.";
+  mockApi(withSession(null, { "POST /api/v1/auth/signup": { status: 422, body: { detail: message } } }));
+  const { user } = renderApp("/signup");
+  await user.type(await screen.findByLabelText("Agency name"), "Alpha Travels");
+  await user.type(screen.getByLabelText("Your name"), "Asha Rao");
+  await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
+  await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
+  await user.click(screen.getByRole("button", { name: "Create command deck" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
 });
 
 test("signed-in users skip the login page", async () => {
   mockApi(withSession(ME_OWNER));
   const { router } = renderApp("/login");
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 });
 
 test("accepting an invitation signs the new crew member in", async () => {
@@ -156,7 +225,7 @@ test("accepting an invitation signs the new crew member in", async () => {
   await user.type(await screen.findByLabelText("Your name"), "Ravi Kumar");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Join the crew" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
   expect(calls.find((c) => c.path === "/api/v1/invitations/accept")?.body).toEqual({
     token: "a-alpha.secret-token",
     full_name: "Ravi Kumar",
@@ -206,36 +275,45 @@ test("accepting an invitation into another agency drops the previous agency's ca
     releaseBetaTeam = resolve;
   });
   const ME_BETA_AGENT = { ...ME_BETA, user: { ...ME_BETA.user, role: "agent" as const } };
+  const member = (user: { id: string; full_name: string; role: string }) => ({
+    user: { id: user.id, full_name: user.full_name, role: user.role },
+    enquiries: 1,
+    quotes_sent: 1,
+    won_value_minor: 0,
+  });
   const ALPHA_TEAM = [
-    { id: "u-owner", email: "asha@alphatravels.in", full_name: "Asha Rao", role: "owner" },
-    { id: "u-agent", email: "ravi@alphatravels.in", full_name: "Ravi Kumar", role: "agent" },
+    member({ id: "u-owner", full_name: "Asha Rao", role: "owner" }),
+    member({ id: "u-agent", full_name: "Ravi Kumar", role: "agent" }),
   ];
   mockApi(
     withSession(ME_OWNER, {
-      "GET /api/v1/team": async () => {
-        if (session === "alpha") return { status: 200, body: ALPHA_TEAM };
+      ...commandCenterMocks(),
+      "GET /api/v1/dashboard/team": async () => {
+        if (session === "alpha") return { status: 200, body: { members: ALPHA_TEAM } };
         await betaTeamReady;
-        return { status: 200, body: [{ ...ME_BETA_AGENT.user }] };
+        return { status: 200, body: { members: [member(ME_BETA_AGENT.user)] } };
       },
-      "GET /api/v1/invitations": { status: 200, body: [] },
       "POST /api/v1/invitations/accept": () => {
         session = "beta";
         return { status: 201, body: ME_BETA_AGENT };
       },
     }),
   );
-  const { router, user } = renderApp("/");
-  const crewAboard = () => screen.getByText("Crew aboard").nextElementSibling;
-  await waitFor(() => expect(crewAboard()).toHaveTextContent("2"));
+  const { router, user } = renderApp("/app");
+  const team = () => screen.getByRole("region", { name: "Team" });
+  await waitFor(() => expect(team()).toHaveTextContent("Ravi Kumar"));
 
   await act(() => router.navigate({ to: "/invite/$token", params: { token: "a-beta.secret-token" } }));
   await user.type(await screen.findByLabelText("Your name"), "Meera Iyer");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Join the crew" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 
-  expect(await screen.findByRole("region", { name: "Beta Tours" })).toBeInTheDocument();
-  expect(crewAboard()).toHaveTextContent("—");
+  expect(await screen.findByRole("heading", { level: 1, name: /Meera/ })).toBeInTheDocument();
+  expect(await screen.findByRole("banner")).toHaveTextContent("Beta Tours");
+  expect(team()).not.toHaveTextContent("Ravi Kumar");
+  expect(team()).toHaveAttribute("aria-busy", "true");
   releaseBetaTeam();
-  await waitFor(() => expect(crewAboard()).toHaveTextContent("1"));
+  await waitFor(() => expect(team()).toHaveTextContent("Meera Iyer"));
+  expect(team()).not.toHaveTextContent("Ravi Kumar");
 });

@@ -1,7 +1,19 @@
 export type Role = "owner" | "admin" | "agent";
 
 export type User = { id: string; email: string; full_name: string; role: Role };
-export type Agency = { id: string; name: string };
+export type Agency = {
+  id: string;
+  name: string;
+  /** ISO 3166-1 alpha-2, e.g. "IN". */
+  country_code: string;
+  /** ISO 4217, e.g. "INR": every amount the agency sees is in this currency. */
+  currency: string;
+  /** IANA timezone, e.g. "Asia/Kolkata". */
+  timezone: string;
+  /** "#rrggbb"; tints accents only, never text. */
+  brand_color: string;
+  is_demo: boolean;
+};
 export type Me = { user: User; agency: Agency };
 
 export type TeamMember = { id: string; email: string; full_name: string; role: Role };

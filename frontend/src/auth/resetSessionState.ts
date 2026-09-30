@@ -4,7 +4,8 @@ import { routeStore } from "../features/route/routeStore";
 
 /**
  * Forget everything that belonged to the previous session — another agency's roster, invitations,
- * cached lookups and the route being scanned — so the next user never sees it, even for a moment.
+ * notifications, record search results, workspace profile, dashboards, cached lookups and the route
+ * being scanned — so the next user never sees it, even for a moment.
  * `me` is kept: the caller sets it (null on sign-out or expiry, the new user on sign-in).
  * Removing a query also cancels its in-flight request, so a late response can't repopulate it.
  */

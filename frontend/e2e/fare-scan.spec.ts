@@ -5,6 +5,7 @@ test("an agent scans sandbox fares, verifies a price and checks the supplier lin
   await signUp(page, newOwner("fares"));
 
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Fare scan" }).click();
+  await expect(page).toHaveURL(/\/app\/fares$/);
   await pickAirport(page, "From", "DEL");
   await pickAirport(page, "To", "BOM");
   await page.getByRole("button", { name: "Scan fares" }).click();
@@ -23,6 +24,7 @@ test("an agent scans sandbox fares, verifies a price and checks the supplier lin
   await expect(page.getByRole("button", { name: "Fastest" })).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Suppliers" }).click();
+  await expect(page).toHaveURL(/\/app\/suppliers$/);
   const links = page.getByRole("table", { name: "Supplier connections" });
   await expect(links.getByRole("row", { name: /Sandbox inventory/ })).toContainText("Connected");
 });

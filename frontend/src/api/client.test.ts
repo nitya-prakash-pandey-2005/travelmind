@@ -31,7 +31,7 @@ test("validation errors become field errors", async () => {
     },
   });
   const error = await authApi
-    .signup({ agency_name: "Alpha", full_name: "Asha", email: "a@b.in", password: "short" })
+    .signup({ agency_name: "Alpha", full_name: "Asha", email: "a@b.in", password: "short", country_code: "IN" })
     .catch((e: unknown) => e);
   expect(error).toBeInstanceOf(ApiError);
   expect((error as ApiError).status).toBe(422);

@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated, Any
@@ -62,6 +63,15 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
+
+
+@asynccontextmanager
+async def pinned_session() -> AsyncIterator[AsyncSession]:
+    """A session that keeps one connection across all its commits, for batch work that commits
+    often (each commit would otherwise hand the connection back to the pool)."""
+    async with get_engine().connect() as connection:
+        async with get_sessionmaker()(bind=connection) as session:
+            yield session
 
 
 async def bind_tenant(session: AsyncSession, agency_id: UUID) -> None:

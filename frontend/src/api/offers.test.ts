@@ -1,6 +1,7 @@
 import { QueryObserver } from "@tanstack/react-query";
 import { expect, test } from "vitest";
 import { resetSessionState } from "../auth/resetSessionState";
+import { dashboardKeys } from "./dashboard";
 import { mockApi } from "../test/mockApi";
 import { makeOffer, searchResponse } from "../test/offerFixtures";
 import { offersApi, type FlightSearchRequest, type HotelSearchRequest, type HotelSearchResponse } from "./offers";
@@ -11,6 +12,7 @@ import {
   suppliersQueryOptions,
 } from "./queries";
 import { createQueryClient } from "./queryClient";
+import { workspaceKeys } from "./workspace";
 
 const FLIGHTS: FlightSearchRequest = {
   origin: "DEL",
@@ -89,6 +91,29 @@ test("searches stay idle until there is a request", () => {
   expect(hotels.getCurrentResult().fetchStatus).toBe("idle");
   unsubscribe.forEach((stop) => stop());
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test("a completed search marks the Command Center figures and the setup checklist out of date", async () => {
+  mockApi({
+    "POST /api/v1/flights/search": { status: 200, body: searchResponse() },
+    "POST /api/v1/hotels/search": { status: 200, body: NO_HOTELS },
+  });
+  const client = createQueryClient({ retry: false });
+  const summary = dashboardKeys.summary("30d");
+  const seed = () => {
+    client.setQueryData(summary, { kpis: [] });
+    client.setQueryData(workspaceKeys.onboarding, { items: [], completed: 0, total: 6 });
+  };
+
+  seed();
+  await client.fetchQuery(flightSearchQueryOptions(FLIGHTS));
+  expect(client.getQueryState(summary)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(workspaceKeys.onboarding)?.isInvalidated).toBe(true);
+
+  seed();
+  await client.fetchQuery(hotelSearchQueryOptions(HOTELS));
+  expect(client.getQueryState(summary)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(workspaceKeys.onboarding)?.isInvalidated).toBe(true);
 });
 
 test("a failed search is not retried, even by a retrying client", async () => {
