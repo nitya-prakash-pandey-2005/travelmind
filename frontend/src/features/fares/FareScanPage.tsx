@@ -5,6 +5,7 @@ import { useId, useState } from "react";
 import { asApiError } from "../../api/client";
 import type { FlightOffer, FlightSearchRequest, FlightSearchResponse } from "../../api/offers";
 import { flightSearchQueryOptions } from "../../api/queries";
+import { useCurrentUser } from "../../auth/useCurrentUser";
 import { formatDuration, formatNumber } from "../../lib/format";
 import { formatMoney } from "../../lib/money";
 import { buttonClasses } from "../../ui/Button";
@@ -15,8 +16,14 @@ import { Skeleton } from "../../ui/Skeleton";
 import { FareInsight } from "./FareInsight";
 import { CABINS, FareSearchForm } from "./FareSearchForm";
 import { OfferCard } from "./OfferCard";
+import { QuickRoutes } from "./QuickRoutes";
+import { FARE_GUIDE, FARE_NOTE } from "./guides";
+import { ReadingGuide } from "./ReadingGuide";
 import { SourceStrip } from "./SourceStrip";
 import { sortOffers, type SortMode } from "./sortOffers";
+import { SupplierStatusCard } from "./SupplierStatusCard";
+import { useRecentRoutes } from "../route/recentRoutes";
+import { routeStore } from "../route/routeStore";
 
 const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 
@@ -117,6 +124,8 @@ function Searching() {
 }
 
 export function FareScanPage() {
+  const me = useCurrentUser();
+  const recent = useRecentRoutes(me?.user.id ?? "anonymous");
   const [request, setRequest] = useState<FlightSearchRequest | null>(null);
   const [sort, setSort] = useState<SortMode>("price");
   const search = useQuery(flightSearchQueryOptions(request));
@@ -128,6 +137,8 @@ export function FareScanPage() {
   const showResults = request !== null && !search.isFetching && !search.isError && data !== undefined;
 
   const submit = (next: FlightSearchRequest) => {
+    const { origin, destination } = routeStore.get();
+    if (origin && destination) recent.record(origin, destination);
     if (request && JSON.stringify(request) === JSON.stringify(next)) void search.refetch();
     else setRequest(next);
   };
@@ -151,77 +162,87 @@ export function FareScanPage() {
           <FareInsight baseline={data.baseline} price={compared?.per_traveller ?? null} insight={compared?.insight ?? null} />
         )}
 
-        <section aria-labelledby="fare-results" className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="min-w-0">
-              <h2 id="fare-results" className="text-base font-semibold leading-6 text-ink">
-                Results
-                {showResults && (
-                  <span className="tm-num ml-2 text-[13px] font-normal text-dim">
-                    {data.offers.length} offer{data.offers.length === 1 ? "" : "s"}
-                  </span>
-                )}
-              </h2>
-              {request && <p className="mt-0.5 font-mono text-xs leading-4 text-dim">{tripSummary(request)}</p>}
+        {request === null ? (
+          // Wide screens: quick routes over the guide, supplier status beside both. Laptops: quick routes across
+          // the top (their chips need the width), guide and supplier status side by side. Phones: one column.
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1400px]:grid-cols-[minmax(0,1fr)_22rem]">
+            <div className="min-w-0 lg:col-span-2 min-[1400px]:col-span-1">
+              <QuickRoutes recent={recent.routes} />
             </div>
-            {showResults && data.offers.length > 0 && <SortTabs value={sort} onChange={setSort} data={data} />}
-          </div>
-
-          {request === null ? (
-            <div className="rounded-lg border border-line bg-surface">
-              <EmptyState
-                icon={Plane}
-                title="Search to see fares"
-                description="Choose a route and dates. Offers from every connected supplier appear here, cheapest first."
+            <ReadingGuide sections={FARE_GUIDE} note={FARE_NOTE} />
+            <div className="min-w-0 min-[1400px]:col-start-2 min-[1400px]:row-span-2 min-[1400px]:row-start-1">
+              <SupplierStatusCard
+                booking="flights"
+                bookingTitle="Flight suppliers"
+                services={["emissions", "price_history", "exchange_rates"]}
               />
             </div>
-          ) : search.isFetching ? (
-            <Searching />
-          ) : search.isError ? (
-            <p
-              role="alert"
-              className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/5 px-4 py-3 text-[13px] leading-5 text-danger"
-            >
-              <CircleAlert size={15} aria-hidden="true" className="mt-0.5 shrink-0" />
-              {asApiError(search.error).message}
-            </p>
-          ) : data ? (
-            <>
-              <SourceStrip sources={data.sources} />
-              {data.offers.length === 0 ? (
-                <div className="rounded-lg border border-line bg-surface">
-                  <EmptyState
-                    icon={Plane}
-                    title="No offers for this route and date."
-                    description="Try another date, or check which suppliers are connected."
-                    action={{ label: "Check suppliers", to: "/app/suppliers" }}
-                  />
-                </div>
-              ) : (
-                <>
-                  <ol aria-label="Flight offers" className="flex flex-col gap-2">
-                    {sortOffers(data.offers, sort).map((offer) => (
-                      <li key={offer.id}>
-                        <OfferCard offer={offer} />
-                      </li>
-                    ))}
-                  </ol>
-                  <div className="flex flex-col gap-1 text-xs leading-4 text-faint">
-                    <p>Prices in {data.display_currency} for all travellers, including taxes and fees.</p>
-                    {data.fx_as_of && (
-                      <p>
-                        ≈ prices converted with ECB reference rates of {data.fx_as_of}; you are billed in the supplier's currency.
-                      </p>
-                    )}
-                    {data.offers.some((o) => o.co2_source?.startsWith("google_tim")) && (
-                      <p>CO₂ per passenger: Google Travel Impact Model (CC BY-SA 4.0).</p>
-                    )}
+          </div>
+        ) : (
+          <section aria-labelledby="fare-results" className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-0">
+                <h2 id="fare-results" className="text-base font-semibold leading-6 text-ink">
+                  Results
+                  {showResults && (
+                    <span className="tm-num ml-2 text-[13px] font-normal text-dim">
+                      {data.offers.length} offer{data.offers.length === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </h2>
+                {request && <p className="mt-0.5 font-mono text-xs leading-4 text-dim">{tripSummary(request)}</p>}
+              </div>
+              {showResults && data.offers.length > 0 && <SortTabs value={sort} onChange={setSort} data={data} />}
+            </div>
+
+            {search.isFetching ? (
+              <Searching />
+            ) : search.isError ? (
+              <p
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/5 px-4 py-3 text-[13px] leading-5 text-danger"
+              >
+                <CircleAlert size={15} aria-hidden="true" className="mt-0.5 shrink-0" />
+                {asApiError(search.error).message}
+              </p>
+            ) : data ? (
+              <>
+                <SourceStrip sources={data.sources} />
+                {data.offers.length === 0 ? (
+                  <div className="rounded-lg border border-line bg-surface">
+                    <EmptyState
+                      icon={Plane}
+                      title="No offers for this route and date."
+                      description="Try another date, or check which suppliers are connected."
+                      action={{ label: "Check suppliers", to: "/app/suppliers" }}
+                    />
                   </div>
-                </>
-              )}
-            </>
-          ) : null}
-        </section>
+                ) : (
+                  <>
+                    <ol aria-label="Flight offers" className="flex flex-col gap-2">
+                      {sortOffers(data.offers, sort).map((offer) => (
+                        <li key={offer.id}>
+                          <OfferCard offer={offer} />
+                        </li>
+                      ))}
+                    </ol>
+                    <div className="flex flex-col gap-1 text-xs leading-4 text-faint">
+                      <p>Prices in {data.display_currency} for all travellers, including taxes and fees.</p>
+                      {data.fx_as_of && (
+                        <p>
+                          ≈ prices converted with ECB reference rates of {data.fx_as_of}; you are billed in the supplier's currency.
+                        </p>
+                      )}
+                      {data.offers.some((o) => o.co2_source?.startsWith("google_tim")) && (
+                        <p>CO₂ per passenger: Google Travel Impact Model (CC BY-SA 4.0).</p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            ) : null}
+          </section>
+        )}
       </div>
     </>
   );
