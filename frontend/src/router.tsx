@@ -11,6 +11,8 @@ import { meQueryOptions } from "./api/queries";
 import { setUnauthorizedHandler } from "./api/queryClient";
 import { NotFound } from "./app/NotFound";
 import { RootRouteError } from "./app/RouteError";
+import { APP_HOME } from "./app/paths";
+import { PublicHome } from "./app/PublicHome";
 import { AcceptInvitePage } from "./auth/AcceptInvitePage";
 import { LoginPage } from "./auth/LoginPage";
 import { resetSessionState } from "./auth/resetSessionState";
@@ -62,8 +64,15 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 });
 
 const redirectIfSignedIn = async ({ context }: { context: RouterContext }) => {
-  if (await context.queryClient.ensureQueryData(meQueryOptions)) throw redirect({ to: "/" });
+  if (await context.queryClient.ensureQueryData(meQueryOptions)) throw redirect({ to: APP_HOME });
 };
+
+const homeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  beforeLoad: redirectIfSignedIn,
+  component: PublicHome,
+});
 
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -92,7 +101,7 @@ const inviteRoute = createRoute({
 
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
-  id: "app",
+  path: "/app",
   beforeLoad: async ({ context, location }) => {
     const me = await context.queryClient.ensureQueryData(meQueryOptions);
     if (!me) throw redirect({ to: "/login", search: { redirect: location.href } });
@@ -100,20 +109,40 @@ const appRoute = createRoute({
   component: AppShell,
 });
 
-const missionRoute = createRoute({ getParentRoute: () => appRoute, path: "/", component: MissionControlPage });
+const commandRoute = createRoute({ getParentRoute: () => appRoute, path: "/", component: MissionControlPage });
 const teamRoute = createRoute({ getParentRoute: () => appRoute, path: "/team", component: TeamPage });
 const designRoute = createRoute({ getParentRoute: () => appRoute, path: "/design", component: DesignGallery });
 const faresRoute = createRoute({ getParentRoute: () => appRoute, path: "/fares", component: FareScanPage });
 const hotelsRoute = createRoute({ getParentRoute: () => appRoute, path: "/hotels", component: HotelScanPage });
 const suppliersRoute = createRoute({ getParentRoute: () => appRoute, path: "/suppliers", component: SuppliersPage });
 
+/** Pre-/app addresses (bookmarks, old links) move to their new home with their query and hash intact. */
+function legacyRedirect(path: "/fares" | "/hotels" | "/suppliers" | "/team" | "/design") {
+  return createRoute({
+    getParentRoute: () => rootRoute,
+    path,
+    beforeLoad: ({ location }) => {
+      const hash = location.hash ? `#${location.hash}` : "";
+      throw redirect({ href: `${APP_HOME}${path}${location.searchStr}${hash}`, replace: true });
+    },
+  });
+}
+
 export const routeTree = rootRoute.addChildren([
+  homeRoute,
   loginRoute,
   signupRoute,
   inviteRoute,
-  appRoute.addChildren([missionRoute, faresRoute, hotelsRoute, suppliersRoute, teamRoute, designRoute]),
+  appRoute.addChildren([commandRoute, faresRoute, hotelsRoute, suppliersRoute, teamRoute, designRoute]),
+  legacyRedirect("/fares"),
+  legacyRedirect("/hotels"),
+  legacyRedirect("/suppliers"),
+  legacyRedirect("/team"),
+  legacyRedirect("/design"),
 ]);
 
+/** Public pages: an expired session there needs no trip to the login page. */
+const PUBLIC_PATHS = ["/"];
 const PUBLIC_PREFIXES = ["/login", "/signup", "/invite/"];
 
 export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {
@@ -128,6 +157,7 @@ export function createAppRouter(queryClient: QueryClient, history?: RouterHistor
   setUnauthorizedHandler(() => {
     resetSessionState(queryClient);
     const { pathname, href } = router.state.location;
+    if (PUBLIC_PATHS.includes(pathname)) return;
     if (PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix))) return;
     void router.navigate({ to: "/login", search: { redirect: href } });
   });

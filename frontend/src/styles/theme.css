@@ -16,6 +16,8 @@
   --tm-danger: #fb7185;
   --tm-globe-land: #1f6f8b;
   --tm-globe-ocean: #07101f;
+  /* The agency's brand colour (set on the app shell from its settings); tints accents, never text. */
+  --tm-brand: var(--tm-primary);
   /* Layered glass surfaces (checked: text 16.6:1, dim 7.1:1 on glass over void). */
   --tm-glass: rgb(12 19 36 / 0.72);
   --tm-glass-strong: rgb(13 20 38 / 0.95);

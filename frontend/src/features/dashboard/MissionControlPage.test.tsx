@@ -36,7 +36,7 @@ test("plotting a route draws it on the globe and remembers it", async () => {
       "GET /api/v1/invitations": { status: 200, body: [] },
     }),
   );
-  const { user } = renderApp("/");
+  const { user } = renderApp("/app");
   expect(await screen.findByRole("heading", { name: "Welcome aboard, Asha" })).toBeInTheDocument();
 
   await user.type(screen.getByRole("combobox", { name: "From" }), "del");
@@ -61,7 +61,7 @@ test("clicking a recent route re-plots it", async () => {
       "GET /api/v1/invitations": { status: 200, body: [] },
     }),
   );
-  const { user } = renderApp("/");
+  const { user } = renderApp("/app");
   expect(await screen.findByTestId("globe")).toHaveTextContent("LHR-JFK");
   await user.click(screen.getByRole("button", { name: /LHR → JFK/ }));
   expect(routeStore.get().origin?.iata_code).toBe("LHR");
@@ -86,7 +86,7 @@ test("the agency panel shows crew and pending invitations to managers", async ()
       },
     }),
   );
-  renderApp("/");
+  renderApp("/app");
   const panel = await screen.findByRole("region", { name: "Alpha Travels" });
   expect(await within(panel).findByText("2")).toBeInTheDocument();
   expect(await within(panel).findByText("1")).toBeInTheDocument();
@@ -94,7 +94,7 @@ test("the agency panel shows crew and pending invitations to managers", async ()
 
 test("agents never request the invitation list", async () => {
   const { calls } = mockApi(withSession(ME_AGENT, { "GET /api/v1/team": { status: 200, body: TEAM } }));
-  renderApp("/");
+  renderApp("/app");
   await screen.findByRole("region", { name: "Alpha Travels" });
   expect(calls.some((c) => c.path === "/api/v1/invitations")).toBe(false);
 });
@@ -107,8 +107,8 @@ test("a plotted route can be sent to the fare scanner", async () => {
       "GET /api/v1/invitations": { status: 200, body: [] },
     }),
   );
-  const { user, router } = renderApp("/");
+  const { user, router } = renderApp("/app");
   await user.click(await screen.findByRole("button", { name: "Scan fares for this route" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/fares"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/fares"));
   expect(await screen.findByRole("heading", { name: "Scan live fares" })).toBeInTheDocument();
 });

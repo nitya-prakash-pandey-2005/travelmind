@@ -7,19 +7,26 @@ import { safeRedirect } from "../router";
 
 test("signed-out visitors are sent to login with a return path", async () => {
   mockApi(withSession(null));
-  const { router } = renderApp("/team");
+  const { router } = renderApp("/app/team");
   expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
   expect(router.state.location.pathname).toBe("/login");
-  expect(router.state.location.search).toEqual({ redirect: "/team" });
+  expect(router.state.location.search).toEqual({ redirect: "/app/team" });
+});
+
+test("a legacy address still comes back to its /app page after signing in", async () => {
+  mockApi(withSession(null));
+  const { router } = renderApp("/team");
+  expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
+  expect(router.state.location.search).toEqual({ redirect: "/app/team" });
 });
 
 test("returns to the page the user asked for after signing in", async () => {
   mockApi(withSession(null, { "POST /api/v1/auth/login": { status: 200, body: ME_OWNER } }));
-  const { router, user } = renderApp("/login?redirect=%2Fteam");
+  const { router, user } = renderApp("/login?redirect=%2Fapp%2Fteam");
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/team"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/team"));
   expect(await screen.findByRole("banner")).toHaveTextContent("Alpha Travels");
 });
 
@@ -29,7 +36,7 @@ test("ignores redirects to other sites", async () => {
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 });
 
 test.each([
@@ -47,7 +54,7 @@ test.each([
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
   expect(await screen.findByRole("heading", { name: "Welcome aboard, Asha" })).toBeInTheDocument();
 });
 
@@ -65,11 +72,11 @@ test("safeRedirect keeps same-site paths with their query and hash", () => {
 
 test("keeps the query string of a same-site redirect", async () => {
   mockApi(withSession(null, { "POST /api/v1/auth/login": { status: 200, body: ME_OWNER } }));
-  const { router, user } = renderApp(`/login?redirect=${encodeURIComponent("/team?tab=crew")}`);
+  const { router, user } = renderApp(`/login?redirect=${encodeURIComponent("/app/team?tab=crew")}`);
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/team"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/team"));
   expect(router.state.location.search).toEqual({ tab: "crew" });
 });
 
@@ -125,7 +132,7 @@ test("signup conflicts show a plain message", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("An account with this email already exists.");
 });
 
-test("a successful signup lands on Mission Control", async () => {
+test("a successful signup lands in the app", async () => {
   const { calls } = mockApi(withSession(null, { "POST /api/v1/auth/signup": { status: 201, body: ME_OWNER } }));
   const { router, user } = renderApp("/signup");
   await user.type(await screen.findByLabelText("Agency name"), "Alpha Travels");
@@ -133,7 +140,7 @@ test("a successful signup lands on Mission Control", async () => {
   await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Create command deck" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
   expect(calls.find((c) => c.path === "/api/v1/auth/signup")?.body).toEqual({
     agency_name: "Alpha Travels",
     full_name: "Asha Rao",
@@ -145,7 +152,7 @@ test("a successful signup lands on Mission Control", async () => {
 test("signed-in users skip the login page", async () => {
   mockApi(withSession(ME_OWNER));
   const { router } = renderApp("/login");
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 });
 
 test("accepting an invitation signs the new crew member in", async () => {
@@ -156,7 +163,7 @@ test("accepting an invitation signs the new crew member in", async () => {
   await user.type(await screen.findByLabelText("Your name"), "Ravi Kumar");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Join the crew" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
   expect(calls.find((c) => c.path === "/api/v1/invitations/accept")?.body).toEqual({
     token: "a-alpha.secret-token",
     full_name: "Ravi Kumar",
@@ -224,7 +231,7 @@ test("accepting an invitation into another agency drops the previous agency's ca
       },
     }),
   );
-  const { router, user } = renderApp("/");
+  const { router, user } = renderApp("/app");
   const crewAboard = () => screen.getByText("Crew aboard").nextElementSibling;
   await waitFor(() => expect(crewAboard()).toHaveTextContent("2"));
 
@@ -232,7 +239,7 @@ test("accepting an invitation into another agency drops the previous agency's ca
   await user.type(await screen.findByLabelText("Your name"), "Meera Iyer");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Join the crew" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 
   expect(await screen.findByRole("region", { name: "Beta Tours" })).toBeInTheDocument();
   expect(crewAboard()).toHaveTextContent("—");

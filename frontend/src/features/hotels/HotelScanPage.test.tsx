@@ -45,7 +45,7 @@ function response(overrides: Partial<HotelSearchResponse>): HotelSearchResponse 
 
 function open(extra: Record<string, MockHandler>) {
   const api = mockApi(withSession(ME_OWNER, extra));
-  return { ...api, ...renderApp("/hotels") };
+  return { ...api, ...renderApp("/app/hotels") };
 }
 
 async function scanAndList(extra: Record<string, MockHandler>) {
@@ -59,7 +59,7 @@ beforeEach(() => routeStore.set({ origin: AIRPORTS.DEL, destination: AIRPORTS.BO
 
 test("the destination comes from the route and hotels are listed with terms", async () => {
   const { calls } = mockApi(withSession(ME_OWNER, { [SEARCH]: { status: 200, body: response({}) } }));
-  const { user } = renderApp("/hotels");
+  const { user } = renderApp("/app/hotels");
   await user.click(await screen.findByRole("button", { name: "Scan hotels" }));
   const list = await screen.findByRole("list", { name: "Hotel offers" });
   const [card] = within(list).getAllByRole("article");
@@ -88,10 +88,10 @@ test("without a hotel supplier the page says how to connect one", async () => {
       },
     }),
   );
-  const { user } = renderApp("/hotels");
+  const { user } = renderApp("/app/hotels");
   await user.click(await screen.findByRole("button", { name: "Scan hotels" }));
   expect(await screen.findByText("Connect LiteAPI (TM_LITEAPI_KEY) to see hotels.", { selector: "p" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Open suppliers" })).toHaveAttribute("href", "/suppliers");
+  expect(screen.getByRole("link", { name: "Open suppliers" })).toHaveAttribute("href", "/app/suppliers");
 });
 
 test("an unconnected supplier doesn't hide rooms another supplier found", async () => {

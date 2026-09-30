@@ -37,7 +37,7 @@ export function MissionControlPage() {
         <GlobePanel arcs={arcs} />
       </div>
       <div className="flex flex-col gap-4">
-        <RouteScanner onRouteReady={record} onScanFares={() => void navigate({ to: "/fares" })} />
+        <RouteScanner onRouteReady={record} onScanFares={() => void navigate({ to: "/app/fares" })} />
         <RecentRoutesPanel
           routes={routes}
           onSelect={(route) => routeStore.set({ origin: route.origin, destination: route.destination })}

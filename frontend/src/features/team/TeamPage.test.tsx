@@ -19,7 +19,7 @@ const PENDING = {
 
 test("the roster lists every crew member with their role", async () => {
   mockApi(withSession(ME_OWNER, { "GET /api/v1/team": { status: 200, body: TEAM }, "GET /api/v1/invitations": { status: 200, body: [] } }));
-  renderApp("/team");
+  renderApp("/app/team");
   const table = await screen.findByRole("table", { name: "Crew members" });
   const rows = within(table).getAllByRole("row");
   expect(rows).toHaveLength(3);
@@ -40,7 +40,7 @@ test("an owner invites a crew member and gets a one-time link", async () => {
       "POST /api/v1/invitations": { status: 201, body: { ...PENDING, token: "a-alpha.tok3n" } },
     }),
   );
-  const { user } = renderApp("/team");
+  const { user } = renderApp("/app/team");
   // user-event installs a clipboard on navigator during setup; spy on it rather than replacing navigator.
   const writeText = vi.spyOn(navigator.clipboard, "writeText");
 
@@ -70,7 +70,7 @@ test("inviting someone who already has an account explains why it failed", async
       "POST /api/v1/invitations": { status: 409, body: { detail: "This person already has a TravelMind account." } },
     }),
   );
-  const { user } = renderApp("/team");
+  const { user } = renderApp("/app/team");
   await user.type(await screen.findByLabelText("Crew member email"), "ravi@betatrips.in");
   await user.click(screen.getByRole("button", { name: "Generate invitation" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("This person already has a TravelMind account.");
@@ -78,7 +78,7 @@ test("inviting someone who already has an account explains why it failed", async
 
 test("agents see the roster but no invitation controls", async () => {
   const { calls } = mockApi(withSession(ME_AGENT, { "GET /api/v1/team": { status: 200, body: TEAM } }));
-  renderApp("/team");
+  renderApp("/app/team");
   await screen.findByRole("table", { name: "Crew members" });
   expect(screen.queryByLabelText("Crew member email")).not.toBeInTheDocument();
   expect(screen.getByText(/ask an agency owner or admin/i)).toBeInTheDocument();
@@ -92,9 +92,9 @@ test("redirects to login when the session expires", async () => {
       "GET /api/v1/invitations": { status: 200, body: [] },
     }),
   );
-  const { router } = renderApp("/team");
+  const { router } = renderApp("/app/team");
   await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
-  expect(router.state.location.search).toEqual({ redirect: "/team" });
+  expect(router.state.location.search).toEqual({ redirect: "/app/team" });
   expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
 });
 
@@ -107,7 +107,7 @@ test("an expired session forgets the scanned route", async () => {
       "GET /api/v1/invitations": { status: 200, body: [] },
     }),
   );
-  const { router } = renderApp("/team");
+  const { router } = renderApp("/app/team");
   await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
   expect(routeStore.get()).toEqual({ origin: null, destination: null });
 });
@@ -136,7 +136,7 @@ test("after the session expires, the next agency to sign in never sees the previ
       },
     }),
   );
-  const { router, queryClient, user } = renderApp("/team");
+  const { router, queryClient, user } = renderApp("/app/team");
   expect(await screen.findByText("Ravi Kumar")).toBeInTheDocument();
 
   session = "expired";
@@ -146,7 +146,7 @@ test("after the session expires, the next agency to sign in never sees the previ
   await user.type(await screen.findByLabelText("Email"), "meera@betatours.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/team"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/team"));
 
   expect(await screen.findByRole("region", { name: "Beta Tours crew" })).toBeInTheDocument();
   expect(screen.queryByText("Ravi Kumar")).not.toBeInTheDocument();
@@ -169,7 +169,7 @@ test("a failed roster load shows the server's message and trace ID instead of a 
       "GET /api/v1/invitations": { status: 200, body: [] },
     }),
   );
-  renderApp("/team");
+  renderApp("/app/team");
   const roster = await screen.findByRole("region", { name: "Alpha Travels crew" });
   const alert = await within(roster).findByRole("alert");
   expect(alert).toHaveTextContent("Something went wrong on our side. Please try again.");
@@ -187,7 +187,7 @@ test("a failed invitations load shows the server's message and never claims noth
       },
     }),
   );
-  renderApp("/team");
+  renderApp("/app/team");
   const invitePanel = await screen.findByRole("region", { name: "Invite crew" });
   const alert = await within(invitePanel).findByRole("alert");
   expect(alert).toHaveTextContent("Something went wrong on our side. Please try again.");
@@ -209,7 +209,7 @@ test("an invalid invitation email is reported on the email field", async () => {
       },
     }),
   );
-  const { user } = renderApp("/team");
+  const { user } = renderApp("/app/team");
   await user.type(await screen.findByLabelText("Crew member email"), "not-an-email");
   await user.click(screen.getByRole("button", { name: "Generate invitation" }));
   await waitFor(() =>
@@ -232,7 +232,7 @@ test("a role error, which has no inline slot, is shown as a general message", as
       },
     }),
   );
-  const { user } = renderApp("/team");
+  const { user } = renderApp("/app/team");
   await user.type(await screen.findByLabelText("Crew member email"), "neha@alphatravels.in");
   await user.click(screen.getByRole("button", { name: "Generate invitation" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Some of the information you entered isn't valid.");
@@ -249,7 +249,7 @@ test("a server failure while inviting shows the message and trace ID", async () 
       },
     }),
   );
-  const { user } = renderApp("/team");
+  const { user } = renderApp("/app/team");
   await user.type(await screen.findByLabelText("Crew member email"), "neha@alphatravels.in");
   await user.click(screen.getByRole("button", { name: "Generate invitation" }));
   const alert = await screen.findByRole("alert");

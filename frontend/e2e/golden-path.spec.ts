@@ -31,7 +31,8 @@ test("an owner plots a route, invites an agent, and the agent joins the crew", a
   const link = await page.getByLabel("Invitation link").inputValue();
   expect(link).toContain("/invite/");
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("button", { name: owner.name }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Mission access" })).toBeVisible();
 
   const agentContext = await browser.newContext();
@@ -52,10 +53,10 @@ test("an owner plots a route, invites an agent, and the agent joins the crew", a
 });
 
 test("signed-out visitors are sent to sign in and come back afterwards", async ({ page }) => {
-  await page.goto("/team");
-  await expect(page).toHaveURL(/\/login\?redirect=%2Fteam/);
+  await page.goto("/app/team");
+  await expect(page).toHaveURL(/\/login\?redirect=%2Fapp%2Fteam/);
   await page.getByLabel("Email").fill(owner.email);
   await page.getByLabel("Password").fill(owner.password);
   await page.getByRole("button", { name: "Engage" }).click();
-  await expect(page).toHaveURL(/\/team$/);
+  await expect(page).toHaveURL(/\/app\/team$/);
 });

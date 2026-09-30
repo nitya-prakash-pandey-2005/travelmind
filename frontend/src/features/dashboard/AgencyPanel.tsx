@@ -17,7 +17,7 @@ export function AgencyPanel({ me }: { me: Me }) {
           <Readout label="Pending invites" value={invitations.data ? String(invitations.data.length) : "—"} />
         )}
       </dl>
-      <Link to="/team" className="mt-4 inline-block text-sm text-primary hover:underline">
+      <Link to="/app/team" className="mt-4 inline-block text-sm text-primary hover:underline">
         Open crew roster
       </Link>
     </Panel>

@@ -25,3 +25,21 @@ export function formatDayMonth(iso: string): string {
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
   return `${part("day")} ${part("month")}`;
 }
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/** Feed-style age of a timestamp: "just now", "5 min ago", "3 h ago", "yesterday", "4 days ago", then "12 Sep". */
+export function formatRelativeTime(iso: string, now: Date = new Date()): string {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return "—";
+  const age = now.getTime() - then.getTime();
+  if (age < MINUTE) return "just now";
+  if (age < HOUR) return `${Math.floor(age / MINUTE)} min ago`;
+  if (age < DAY) return `${Math.floor(age / HOUR)} h ago`;
+  const days = Math.floor(age / DAY);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  return formatDayMonth(iso);
+}

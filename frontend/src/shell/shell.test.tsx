@@ -5,23 +5,24 @@ import { RouteError } from "../app/RouteError";
 import { ME_OWNER } from "../test/fixtures";
 import { mockApi } from "../test/mockApi";
 import { renderApp, withSession } from "../test/renderApp";
+import { commandCenterMocks } from "../test/workspaceFixtures";
 
 test("the shell shows the agency, the user and navigation", async () => {
   mockApi(withSession(ME_OWNER));
-  renderApp("/");
+  renderApp("/app");
   const banner = await screen.findByRole("banner");
   expect(within(banner).getByText("Alpha Travels")).toBeInTheDocument();
   expect(within(banner).getByText("Asha Rao")).toBeInTheDocument();
   expect(within(banner).getByText("owner")).toBeInTheDocument();
   const nav = screen.getByRole("navigation", { name: "Primary" });
-  for (const name of ["Mission Control", "Fare scan", "Hotel scan", "Suppliers", "Crew roster", "Design system"]) {
+  for (const name of ["Command Center", "Fare scan", "Hotel scan", "Suppliers", "Crew roster", "Design system"]) {
     expect(within(nav).getByRole("link", { name })).toBeInTheDocument();
   }
 });
 
 test("status bar reports a healthy API and both clocks", async () => {
   mockApi(withSession(ME_OWNER));
-  renderApp("/");
+  renderApp("/app");
   expect(await screen.findByText("API online")).toBeInTheDocument();
   expect(screen.getByText(/^UTC \d{2}:\d{2}:\d{2}$/)).toBeInTheDocument();
   expect(screen.getByText(/^IST \d{2}:\d{2}:\d{2}$/)).toBeInTheDocument();
@@ -32,14 +33,17 @@ test("status bar reports a degraded API", async () => {
     ...withSession(ME_OWNER),
     "GET /health": { status: 503, body: { status: "degraded", database: "unavailable" } },
   });
-  renderApp("/");
+  renderApp("/app");
   expect(await screen.findByText("API degraded")).toBeInTheDocument();
 });
 
 test("signing out clears the session and returns to login", async () => {
-  const { calls } = mockApi(withSession(ME_OWNER, { "POST /api/v1/auth/logout": { status: 204 } }));
-  const { router, user } = renderApp("/");
-  await user.click(await screen.findByRole("button", { name: "Sign out" }));
+  const { calls } = mockApi(
+    withSession(ME_OWNER, { ...commandCenterMocks(), "POST /api/v1/auth/logout": { status: 204 } }),
+  );
+  const { router, user } = renderApp("/app");
+  await user.click(await screen.findByRole("button", { name: "Asha Rao" }));
+  await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
   expect(calls.some((c) => c.method === "POST" && c.path === "/api/v1/auth/logout")).toBe(true);
   expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
@@ -47,22 +51,22 @@ test("signing out clears the session and returns to login", async () => {
 
 test("the design gallery is reachable inside the shell", async () => {
   mockApi(withSession(ME_OWNER));
-  const { user, router } = renderApp("/");
+  const { user, router } = renderApp("/app");
   await user.click(await screen.findByRole("link", { name: "Design system" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/design"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/design"));
   expect(screen.getByRole("heading", { name: "Colour tokens" })).toBeInTheDocument();
 });
 
 test("the scanners and suppliers are reachable from the navigation", async () => {
   mockApi(withSession(ME_OWNER));
-  const { user, router } = renderApp("/");
+  const { user, router } = renderApp("/app");
   await user.click(await screen.findByRole("link", { name: "Hotel scan" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/hotels"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/hotels"));
   expect(screen.getByRole("heading", { name: "Find a stay" })).toBeInTheDocument();
   await user.click(screen.getByRole("link", { name: "Fare scan" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/fares"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/fares"));
   await user.click(screen.getByRole("link", { name: "Suppliers" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/suppliers"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/suppliers"));
 });
 
 test("unknown pages show a way home", async () => {
@@ -97,7 +101,7 @@ test("Try again recovers once the failing request succeeds", async () => {
       },
     }),
   );
-  const { user } = renderApp("/");
+  const { user } = renderApp("/app");
   expect(await screen.findByText("Trace ID: trace-77")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Try again" }));
   expect(await screen.findByRole("banner")).toHaveTextContent("Alpha Travels");

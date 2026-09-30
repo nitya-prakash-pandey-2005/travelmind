@@ -1,12 +1,16 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Command } from "cmdk";
-import { Search } from "lucide-react";
+import { FileText, Inbox, Search, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "../../api/client";
 import { useLogout } from "../../auth/useLogout";
+import { cn } from "../../ui/cn";
+import { Kbd } from "../../ui/Kbd";
 import { useTheme } from "../../ui/theme";
 import { useAirportSearch } from "../airports/useAirportSearch";
 import { routeStore } from "../route/routeStore";
+import { formatRoute, RecordDrawer, Status, type RecordSelection } from "./RecordDrawer";
+import { useRecordSearch } from "./useRecordSearch";
 
 type PaletteCommand = { id: string; group: "Navigate" | "Actions"; label: string; keywords: string; run: () => void };
 
@@ -16,18 +20,26 @@ const itemClass =
 const groupClass =
   "[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.22em] [&_[cmdk-group-heading]]:text-dim";
 
+/**
+ * Global search and commands (Ctrl/⌘+K or the top bar's search field): navigation, actions, the
+ * agency's clients, enquiries and quotes (opened in a drawer), and airports (placed on the route).
+ */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [record, setRecord] = useState<RecordSelection | null>(null);
   const navigate = useNavigate();
   const [theme, setTheme] = useTheme();
   const logout = useLogout();
   const airports = useAirportSearch(search);
+  const records = useRecordSearch(search);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        // A modal (a record drawer, a form dialog) owns the screen; the palette would open behind it.
+        if (document.querySelector("dialog[open]")) return;
         // Closing by shortcut resets the search exactly like close() does for Escape, overlay and select.
         if (open) {
           setOpen(false);
@@ -49,14 +61,15 @@ export function CommandPalette() {
     close();
     action();
   };
+  const openRecord = (selection: RecordSelection) => runAndClose(() => setRecord(selection));
 
   const commands: PaletteCommand[] = [
-    { id: "nav-mission", group: "Navigate", label: "Mission Control", keywords: "home dashboard globe route", run: () => void navigate({ to: "/" }) },
-    { id: "nav-fares", group: "Navigate", label: "Fare scan", keywords: "flights fares prices offers search", run: () => void navigate({ to: "/fares" }) },
-    { id: "nav-hotels", group: "Navigate", label: "Hotel scan", keywords: "hotels rooms stay accommodation", run: () => void navigate({ to: "/hotels" }) },
-    { id: "nav-suppliers", group: "Navigate", label: "Suppliers", keywords: "suppliers connections keys duffel liteapi data", run: () => void navigate({ to: "/suppliers" }) },
-    { id: "nav-team", group: "Navigate", label: "Crew roster", keywords: "team members invite crew", run: () => void navigate({ to: "/team" }) },
-    { id: "nav-design", group: "Navigate", label: "Design system", keywords: "styles components tokens", run: () => void navigate({ to: "/design" }) },
+    { id: "nav-command", group: "Navigate", label: "Command Center", keywords: "home dashboard mission control metrics globe route", run: () => void navigate({ to: "/app" }) },
+    { id: "nav-fares", group: "Navigate", label: "Fare scan", keywords: "flights fares prices offers search", run: () => void navigate({ to: "/app/fares" }) },
+    { id: "nav-hotels", group: "Navigate", label: "Hotel scan", keywords: "hotels rooms stay accommodation", run: () => void navigate({ to: "/app/hotels" }) },
+    { id: "nav-team", group: "Navigate", label: "Crew roster", keywords: "team members invite crew", run: () => void navigate({ to: "/app/team" }) },
+    { id: "nav-suppliers", group: "Navigate", label: "Suppliers", keywords: "suppliers connections keys duffel liteapi data", run: () => void navigate({ to: "/app/suppliers" }) },
+    { id: "nav-design", group: "Navigate", label: "Design system", keywords: "styles components tokens", run: () => void navigate({ to: "/app/design" }) },
     {
       id: "theme",
       group: "Actions",
@@ -85,14 +98,17 @@ export function CommandPalette() {
     <>
       <button
         type="button"
-        aria-label="Open command palette"
         aria-keyshortcuts="Control+K Meta+K"
         onClick={() => setOpen(true)}
-        className="hidden h-8 items-center gap-2 rounded-sm border border-line px-2 text-xs text-dim transition hover:border-primary/70 hover:text-primary md:inline-flex"
+        className={cn(
+          "group inline-flex h-9 min-w-0 items-center gap-2.5 rounded-md border border-line bg-deck/50 text-sm text-dim",
+          "transition-colors duration-200 ease-tm hover:border-primary/50 hover:bg-hover hover:text-ink",
+          "w-9 justify-center sm:w-full sm:max-w-md sm:justify-start sm:pl-3 sm:pr-1.5",
+        )}
       >
-        <Search size={14} aria-hidden="true" />
-        <span className="font-display uppercase tracking-[0.14em]">Command</span>
-        <kbd className="rounded-sm border border-line px-1 font-mono text-[10px]">Ctrl K</kbd>
+        <Search size={15} aria-hidden="true" className="shrink-0 transition-colors group-hover:text-primary" />
+        <span className="truncate max-sm:sr-only">Search clients, quotes, airports…</span>
+        <Kbd className="ml-auto shrink-0 max-sm:hidden">Ctrl K</Kbd>
       </button>
       <Command.Dialog
         open={open}
@@ -105,12 +121,73 @@ export function CommandPalette() {
         <Command.Input
           value={search}
           onValueChange={setSearch}
-          placeholder="Type a command or an airport…"
+          placeholder="Type a command or an airport, or find a client, enquiry or quote…"
           className="h-11 w-full border-b border-line bg-transparent px-3 text-ink outline-none placeholder:text-dim/60"
         />
         <Command.List className="max-h-[50vh] overflow-auto py-2">
-          {!scanning && !airportError && (
+          {!scanning && !airportError && !records.pending && (
             <Command.Empty className="px-3 py-6 text-center text-sm text-dim">No matches.</Command.Empty>
+          )}
+          {records.error && (
+            <p className="px-3 py-2 text-sm text-dim">
+              {records.error instanceof ApiError ? records.error.message : "Record search failed."}
+            </p>
+          )}
+          {records.results.clients.length > 0 && (
+            <Command.Group heading="Clients" className={groupClass}>
+              {records.results.clients.map((client) => (
+                <Command.Item
+                  key={client.id}
+                  value={`client-${client.id}`}
+                  onSelect={() => openRecord({ type: "client", record: client })}
+                  className={itemClass}
+                >
+                  <UserRound size={15} aria-hidden="true" className="shrink-0 text-primary" />
+                  <span className="truncate text-ink">{client.name}</span>
+                  <span className="ml-auto truncate text-xs">
+                    {[client.company_name, client.email].filter(Boolean).join(" · ")}
+                  </span>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          )}
+          {records.results.enquiries.length > 0 && (
+            <Command.Group heading="Enquiries" className={groupClass}>
+              {records.results.enquiries.map((enquiry) => (
+                <Command.Item
+                  key={enquiry.id}
+                  value={`enquiry-${enquiry.id}`}
+                  onSelect={() => openRecord({ type: "enquiry", record: enquiry })}
+                  className={itemClass}
+                >
+                  <Inbox size={15} aria-hidden="true" className="shrink-0 text-primary" />
+                  <span className="font-mono text-ink">{enquiry.number}</span>
+                  <span className="truncate font-mono text-xs">{formatRoute(enquiry.origin, enquiry.destination)}</span>
+                  <span className="ml-auto shrink-0">
+                    <Status status={enquiry.status} />
+                  </span>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          )}
+          {records.results.quotes.length > 0 && (
+            <Command.Group heading="Quotes" className={groupClass}>
+              {records.results.quotes.map((quote) => (
+                <Command.Item
+                  key={quote.id}
+                  value={`quote-${quote.id}`}
+                  onSelect={() => openRecord({ type: "quote", record: quote })}
+                  className={itemClass}
+                >
+                  <FileText size={15} aria-hidden="true" className="shrink-0 text-primary" />
+                  <span className="font-mono text-ink">{quote.number}</span>
+                  <span className="truncate text-xs">{quote.client_name ?? "No client"}</span>
+                  <span className="ml-auto shrink-0">
+                    <Status status={quote.status} />
+                  </span>
+                </Command.Item>
+              ))}
+            </Command.Group>
           )}
           {GROUPS.map((group) => {
             const items = visible.filter((c) => c.group === group);
@@ -145,7 +222,7 @@ export function CommandPalette() {
                     onSelect={() =>
                       runAndClose(() => {
                         routeStore.place(airport);
-                        void navigate({ to: "/" });
+                        void navigate({ to: "/app" });
                       })
                     }
                     className={itemClass}
@@ -165,6 +242,7 @@ export function CommandPalette() {
           ↑↓ move · ↵ select · esc close · airports fill From, then To
         </p>
       </Command.Dialog>
+      <RecordDrawer selection={record} onClose={() => setRecord(null)} />
     </>
   );
 }

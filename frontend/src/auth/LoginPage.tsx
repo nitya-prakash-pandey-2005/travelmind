@@ -4,6 +4,7 @@ import { useState } from "react";
 import { authApi } from "../api/auth";
 import { ApiError, needsGeneralError } from "../api/client";
 import { qk } from "../api/queries";
+import { APP_HOME } from "../app/paths";
 import { Button } from "../ui/Button";
 import { FormError } from "../ui/FormError";
 import { TextField } from "../ui/TextField";
@@ -26,7 +27,7 @@ export function LoginPage() {
       // A different user (maybe another agency) may be signing in on this browser: drop the old data first.
       resetSessionState(queryClient);
       queryClient.setQueryData(qk.me, me);
-      router.history.push(search.redirect ?? "/");
+      router.history.push(search.redirect ?? APP_HOME);
     },
   });
   const error = login.error instanceof ApiError ? login.error : null;

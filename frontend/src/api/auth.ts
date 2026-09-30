@@ -17,6 +17,8 @@ export const authApi = {
   login: (body: LoginInput) => apiFetch<Me>("/api/v1/auth/login", { method: "POST", body }),
   signup: (body: SignupInput) => apiFetch<Me>("/api/v1/auth/signup", { method: "POST", body }),
   logout: () => apiFetch<void>("/api/v1/auth/logout", { method: "POST" }),
+  /** Leaves a demo workspace: ends the session exactly like logout. */
+  exitDemo: () => apiFetch<void>("/api/v1/demo/exit", { method: "POST" }),
   acceptInvitation: (body: AcceptInvitationInput) =>
     apiFetch<Me>("/api/v1/invitations/accept", { method: "POST", body }),
 };
