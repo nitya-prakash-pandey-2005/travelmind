@@ -16,6 +16,10 @@
     outline: 2px solid var(--tm-primary);
     outline-offset: 2px;
   }
+  /* A modal dialog or drawer is open: the page behind it must not scroll. */
+  html:has(dialog[open]) {
+    overflow: hidden;
+  }
   ::selection {
     background: color-mix(in oklab, var(--tm-primary) 35%, transparent);
   }
@@ -60,6 +64,115 @@
   animation: tm-spin 24s linear infinite;
 }
 
+/* Layered glass surface: translucent panel, soft elevation, inner glow while something inside has keyboard focus. */
+@utility tm-glass {
+  background-color: var(--tm-glass);
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: var(--tm-shadow);
+  transition: box-shadow 200ms var(--ease-tm);
+  &:has(:focus-visible) {
+    box-shadow: var(--tm-shadow), var(--tm-glow);
+  }
+}
+
+/* 1px gradient hairline (primary -> line) drawn on a masked ::before; the element must be positioned. */
+@utility tm-edge {
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: var(--tm-edge);
+    pointer-events: none;
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box exclude,
+      linear-gradient(#000 0 0);
+  }
+}
+
+/* Tinted chip: fill and border derive from the element's text colour at theme-tuned strengths. */
+@utility tm-tint {
+  background-color: color-mix(in oklab, currentColor var(--tm-tint-fill), transparent);
+  border-color: color-mix(in oklab, currentColor var(--tm-tint-edge), transparent);
+}
+
+/* Loading placeholder with a slow light sweep. */
+@utility tm-shimmer {
+  background-color: var(--tm-skeleton);
+  background-image: linear-gradient(90deg, transparent 0%, var(--tm-shimmer) 50%, transparent 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: tm-shimmer 1.6s ease-in-out infinite;
+}
+
+/* Entrance: fade + rise. Stagger with style={{ "--tm-enter-index": n }}. */
+@utility tm-enter {
+  animation: tm-enter 220ms var(--ease-tm) both;
+  animation-delay: calc(var(--tm-enter-index, 0) * 45ms);
+}
+
+/* Modal surfaces (<dialog>): themed backdrop and a short pop-in. */
+@utility tm-modal {
+  box-shadow: var(--tm-shadow-pop);
+  animation: tm-pop 200ms var(--ease-tm) both;
+  &::backdrop {
+    background: var(--tm-backdrop);
+    backdrop-filter: blur(3px);
+    animation: tm-fade 200ms var(--ease-tm) both;
+  }
+}
+
+@utility tm-modal-side {
+  box-shadow: var(--tm-shadow-pop);
+  animation: tm-slide 240ms var(--ease-tm) both;
+  &::backdrop {
+    background: var(--tm-backdrop);
+    backdrop-filter: blur(3px);
+    animation: tm-fade 200ms var(--ease-tm) both;
+  }
+}
+
+@keyframes tm-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@keyframes tm-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes tm-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes tm-slide {
+  from {
+    opacity: 0.4;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes tm-fade {
+  from {
+    opacity: 0;
+  }
+}
+
 @keyframes tm-blink {
   to {
     visibility: hidden;
@@ -87,5 +200,16 @@
   }
   .tm-scanlines::after {
     display: none;
+  }
+  .tm-shimmer {
+    animation: none !important;
+    background-image: none;
+  }
+  .tm-enter,
+  .tm-modal,
+  .tm-modal-side,
+  .tm-modal::backdrop,
+  .tm-modal-side::backdrop {
+    animation: none !important;
   }
 }
