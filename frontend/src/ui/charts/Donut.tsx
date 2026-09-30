@@ -95,7 +95,7 @@ export function Donut({
             (center ?? (
               <div className="flex flex-col items-center">
                 <span className="font-mono text-lg tabular-nums text-ink">{valueFormat(total)}</span>
-                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-dim">Total</span>
+                <span className="tm-micro">Total</span>
               </div>
             ))
           )}

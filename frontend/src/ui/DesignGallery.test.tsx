@@ -29,7 +29,7 @@ test("the design gallery documents every token and component family", () => {
   ]) {
     expect(screen.getByRole("heading", { name: section })).toBeInTheDocument();
   }
-  for (const token of ["--tm-void", "--tm-primary", "--tm-ai", "--tm-warn", "--tm-danger", "--tm-ok", "--tm-chart-1", "--tm-chart-6"]) {
+  for (const token of ["--tm-bg", "--tm-surface", "--tm-primary", "--tm-ai", "--tm-warn", "--tm-danger", "--tm-ok", "--tm-chart-1", "--tm-chart-6"]) {
     expect(screen.getByText(token)).toBeInTheDocument();
   }
   expect(screen.getByRole("table", { name: "Specimen enquiries" })).toBeInTheDocument();

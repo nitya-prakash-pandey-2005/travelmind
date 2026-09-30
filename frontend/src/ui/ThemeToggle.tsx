@@ -11,9 +11,9 @@ export function ThemeToggle() {
       aria-label={label}
       title={label}
       onClick={() => setTheme(next)}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-transparent text-dim transition-colors duration-200 ease-tm hover:border-line hover:bg-hover hover:text-ink"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink"
     >
-      {theme === "dark" ? <Sun size={17} strokeWidth={1.75} aria-hidden="true" /> : <Moon size={17} strokeWidth={1.75} aria-hidden="true" />}
+      {theme === "dark" ? <Sun size={16} strokeWidth={1.75} aria-hidden="true" /> : <Moon size={16} strokeWidth={1.75} aria-hidden="true" />}
     </button>
   );
 }

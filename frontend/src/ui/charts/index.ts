@@ -3,6 +3,7 @@ export { BarList, type BarItem } from "./BarList";
 export { ChartTooltip, type TooltipRow } from "./ChartTooltip";
 export { Donut, type DonutSlice } from "./Donut";
 export { Funnel, type FunnelStage } from "./Funnel";
+export { KpiStrip, useInKpiStrip } from "./KpiStrip";
 export { KpiTile, type KpiDelta } from "./KpiTile";
 export { LatencyBand } from "./LatencyBand";
 export { Sparkline, type SparklineTone } from "./Sparkline";

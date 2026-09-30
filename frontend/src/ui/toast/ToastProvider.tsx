@@ -20,7 +20,7 @@ const TONES: Record<ToastTone, { icon: LucideIcon; text: string; bar: string }> 
   ok: { icon: CircleCheck, text: "text-ok", bar: "bg-ok" },
   warn: { icon: TriangleAlert, text: "text-warn", bar: "bg-warn" },
   danger: { icon: CircleAlert, text: "text-danger", bar: "bg-danger" },
-  info: { icon: Info, text: "text-primary", bar: "bg-primary" },
+  info: { icon: Info, text: "text-info", bar: "bg-info" },
 };
 
 /** Provides `useToast()` and renders the toast stack (bottom-right; full width on phones). */
@@ -96,19 +96,19 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)}
       onBlur={onBlur}
-      className="tm-enter tm-edge pointer-events-auto relative flex items-start gap-3 overflow-hidden rounded-md bg-glass-strong py-3 pl-4 pr-2 shadow-(--tm-shadow-pop) backdrop-blur-xl"
+      className="tm-enter tm-popover pointer-events-auto relative flex items-start gap-3 overflow-hidden rounded-lg py-3 pl-4 pr-2"
     >
       <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-0.5", bar)} />
-      <Icon size={18} aria-hidden="true" className={cn("mt-0.5 shrink-0", text)} />
+      <Icon size={16} aria-hidden="true" className={cn("mt-0.5 shrink-0", text)} />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-ink">{toast.title}</p>
-        {toast.description && <p className="mt-0.5 text-sm text-dim">{toast.description}</p>}
+        <p className="text-[13px] font-semibold leading-5 text-ink">{toast.title}</p>
+        {toast.description && <p className="mt-0.5 text-[13px] leading-5 text-dim">{toast.description}</p>}
       </div>
       <button
         type="button"
         aria-label="Dismiss notification"
         onClick={() => onDismiss(toast.id)}
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink"
       >
         <X size={15} aria-hidden="true" />
       </button>

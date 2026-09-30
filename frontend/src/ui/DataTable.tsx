@@ -29,6 +29,11 @@ type DataTableProps<T> = {
   onRowClick?: (row: T) => void;
   initialSort?: SortState;
   /**
+   * Per-row actions (icon buttons, a Menu) in a trailing column. They show on row hover and whenever focus is
+   * inside the row, so they stay reachable by keyboard; clicks on them don't trigger onRowClick.
+   */
+  rowActions?: (row: T) => ReactNode;
+  /**
    * Classes for the scroll box around the table. The header is sticky only within this box, so give it a
    * height limit (e.g. "max-h-96") when the header should stay visible while rows scroll.
    */
@@ -58,6 +63,7 @@ export function DataTable<T>({
   loading = false,
   onRowClick,
   initialSort,
+  rowActions,
   className,
 }: DataTableProps<T>) {
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
@@ -85,10 +91,11 @@ export function DataTable<T>({
   }
 
   const empty = !loading && rows.length === 0;
+  const columnCount = columns.length + (rowActions ? 1 : 0);
 
   return (
     <div className={cn("relative max-w-full overflow-x-auto", className)}>
-      <table aria-busy={loading || undefined} className="w-full border-separate border-spacing-0 text-sm">
+      <table aria-busy={loading || undefined} className="w-full border-separate border-spacing-0 text-[13px] leading-5 [&>tbody>tr:last-child>td]:border-b-0">
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr>
@@ -103,8 +110,8 @@ export function DataTable<T>({
                   scope="col"
                   aria-sort={ariaSort}
                   className={cn(
-                    "sticky top-0 z-10 whitespace-nowrap border-b border-line bg-glass-strong px-3 py-2 backdrop-blur",
-                    "font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-dim",
+                    "sticky top-0 z-10 h-9 whitespace-nowrap border-b border-line bg-surface px-3 align-middle",
+                    "text-[11px] font-medium uppercase leading-4 tracking-[0.06em] text-faint",
                     ALIGN[align],
                     column.className,
                   )}
@@ -114,7 +121,7 @@ export function DataTable<T>({
                       type="button"
                       onClick={() => toggle(column.key)}
                       className={cn(
-                        "group -mx-1 inline-flex items-center gap-1 rounded-sm px-1 uppercase tracking-[0.16em]",
+                        "group -mx-1 inline-flex items-center gap-1 rounded-[4px] px-1 uppercase tracking-[0.06em]",
                         "transition-colors duration-150 ease-tm hover:text-ink",
                         align === "right" && "flex-row-reverse",
                         active && "text-ink",
@@ -133,6 +140,11 @@ export function DataTable<T>({
                 </th>
               );
             })}
+            {rowActions && (
+              <th scope="col" className="sticky top-0 z-10 h-9 w-px border-b border-line bg-surface px-3">
+                <span className="sr-only">Actions</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -140,17 +152,18 @@ export function DataTable<T>({
             Array.from({ length: SKELETON_ROWS }, (_, index) => (
               <tr key={`skeleton-${index}`}>
                 {columns.map((column) => (
-                  <td key={column.key} className="border-b border-line/60 px-3 py-3">
+                  <td key={column.key} className="h-9 border-b border-line px-3">
                     <div className={cn("flex", JUSTIFY[column.align ?? "left"])}>
                       <Skeleton className={cn("h-3.5", index % 2 === 0 ? "w-3/4" : "w-1/2")} />
                     </div>
                   </td>
                 ))}
+                {rowActions && <td className="h-9 border-b border-line px-3" />}
               </tr>
             ))}
           {empty && (
             <tr>
-              <td colSpan={columns.length} className="px-3 py-2">
+              <td colSpan={columnCount} className="px-3 py-2">
                 {emptyState}
               </td>
             </tr>
@@ -163,15 +176,15 @@ export function DataTable<T>({
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 onKeyDown={onRowClick ? (event) => onRowKeyDown(event, row) : undefined}
                 className={cn(
-                  "transition-colors duration-150 ease-tm",
-                  onRowClick && "cursor-pointer hover:bg-hover focus-visible:bg-hover focus-visible:-outline-offset-2",
+                  "group/row transition-colors duration-100 ease-tm hover:bg-hover",
+                  onRowClick && "cursor-pointer focus-visible:bg-hover focus-visible:-outline-offset-2",
                 )}
               >
                 {columns.map((column) => (
                   <td
                     key={column.key}
                     className={cn(
-                      "border-b border-line/60 px-3 py-2.5 text-ink",
+                      "h-9 border-b border-line px-3 py-1.5 text-ink",
                       ALIGN[column.align ?? "left"],
                       column.align === "right" && "font-mono tabular-nums",
                       column.className,
@@ -180,6 +193,17 @@ export function DataTable<T>({
                     {column.cell(row)}
                   </td>
                 ))}
+                {rowActions && (
+                  <td
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    className="h-9 whitespace-nowrap border-b border-line px-2 text-right"
+                  >
+                    <div className="inline-flex items-center gap-1 opacity-0 transition-opacity duration-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100 max-lg:opacity-100">
+                      {rowActions(row)}
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
         </tbody>

@@ -50,7 +50,7 @@ export function Avatar({ name, size = "md", className }: { name: string; size?: 
       title={label}
       data-colour={colour.id}
       className={cn(
-        "tm-tint inline-grid shrink-0 select-none place-items-center rounded-full border font-mono font-medium leading-none",
+        "tm-tint inline-grid shrink-0 select-none place-items-center rounded-full border font-semibold leading-none tracking-[0.02em]",
         SIZES[size],
         colour.className,
         className,
@@ -78,7 +78,7 @@ export function AvatarStack({
   return (
     <ul className={cn("flex items-center -space-x-1.5", className)}>
       {shown.map((name, index) => (
-        <li key={`${name}-${index}`} className="rounded-full bg-deck ring-2 ring-deck">
+        <li key={`${name}-${index}`} className="rounded-full bg-surface ring-2 ring-surface">
           <Avatar name={name} size={size} />
         </li>
       ))}
@@ -86,7 +86,7 @@ export function AvatarStack({
         <li
           title={hidden.join(", ")}
           className={cn(
-            "inline-grid place-items-center rounded-full border border-line bg-raised font-mono font-medium text-dim ring-2 ring-deck",
+            "inline-grid place-items-center rounded-full border border-line bg-surface-2 font-medium tabular-nums text-dim ring-2 ring-surface",
             SIZES[size],
           )}
         >

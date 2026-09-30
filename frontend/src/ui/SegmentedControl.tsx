@@ -22,7 +22,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
     <div
       role="radiogroup"
       aria-label={label}
-      className={cn("inline-flex max-w-full rounded-md border border-line bg-deck/60 p-0.5", className)}
+      className={cn("inline-flex h-8 max-w-full items-center rounded-md border border-line-strong bg-surface-2 p-0.5", className)}
     >
       {options.map((option) => {
         const checked = option.value === value;
@@ -30,10 +30,12 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
           <label
             key={option.value}
             className={cn(
-              "relative inline-flex h-7 min-w-10 cursor-pointer items-center justify-center rounded-[5px] px-2.5",
-              "font-mono text-xs tabular-nums transition-colors duration-200 ease-tm",
+              "relative inline-flex h-full min-w-9 cursor-pointer items-center justify-center rounded-[4px] px-2.5",
+              "text-xs font-medium tabular-nums transition-colors duration-150 ease-tm",
               "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-primary",
-              checked ? "tm-tint border text-primary" : "border border-transparent text-dim hover:text-ink",
+              checked
+                ? "border border-line-strong bg-surface text-ink shadow-[0_1px_2px_rgb(0_0_0/0.2)]"
+                : "border border-transparent text-dim hover:text-ink",
             )}
           >
             <input

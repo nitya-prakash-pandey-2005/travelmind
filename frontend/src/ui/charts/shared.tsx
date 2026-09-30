@@ -10,7 +10,7 @@ export function chartColor(slot: ChartColor): string {
 export const GRID = "var(--color-chart-grid)";
 export const AXIS = "var(--color-chart-axis)";
 /** Surface colour for the 2px ring around markers and the gap between touching marks. */
-export const SURFACE = "var(--color-deck)";
+export const SURFACE = "var(--color-surface)";
 
 /** Charts measure their container; before the first measurement (and in tests) they draw at this width. */
 export const FALLBACK_WIDTH = 640;
@@ -76,7 +76,7 @@ export function ChartEmpty({ label, height }: { label: string; height: number })
     <div
       role="img"
       aria-label={`${label}: no data`}
-      className="grid place-items-center rounded-sm border border-dashed border-line font-mono text-[11px] uppercase tracking-[0.18em] text-dim"
+      className="grid place-items-center rounded-md border border-dashed border-line text-xs text-dim"
       style={{ height }}
     >
       No data for this period
