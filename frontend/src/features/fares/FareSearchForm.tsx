@@ -1,15 +1,15 @@
+import { ArrowLeftRight, Search } from "lucide-react";
 import { useState } from "react";
 import type { Cabin, FlightSearchRequest } from "../../api/offers";
 import { isoDateFromNow } from "../../lib/dates";
 import { clampGuests } from "../../lib/guests";
 import { Button } from "../../ui/Button";
-import { Panel } from "../../ui/Panel";
 import { SelectField } from "../../ui/SelectField";
 import { TextField } from "../../ui/TextField";
 import { AirportPicker } from "../airports/AirportPicker";
 import { routeStore, useRouteSelection } from "../route/routeStore";
 
-const CABINS: { value: Cabin; label: string }[] = [
+export const CABINS: { value: Cabin; label: string }[] = [
   { value: "economy", label: "Economy" },
   { value: "premium_economy", label: "Premium economy" },
   { value: "business", label: "Business" },
@@ -19,6 +19,10 @@ const CABINS: { value: Cabin; label: string }[] = [
 /** Travellers per search (the field's max). */
 const MAX_ADULTS = 9;
 
+/**
+ * The fare search bar: route, dates, travellers and cabin in one row on wide screens, wrapping to two rows
+ * on tablets and stacking on phones.
+ */
 export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (request: FlightSearchRequest) => void }) {
   const { origin, destination } = useRouteSelection();
   const [departure, setDeparture] = useState(() => isoDateFromNow(14));
@@ -34,29 +38,43 @@ export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (r
     origin !== null && destination !== null && !sameAirport && departure !== "" && !departsInPast && !returnTooEarly;
 
   return (
-    <Panel eyebrow="Fare scan" title="Scan live fares">
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!ready || !origin || !destination) return;
-          const travellers = clampGuests(adults, MAX_ADULTS);
-          setAdults(String(travellers));
-          onSearch({
-            origin: origin.iata_code,
-            destination: destination.iata_code,
-            departure_date: departure,
-            return_date: returning || null,
-            adults: travellers,
-            children_ages: [],
-            cabin,
-            max_connections: 1,
-          });
-        }}
-      >
-        <AirportPicker label="From" value={origin} onChange={(a) => routeStore.setOrigin(a)} />
-        <AirportPicker label="To" value={destination} onChange={(a) => routeStore.setDestination(a)} />
-        <div className="grid gap-3 sm:grid-cols-2">
+    <form
+      aria-label="Search flights"
+      className="rounded-lg border border-line bg-surface p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!ready || !origin || !destination) return;
+        const travellers = clampGuests(adults, MAX_ADULTS);
+        setAdults(String(travellers));
+        onSearch({
+          origin: origin.iata_code,
+          destination: destination.iata_code,
+          departure_date: departure,
+          return_date: returning || null,
+          adults: travellers,
+          children_ages: [],
+          cabin,
+          max_connections: 1,
+        });
+      }}
+    >
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start">
+        <div className="grid min-w-0 items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:gap-2 xl:flex-[1.25]">
+          <AirportPicker label="From" value={origin} onChange={(a) => routeStore.setOrigin(a)} />
+          <div className="hidden pt-[26px] sm:block">
+            <Button
+              variant="ghost"
+              iconOnly
+              aria-label="Swap From and To"
+              disabled={!origin && !destination}
+              onClick={() => routeStore.swap()}
+            >
+              <ArrowLeftRight size={15} aria-hidden="true" />
+            </Button>
+          </div>
+          <AirportPicker label="To" value={destination} onChange={(a) => routeStore.setDestination(a)} />
+        </div>
+        <div className="grid min-w-0 grid-cols-2 items-start gap-3 sm:grid-cols-[1fr_1fr_5.5rem_minmax(0,1fr)] xl:flex-1">
           <TextField
             label="Depart"
             type="date"
@@ -67,16 +85,13 @@ export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (r
             onChange={(e) => setDeparture(e.target.value)}
           />
           <TextField
-            label="Return"
+            label="Return (optional)"
             type="date"
             min={departure}
             value={returning}
-            hint="Empty for one-way"
             error={returnTooEarly ? "Return must be on or after departure." : undefined}
             onChange={(e) => setReturning(e.target.value)}
           />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
           <TextField
             label="Adults"
             type="number"
@@ -94,15 +109,22 @@ export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (r
             ))}
           </SelectField>
         </div>
-        {sameAirport && (
-          <p role="alert" className="text-sm text-warn">
-            Pick two different airports.
-          </p>
-        )}
-        <Button type="submit" disabled={!ready} loading={busy}>
+        {/* 26px = a field label (20px) and its gap (6px): lines the button up with the inputs beside it. */}
+        <Button
+          type="submit"
+          disabled={!ready}
+          loading={busy}
+          className="w-full sm:w-auto sm:self-end xl:mt-[26px] xl:self-start"
+        >
+          {!busy && <Search size={15} aria-hidden="true" />}
           Scan fares
         </Button>
-      </form>
-    </Panel>
+      </div>
+      {sameAirport && (
+        <p role="alert" className="mt-3 text-[13px] text-warn">
+          Pick two different airports.
+        </p>
+      )}
+    </form>
   );
 }

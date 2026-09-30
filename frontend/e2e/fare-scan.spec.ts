@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { newOwner, pickAirport, signUp } from "./support";
 
-test("an agent scans sandbox fares, verifies a price and checks the supplier links", async ({ page }) => {
+test("an agent searches sandbox fares, verifies a price and checks the supplier connections", async ({ page }) => {
   await signUp(page, newOwner("fares"));
 
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Fare search" }).click();
@@ -12,10 +12,13 @@ test("an agent scans sandbox fares, verifies a price and checks the supplier lin
 
   const board = page.getByRole("list", { name: "Flight offers" });
   await expect(board.getByRole("article").first()).toBeVisible();
-  await expect(page.getByRole("list", { name: "Supplier sweep" })).toContainText("sandbox · OK");
+  await expect(page.getByRole("list", { name: "Supplier status" })).toContainText("sandbox · OK");
   const first = board.getByRole("article").first();
   await expect(first).toContainText("Sandbox · not bookable");
   await expect(first).toContainText(/₹[\d,]+/);
+
+  await first.getByRole("button", { name: "Flight details" }).click();
+  await expect(first.getByRole("button", { name: "Flight details" })).toHaveAttribute("aria-expanded", "true");
 
   await first.getByRole("button", { name: "Verify price" }).click();
   await expect(first.getByText(/Price confirmed/)).toBeVisible();
