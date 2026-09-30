@@ -23,7 +23,7 @@ export async function signUp(page: Page, owner: Owner, country?: string) {
   await page.getByLabel("Email").fill(owner.email);
   await page.getByLabel("Password").fill(owner.password);
   if (country) await page.getByLabel("Country").selectOption({ label: country });
-  await page.getByRole("button", { name: "Create command deck" }).click();
+  await page.getByRole("button", { name: "Create workspace" }).click();
   await expect(page).toHaveURL(APP_HOME);
   await expect(page.getByRole("banner").getByText(owner.agency)).toBeVisible();
 }

@@ -8,7 +8,7 @@ import { APP_HOME } from "../app/paths";
 import { Button } from "../ui/Button";
 import { FormError } from "../ui/FormError";
 import { TextField } from "../ui/TextField";
-import { AuthFrame } from "./AuthFrame";
+import { AUTH_LINK, AuthFrame } from "./AuthFrame";
 import { resetSessionState } from "./resetSessionState";
 
 /** Fields whose server errors show inline next to their input. */
@@ -34,7 +34,18 @@ export function LoginPage() {
   const showGeneralError = error ? needsGeneralError(error, INLINE_FIELDS) : false;
 
   return (
-    <AuthFrame title="Mission access" subtitle="Sign in to your agency's command deck.">
+    <AuthFrame
+      title="Sign in to TravelMind"
+      subtitle="Use the email and password for your agency's workspace."
+      footer={
+        <>
+          New to TravelMind?{" "}
+          <Link to="/signup" className={AUTH_LINK}>
+            Create a workspace
+          </Link>
+        </>
+      }
+    >
       <form
         noValidate
         className="flex flex-col gap-4"
@@ -62,16 +73,10 @@ export function LoginPage() {
           error={error?.fieldErrors.password}
         />
         {error && showGeneralError && <FormError error={error} />}
-        <Button type="submit" loading={login.isPending}>
-          Engage
+        <Button type="submit" loading={login.isPending} className="mt-1 w-full">
+          Sign in
         </Button>
       </form>
-      <p className="mt-6 text-sm text-dim">
-        New agency?{" "}
-        <Link to="/signup" className="text-primary hover:underline">
-          Create your command deck
-        </Link>
-      </p>
     </AuthFrame>
   );
 }

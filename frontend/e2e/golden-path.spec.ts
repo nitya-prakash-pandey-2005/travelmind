@@ -12,7 +12,7 @@ const owner = {
   password: "e2e-password-123",
 };
 
-test("an owner plots a route, invites an agent, and the agent joins the crew", async ({ page, browser }) => {
+test("an owner plots a route, invites an agent, and the agent joins the workspace", async ({ page, browser }) => {
   await signUp(page, owner);
 
   // The route scanner sits on the Command Center.
@@ -34,14 +34,14 @@ test("an owner plots a route, invites an agent, and the agent joins the crew", a
   expect(link).toContain("/invite/");
 
   await signOut(page, owner.name);
-  await expect(page.getByRole("heading", { name: "Mission access" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in to TravelMind" })).toBeVisible();
 
   const agentContext = await browser.newContext();
   const agentPage = await agentContext.newPage();
   await agentPage.goto(link);
   await agentPage.getByLabel("Your name").fill("Arjun Agent");
   await agentPage.getByLabel("Password").fill("agent-password-123");
-  await agentPage.getByRole("button", { name: "Join the crew" }).click();
+  await agentPage.getByRole("button", { name: "Join workspace" }).click();
   await expect(agentPage).toHaveURL(APP_HOME);
   await expect(agentPage.getByRole("banner").getByText(owner.agency)).toBeVisible();
 
@@ -60,6 +60,6 @@ test("signed-out visitors are sent to sign in and come back afterwards", async (
   await expect(page).toHaveURL(/\/login\?redirect=%2Fapp%2Fteam/);
   await page.getByLabel("Email").fill(owner.email);
   await page.getByLabel("Password").fill(owner.password);
-  await page.getByRole("button", { name: "Engage" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/app\/team$/);
 });

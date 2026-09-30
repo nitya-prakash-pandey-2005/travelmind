@@ -9,7 +9,8 @@ import { Button } from "../ui/Button";
 import { FormError } from "../ui/FormError";
 import { SelectField } from "../ui/SelectField";
 import { TextField } from "../ui/TextField";
-import { AuthFrame } from "./AuthFrame";
+import { AUTH_LINK, AuthFrame } from "./AuthFrame";
+import { PASSWORD_RULE } from "./passwordRule";
 import { resetSessionState } from "./resetSessionState";
 
 /** Fields whose server errors show inline next to their input. */
@@ -44,7 +45,18 @@ export function SignupPage() {
     setForm((current) => ({ ...current, [field]: event.target.value }));
 
   return (
-    <AuthFrame title="Launch your agency" subtitle="Create a command deck for your team. Takes a minute.">
+    <AuthFrame
+      title="Create workspace"
+      subtitle="Set up TravelMind for your agency. You'll be the workspace owner and can invite your team next."
+      footer={
+        <>
+          Already have a workspace?{" "}
+          <Link to="/login" className={AUTH_LINK}>
+            Sign in
+          </Link>
+        </>
+      }
+    >
       <form
         noValidate
         className="flex flex-col gap-4"
@@ -61,7 +73,7 @@ export function SignupPage() {
           type="password"
           autoComplete="new-password"
           required
-          hint="At least 10 characters"
+          hint={PASSWORD_RULE}
           value={form.password}
           onChange={update("password")}
           error={fieldErrors.password}
@@ -82,16 +94,10 @@ export function SignupPage() {
           ))}
         </SelectField>
         {error && showGeneralError && <FormError error={error} />}
-        <Button type="submit" loading={signup.isPending}>
-          Create command deck
+        <Button type="submit" loading={signup.isPending} className="mt-1 w-full">
+          Create workspace
         </Button>
       </form>
-      <p className="mt-6 text-sm text-dim">
-        Already aboard?{" "}
-        <Link to="/login" className="text-primary hover:underline">
-          Sign in
-        </Link>
-      </p>
     </AuthFrame>
   );
 }

@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { ME_BETA, ME_OWNER } from "../test/fixtures";
 import { mockApi } from "../test/mockApi";
@@ -9,7 +9,7 @@ import { commandCenterMocks } from "../test/workspaceFixtures";
 test("signed-out visitors are sent to login with a return path", async () => {
   mockApi(withSession(null));
   const { router } = renderApp("/app/team");
-  expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Sign in to TravelMind" })).toBeInTheDocument();
   expect(router.state.location.pathname).toBe("/login");
   expect(router.state.location.search).toEqual({ redirect: "/app/team" });
 });
@@ -17,7 +17,7 @@ test("signed-out visitors are sent to login with a return path", async () => {
 test("a legacy address still comes back to its /app page after signing in", async () => {
   mockApi(withSession(null));
   const { router } = renderApp("/team");
-  expect(await screen.findByRole("heading", { name: "Mission access" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Sign in to TravelMind" })).toBeInTheDocument();
   expect(router.state.location.search).toEqual({ redirect: "/app/team" });
 });
 
@@ -26,7 +26,7 @@ test("returns to the page the user asked for after signing in", async () => {
   const { router, user } = renderApp("/login?redirect=%2Fapp%2Fteam");
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Engage" }));
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/team"));
   expect(await screen.findByRole("banner")).toHaveTextContent("Alpha Travels");
 });
@@ -36,7 +36,7 @@ test("ignores redirects to other sites", async () => {
   const { router, user } = renderApp("/login?redirect=%2F%2Fevil.example");
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Engage" }));
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 });
 
@@ -54,9 +54,10 @@ test.each([
   const { router, user } = renderApp(`/login?redirect=${encoded}`);
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Engage" }));
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
-  expect(await screen.findByRole("heading", { level: 1, name: /Asha/ })).toBeInTheDocument();
+  // Signed in as the owner: the account menu in the top bar carries their name.
+  expect(await within(await screen.findByRole("banner")).findByRole("button", { name: /Asha Rao/ })).toBeInTheDocument();
 });
 
 test.each(["/.//evil.example", "/a/..//evil.example", "/%2e//evil.example"])(
@@ -76,7 +77,7 @@ test("keeps the query string of a same-site redirect", async () => {
   const { router, user } = renderApp(`/login?redirect=${encodeURIComponent("/app/team?tab=crew")}`);
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Engage" }));
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/team"));
   expect(router.state.location.search).toEqual({ tab: "crew" });
 });
@@ -90,7 +91,7 @@ test("wrong credentials show the server's message and stay on login", async () =
   const { router, user } = renderApp("/login");
   await user.type(await screen.findByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "wrong-password-1");
-  await user.click(screen.getByRole("button", { name: "Engage" }));
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Invalid email or password.");
   expect(router.state.location.pathname).toBe("/login");
 });
@@ -112,7 +113,7 @@ test("signup shows field errors from the server", async () => {
   await user.type(screen.getByLabelText("Your name"), "Asha Rao");
   await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "short");
-  await user.click(screen.getByRole("button", { name: "Create command deck" }));
+  await user.click(screen.getByRole("button", { name: "Create workspace" }));
   expect(await screen.findByLabelText("Password")).toHaveAccessibleDescription(
     "String should have at least 10 characters",
   );
@@ -129,7 +130,7 @@ test("signup conflicts show a plain message", async () => {
   await user.type(screen.getByLabelText("Your name"), "Asha Rao");
   await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Create command deck" }));
+  await user.click(screen.getByRole("button", { name: "Create workspace" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("An account with this email already exists.");
 });
 
@@ -140,7 +141,7 @@ test("a successful signup lands in the app", async () => {
   await user.type(screen.getByLabelText("Your name"), "Asha Rao");
   await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Create command deck" }));
+  await user.click(screen.getByRole("button", { name: "Create workspace" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
   expect(calls.find((c) => c.path === "/api/v1/auth/signup")?.body).toEqual({
     agency_name: "Alpha Travels",
@@ -171,7 +172,7 @@ test("choosing United States sends country_code US", async () => {
   await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.selectOptions(screen.getByLabelText("Country"), "United States");
-  await user.click(screen.getByRole("button", { name: "Create command deck" }));
+  await user.click(screen.getByRole("button", { name: "Create workspace" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
   expect(calls.find((c) => c.path === "/api/v1/auth/signup")?.body).toMatchObject({ country_code: "US" });
 });
@@ -193,7 +194,7 @@ test("a server error about the country is shown on the form", async () => {
   await user.type(screen.getByLabelText("Your name"), "Asha Rao");
   await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Create command deck" }));
+  await user.click(screen.getByRole("button", { name: "Create workspace" }));
   expect(await screen.findByLabelText("Country")).toHaveAccessibleDescription(
     "String should match pattern '^[A-Z]{2}$'",
   );
@@ -207,7 +208,7 @@ test("an unsupported country is explained on the form", async () => {
   await user.type(screen.getByLabelText("Your name"), "Asha Rao");
   await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Create command deck" }));
+  await user.click(screen.getByRole("button", { name: "Create workspace" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(message);
 });
 
@@ -217,14 +218,14 @@ test("signed-in users skip the login page", async () => {
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 });
 
-test("accepting an invitation signs the new crew member in", async () => {
+test("accepting an invitation signs the new teammate in", async () => {
   const { calls } = mockApi(
     withSession(null, { "POST /api/v1/invitations/accept": { status: 201, body: ME_OWNER } }),
   );
   const { router, user } = renderApp("/invite/a-alpha.secret-token");
   await user.type(await screen.findByLabelText("Your name"), "Ravi Kumar");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Join the crew" }));
+  await user.click(screen.getByRole("button", { name: "Join workspace" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
   expect(calls.find((c) => c.path === "/api/v1/invitations/accept")?.body).toEqual({
     token: "a-alpha.secret-token",
@@ -245,7 +246,7 @@ test("a dead invitation link explains itself", async () => {
   const { user } = renderApp("/invite/bad-token-value");
   await user.type(await screen.findByLabelText("Your name"), "Ravi Kumar");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Join the crew" }));
+  await user.click(screen.getByRole("button", { name: "Join workspace" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("This invitation link is invalid or has expired.");
 });
 
@@ -264,7 +265,7 @@ test("a field error for a field the form doesn't show still explains itself", as
   const { user } = renderApp("/invite/short");
   await user.type(await screen.findByLabelText("Your name"), "Ravi Kumar");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Join the crew" }));
+  await user.click(screen.getByRole("button", { name: "Join workspace" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Some of the information you entered isn't valid.");
 });
 
@@ -300,16 +301,16 @@ test("accepting an invitation into another agency drops the previous agency's ca
     }),
   );
   const { router, user } = renderApp("/app");
-  const team = () => screen.getByRole("region", { name: "Team" });
+  const team = () => screen.getByRole("region", { name: "Team performance" });
   await waitFor(() => expect(team()).toHaveTextContent("Ravi Kumar"));
 
   await act(() => router.navigate({ to: "/invite/$token", params: { token: "a-beta.secret-token" } }));
   await user.type(await screen.findByLabelText("Your name"), "Meera Iyer");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.click(screen.getByRole("button", { name: "Join the crew" }));
+  await user.click(screen.getByRole("button", { name: "Join workspace" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 
-  expect(await screen.findByRole("heading", { level: 1, name: /Meera/ })).toBeInTheDocument();
+  expect(await within(await screen.findByRole("banner")).findByRole("button", { name: /Meera Iyer/ })).toBeInTheDocument();
   expect(await screen.findByRole("banner")).toHaveTextContent("Beta Tours");
   expect(team()).not.toHaveTextContent("Ravi Kumar");
   expect(team()).toHaveAttribute("aria-busy", "true");
