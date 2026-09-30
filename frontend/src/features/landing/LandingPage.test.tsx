@@ -182,3 +182,23 @@ test("with WebGL the globe draws the popular routes as arcs", async () => {
   expect(screen.getByText("Popular routes")).toBeInTheDocument();
   webgl.available = false;
 });
+
+const HEADLINE = { level: 1, name: "Answer travel enquiries with fares you can explain" } as const;
+
+test("a failing session check still shows the landing page", async () => {
+  mockApi({
+    "GET /api/v1/auth/me": { status: 500, body: { detail: "Something went wrong on our side." } },
+    "GET /api/v1/platform/facts": { status: 200, body: FACTS },
+  });
+  renderApp("/");
+  expect(await screen.findByRole("heading", HEADLINE)).toBeInTheDocument();
+});
+
+test("a hanging session check shows the landing page after a short wait", async () => {
+  mockApi({
+    "GET /api/v1/auth/me": () => new Promise(() => {}),
+    "GET /api/v1/platform/facts": { status: 200, body: FACTS },
+  });
+  renderApp("/");
+  expect(await screen.findByRole("heading", HEADLINE, { timeout: 6000 })).toBeInTheDocument();
+}, 10_000);

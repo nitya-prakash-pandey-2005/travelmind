@@ -11,6 +11,7 @@ import { isDashboardRange, type DashboardRange } from "./api/dashboard";
 import { meQueryOptions } from "./api/queries";
 import { setUnauthorizedHandler } from "./api/queryClient";
 import { NotFound } from "./app/NotFound";
+import { PageLoading } from "./app/PageLoading";
 import { RootRouteError } from "./app/RouteError";
 import { APP_HOME } from "./app/paths";
 import { AcceptInvitePage } from "./auth/AcceptInvitePage";
@@ -65,8 +66,19 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   notFoundComponent: NotFound,
 });
 
+/** How long a public page waits for the session check before showing itself as signed out. */
+export const SESSION_CHECK_MS = 2500;
+
+/**
+ * Public pages send signed-in visitors to the app, but never wait on — or fail because of — the
+ * session check: a slow or failing API shows the page as signed out instead of a blank screen.
+ */
 const redirectIfSignedIn = async ({ context }: { context: RouterContext }) => {
-  if (await context.queryClient.ensureQueryData(meQueryOptions)) throw redirect({ to: APP_HOME });
+  const me = await Promise.race([
+    context.queryClient.ensureQueryData({ ...meQueryOptions, retry: false }).catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), SESSION_CHECK_MS)),
+  ]);
+  if (me) throw redirect({ to: APP_HOME });
 };
 
 const homeRoute = createRoute({
@@ -170,6 +182,8 @@ export function createAppRouter(queryClient: QueryClient, history?: RouterHistor
     history,
     defaultPreload: "intent",
     defaultPendingMinMs: 0,
+    defaultPendingMs: 300,
+    defaultPendingComponent: PageLoading,
   });
   // Registered here (not in api/queryClient) so the api layer never imports feature state.
   setUnauthorizedHandler(() => {
