@@ -9,27 +9,27 @@ import { EmptyState } from "../ui/EmptyState";
 import { Skeleton } from "../ui/Skeleton";
 
 const KIND_ICONS: Record<string, { icon: LucideIcon; className: string }> = {
-  "quote.viewed": { icon: Eye, className: "text-ai" },
+  "quote.viewed": { icon: Eye, className: "text-primary" },
   "quote.accepted": { icon: CircleCheck, className: "text-ok" },
   "quote.declined": { icon: CircleX, className: "text-danger" },
-  "enquiry.assigned": { icon: UserRoundCheck, className: "text-primary" },
-  "team.joined": { icon: UserPlus, className: "text-primary" },
+  "enquiry.assigned": { icon: UserRoundCheck, className: "text-info" },
+  "team.joined": { icon: UserPlus, className: "text-info" },
 };
 const FALLBACK_ICON = { icon: Bell, className: "text-dim" };
 
 function NotificationRow({ item }: { item: NotificationItem }) {
   const { icon: Icon, className } = KIND_ICONS[item.kind] ?? FALLBACK_ICON;
   return (
-    <li className="flex gap-3 rounded-md px-3 py-2.5 transition-colors duration-150 ease-tm hover:bg-hover">
+    <li className="flex gap-3 rounded-md px-2.5 py-2 transition-colors duration-100 ease-tm hover:bg-hover">
       <span
         aria-hidden="true"
-        className={cn("tm-tint mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full border", className)}
+        className={cn("mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-line bg-surface-2", className)}
       >
         <Icon size={14} strokeWidth={1.9} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className={cn("text-sm leading-snug", item.read ? "text-dim" : "text-ink")}>{item.summary}</p>
-        <time dateTime={item.occurred_at} className="font-mono text-[11px] text-dim">
+        <p className={cn("text-[13px] leading-5", item.read ? "text-dim" : "text-ink")}>{item.summary}</p>
+        <time dateTime={item.occurred_at} className="text-xs text-faint">
           {formatRelativeTime(item.occurred_at)}
         </time>
       </div>
@@ -104,16 +104,16 @@ export function NotificationsBell() {
         aria-controls={open ? panelId : undefined}
         onClick={toggle}
         className={cn(
-          "relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-transparent text-dim",
-          "transition-colors duration-200 ease-tm hover:border-line hover:bg-hover hover:text-ink",
-          open && "border-line bg-hover text-ink",
+          "relative inline-flex h-8 w-8 items-center justify-center rounded-md text-dim",
+          "transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink",
+          open && "bg-hover text-ink",
         )}
       >
-        <Bell size={17} strokeWidth={1.75} aria-hidden="true" />
+        <Bell size={16} strokeWidth={1.75} aria-hidden="true" />
         {unread > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 font-mono text-[10px] font-semibold leading-none text-primary-ink"
+            className="absolute right-0.5 top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-primary px-0.5 font-mono text-[9px] font-semibold leading-none text-primary-ink ring-2 ring-surface"
           >
             {unread > 9 ? "9+" : unread}
           </span>
@@ -124,17 +124,17 @@ export function NotificationsBell() {
           id={panelId}
           aria-labelledby={headingId}
           className={cn(
-            "tm-enter tm-edge z-40 flex flex-col rounded-lg bg-glass-strong shadow-(--tm-shadow-pop) backdrop-blur-xl",
-            "fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[22rem]",
+            "tm-enter tm-popover z-40 flex flex-col rounded-lg",
+            "fixed inset-x-3 top-12 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-1.5 sm:w-[22rem]",
           )}
         >
-          <header className="flex items-center justify-between border-b border-line px-4 py-3">
-            <h2 id={headingId} className="font-display text-sm tracking-wide text-ink">
+          <header className="flex h-11 items-center justify-between border-b border-line px-4">
+            <h2 id={headingId} className="text-[13px] font-semibold text-ink">
               Notifications
             </h2>
-            {unread > 0 && <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-primary">{unread} new</span>}
+            {unread > 0 && <span className="font-mono text-[11px] text-primary">{unread} new</span>}
           </header>
-          <div className="max-h-[min(26rem,70dvh)] overflow-y-auto p-1.5">
+          <div className="max-h-[min(26rem,70dvh)] overflow-y-auto p-1">
             {notifications.isPending ? (
               <div aria-busy="true" className="flex flex-col gap-3 p-2.5">
                 {[0, 1, 2].map((row) => (
@@ -149,8 +149,8 @@ export function NotificationsBell() {
               </div>
             ) : notifications.isError ? (
               <div className="flex flex-col items-center gap-3 px-4 py-6 text-center">
-                <p className="text-sm text-dim">Notifications couldn't be loaded.</p>
-                <Button variant="ghost" size="sm" onClick={() => void notifications.refetch()}>
+                <p className="text-[13px] text-dim">Notifications couldn't be loaded.</p>
+                <Button variant="secondary" size="sm" onClick={() => void notifications.refetch()}>
                   Retry
                 </Button>
               </div>

@@ -36,7 +36,7 @@ test("⌘K opens it too, and the top bar search field does", async () => {
   await user.keyboard("{Meta>}k{/Meta}");
   expect(await screen.findByRole("dialog")).toBeInTheDocument();
   await user.keyboard("{Escape}");
-  await user.click(screen.getByRole("button", { name: /search clients, quotes, airports/i }));
+  await user.click(screen.getByRole("button", { name: /search clients, enquiries, quotes/i }));
   expect(await screen.findByRole("dialog")).toBeInTheDocument();
 });
 

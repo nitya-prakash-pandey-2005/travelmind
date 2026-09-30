@@ -76,7 +76,7 @@ test("navigation is grouped under Operate, Market and Admin, and the collapse is
 test("demo workspace is badged and can be exited", async () => {
   const { calls } = mockApi(withSession(ME_DEMO, { ...commandCenterMocks(), "POST /api/v1/demo/exit": { status: 204 } }));
   const { user, router } = renderApp("/app");
-  expect(await screen.findByText("DEMO WORKSPACE")).toBeInTheDocument();
+  expect(await screen.findByText("Demo")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Exit demo" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   expect(calls.some((c) => c.path === "/api/v1/demo/exit")).toBe(true);
@@ -121,7 +121,7 @@ test("the demo banner says when the workspace is deleted, and exiting forgets th
   expect(queryClient.getQueryData(["me"])).toBeNull();
   expect(queryClient.getQueryData(["notifications"])).toBeUndefined();
   expect(queryClient.getQueryData(["agency"])).toBeUndefined();
-  expect(screen.queryByText("DEMO WORKSPACE")).not.toBeInTheDocument();
+  expect(screen.queryByText("Demo")).not.toBeInTheDocument();
   expect(await screen.findByRole("link", { name: "Sign in" })).toBeInTheDocument();
 });
 
@@ -131,7 +131,7 @@ test("a regular workspace has no demo badge or banner", async () => {
   const banner = await screen.findByRole("banner");
   expect(within(banner).getByText("Alpha Travels")).toBeInTheDocument();
   expect(within(banner).getByText("AT")).toBeInTheDocument();
-  expect(screen.queryByText("DEMO WORKSPACE")).not.toBeInTheDocument();
+  expect(screen.queryByText("Demo")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Exit demo" })).not.toBeInTheDocument();
   expect(calls.some((c) => c.path === "/api/v1/agency")).toBe(false);
 });
@@ -206,7 +206,7 @@ test("sign out lives in the user menu", async () => {
 test("the top bar search opens the command palette", async () => {
   mockApi(withSession(ME_OWNER, { ...commandCenterMocks() }));
   const { user } = renderApp("/app");
-  const trigger = await screen.findByRole("button", { name: /Search clients, quotes, airports/ });
+  const trigger = await screen.findByRole("button", { name: /Search clients, enquiries, quotes/ });
   expect(trigger).toHaveAttribute("aria-keyshortcuts", "Control+K Meta+K");
   expect(within(trigger).getByText("Ctrl K")).toBeInTheDocument();
   await user.click(trigger);

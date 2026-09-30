@@ -72,7 +72,7 @@ test("the scanners and suppliers are reachable from the navigation", async () =>
 test("unknown pages show a way home", async () => {
   mockApi(withSession(ME_OWNER));
   renderApp("/nowhere");
-  expect(await screen.findByRole("heading", { name: "Signal lost" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Page not found" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Return to Command Center" })).toBeInTheDocument();
 });
 

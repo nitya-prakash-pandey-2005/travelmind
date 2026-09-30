@@ -16,9 +16,9 @@ type PaletteCommand = { id: string; group: "Navigate" | "Actions"; label: string
 
 const GROUPS = ["Navigate", "Actions"] as const;
 const itemClass =
-  "flex cursor-pointer items-center gap-3 rounded-sm px-3 py-2 text-sm text-dim data-[selected=true]:bg-primary/15 data-[selected=true]:text-ink";
+  "flex h-9 cursor-pointer items-center gap-3 rounded-md px-3 text-[13px] text-dim data-[selected=true]:bg-hover data-[selected=true]:text-ink";
 const groupClass =
-  "[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.22em] [&_[cmdk-group-heading]]:text-dim";
+  "[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.06em] [&_[cmdk-group-heading]]:text-faint";
 
 /**
  * Global search and commands (Ctrl/⌘+K or the top bar's search field): navigation, actions, the
@@ -101,13 +101,15 @@ export function CommandPalette() {
         aria-keyshortcuts="Control+K Meta+K"
         onClick={() => setOpen(true)}
         className={cn(
-          "group inline-flex h-9 min-w-0 items-center gap-2.5 rounded-md border border-line bg-deck/50 text-sm text-dim",
-          "transition-colors duration-200 ease-tm hover:border-primary/50 hover:bg-hover hover:text-ink",
-          "w-9 justify-center sm:w-full sm:max-w-md sm:justify-start sm:pl-3 sm:pr-1.5",
+          "group inline-flex h-8 min-w-0 items-center gap-2 rounded-md text-[13px] transition-colors duration-150 ease-tm",
+          // Phones: an icon button. From 640px: a search field.
+          "w-8 justify-center text-dim hover:bg-hover hover:text-ink",
+          "sm:w-full sm:max-w-md sm:justify-start sm:border sm:border-line sm:bg-surface-2 sm:pl-2.5 sm:pr-1.5 sm:text-faint",
+          "sm:hover:border-line-strong sm:hover:bg-surface-2 sm:hover:text-dim",
         )}
       >
-        <Search size={15} aria-hidden="true" className="shrink-0 transition-colors group-hover:text-primary" />
-        <span className="truncate max-sm:sr-only">Search clients, quotes, airports…</span>
+        <Search size={15} aria-hidden="true" className="shrink-0" />
+        <span className="truncate max-sm:sr-only">Search clients, enquiries, quotes…</span>
         <Kbd className="ml-auto shrink-0 max-sm:hidden">Ctrl K</Kbd>
       </button>
       <Command.Dialog
@@ -115,14 +117,14 @@ export function CommandPalette() {
         onOpenChange={(next) => (next ? setOpen(true) : close())}
         label="Command palette"
         shouldFilter={false}
-        overlayClassName="fixed inset-0 z-40 bg-void/70 backdrop-blur-sm"
-        contentClassName="fixed left-1/2 top-[14vh] z-50 w-[min(40rem,92vw)] -translate-x-1/2 rounded-sm border border-line bg-raised p-2 shadow-2xl"
+        overlayClassName="fixed inset-0 z-40 bg-(--tm-backdrop)"
+        contentClassName="tm-popover fixed left-1/2 top-[14vh] z-50 w-[min(40rem,92vw)] -translate-x-1/2 rounded-lg p-1.5"
       >
         <Command.Input
           value={search}
           onValueChange={setSearch}
           placeholder="Type a command or an airport, or find a client, enquiry or quote…"
-          className="h-11 w-full border-b border-line bg-transparent px-3 text-ink outline-none placeholder:text-dim/60"
+          className="h-11 w-full border-b border-line bg-transparent px-3 text-sm text-ink outline-none placeholder:text-faint"
         />
         <Command.List className="max-h-[50vh] overflow-auto py-2">
           {!scanning && !airportError && !records.pending && (
@@ -205,9 +207,9 @@ export function CommandPalette() {
           {airports.enabled && (
             <Command.Group heading="Airports" className={groupClass}>
               {scanning ? (
-                <Command.Loading label="Scanning airports">
-                  <span className="block px-3 py-2 font-mono text-xs uppercase tracking-[0.2em] text-dim">
-                    Scanning airports…
+                <Command.Loading label="Searching airports">
+                  <span className="block px-3 py-2 text-[13px] text-dim">
+                    Searching airports…
                   </span>
                 </Command.Loading>
               ) : airportError ? (
@@ -238,8 +240,8 @@ export function CommandPalette() {
             </Command.Group>
           )}
         </Command.List>
-        <p className="border-t border-line px-3 pt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-dim">
-          ↑↓ move · ↵ select · esc close · airports fill From, then To
+        <p className="border-t border-line px-3 pb-1 pt-2 text-[11px] leading-4 text-faint">
+          ↑↓ to move · Enter to select · Esc to close · Airports fill From, then To
         </p>
       </Command.Dialog>
       <RecordDrawer selection={record} onClose={() => setRecord(null)} />

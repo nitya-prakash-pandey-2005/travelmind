@@ -10,7 +10,7 @@ test("a visitor explores the live demo from the landing page and exits back to i
   await page.getByRole("link", { name: "Explore live demo", exact: true }).click();
   await expect(page).toHaveURL(APP_HOME, { timeout: 60_000 });
 
-  await expect(page.getByRole("banner").getByText("DEMO WORKSPACE")).toBeVisible();
+  await expect(page.getByRole("banner").getByText("Demo", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Demo workspace" })).toContainText("demo workspace with sample data");
 
   // A number above zero, however it is grouped ("12", "1,204").

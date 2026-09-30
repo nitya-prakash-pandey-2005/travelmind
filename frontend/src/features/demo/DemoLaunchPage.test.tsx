@@ -45,7 +45,7 @@ test("the demo workspace is created once and its user is signed in from the resp
   release();
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
   expect(queryClient.getQueryData(["me"])).toEqual(ME_DEMO);
-  expect(await screen.findByText("DEMO WORKSPACE")).toBeInTheDocument();
+  expect(await screen.findByText("Demo")).toBeInTheDocument();
   expect(calls.filter((c) => c.method === "POST" && c.path === "/api/v1/demo")).toHaveLength(1);
 });
 

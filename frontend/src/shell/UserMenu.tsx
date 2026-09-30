@@ -19,21 +19,28 @@ export function UserMenu({ me }: { me: Me }) {
       onSelect: () => setTheme(theme === "dark" ? "daylight" : "dark"),
     },
     { id: "design", label: "Design system", icon: Palette, onSelect: () => void navigate({ to: "/app/design" }) },
-    { id: "sign-out", label: "Sign out", icon: LogOut, onSelect: () => logout.mutate() },
+    { id: "sign-out", label: "Sign out", icon: LogOut, onSelect: () => logout.mutate(), separated: true },
   ];
   return (
     <Menu
       label={me.user.full_name}
       items={items}
-      triggerClassName="h-9 gap-2 border-transparent pl-1 pr-1.5 hover:bg-hover md:pr-2"
+      triggerVariant="ghost"
+      triggerClassName="pl-1 pr-1 lg:pr-1.5"
+      header={
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate text-[13px] font-medium text-ink">{me.user.full_name}</span>
+          <span className="truncate text-xs text-dim">{me.user.email}</span>
+        </div>
+      }
       trigger={
         <>
-          <Avatar name={me.user.full_name} size="md" />
-          <span className="hidden min-w-0 flex-col items-start leading-tight md:flex">
-            <span className="max-w-36 truncate text-sm text-ink">{me.user.full_name}</span>
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-dim">{me.user.role}</span>
+          <Avatar name={me.user.full_name} size="sm" />
+          <span className="hidden min-w-0 flex-col items-start leading-none lg:flex">
+            <span className="max-w-36 truncate text-xs font-medium leading-4 text-ink">{me.user.full_name}</span>
+            <span className="text-[11px] capitalize leading-3.5 text-faint">{me.user.role}</span>
           </span>
-          <ChevronDown size={14} aria-hidden="true" className="hidden text-dim md:block" />
+          <ChevronDown size={14} aria-hidden="true" className="hidden text-faint lg:block" />
         </>
       }
     />
