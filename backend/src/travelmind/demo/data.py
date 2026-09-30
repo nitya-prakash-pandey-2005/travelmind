@@ -1,0 +1,140 @@
+"""Curated material for demo workspaces. Every person and company here is fictional; the
+routes are real airport pairs so sandbox searches return realistic itineraries."""
+
+AGENCY_NAME = "Orbit Travel Co."
+PRESENTER_NAME = "Demo Presenter"
+AGENT_NAMES = ("Aarav Mehta", "Sara Khan", "Leo Fernandes")
+
+CLIENT_NAMES = (
+    "Priya Raman",
+    "Rohan Kapoor",
+    "Ananya Iyer",
+    "Vikram Sethi",
+    "Meera Nair",
+    "Kabir Malhotra",
+    "Ishita Banerjee",
+    "Arjun Reddy",
+    "Neha Kulkarni",
+    "Siddharth Rao",
+    "Tanvi Deshmukh",
+    "Aditya Chawla",
+    "Kavya Menon",
+    "Rahul Bhatia",
+    "Pooja Joshi",
+    "Nikhil Verma",
+    "Diya Choudhury",
+    "Karan Gill",
+    "Riya Das",
+    "Varun Pillai",
+    "Sneha Agarwal",
+    "Harsh Vardhan Singh",
+    "Aisha Qureshi",
+    "Manav Oberoi",
+    "Shreya Ghosh",
+    "Dev Khanna",
+    "Nandini Hegde",
+    "Farhan Siddiqui",
+    "Lakshmi Subramanian",
+    "Yash Thakur",
+    "Zoya Mirza",
+    "Aryan Saxena",
+    "Ira Mukherjee",
+    "Omkar Patil",
+    "Gauri Bhave",
+    "Samar Arora",
+    "Emma Whitfield",
+    "Lucas Moreau",
+    "Sofia Marquez",
+    "Daniel Okafor",
+    "Hannah Becker",
+    "Mateo Rossi",
+    "Chloe Tanaka",
+    "Oliver Grant",
+    "Amelia Novak",
+    "Noah Lindqvist",
+    "Isabel Duarte",
+    "Ethan Caldwell",
+    "Mia Kowalski",
+    "Liam O'Donnell",
+    "Yuki Morimoto",
+    "Grace Adeyemi",
+    "Felix Hartmann",
+    "Layla Haddad",
+    "Samuel Ortega",
+    "Nora Eriksen",
+    "Julian Park",
+    "Clara Vasquez",
+    "Aiden Mercer",
+    "Leila Farouk",
+    "Tomas Varga",
+    "Ruby Ashworth",
+)
+
+COMPANY_NAMES = (
+    "Nimbus Analytics Pvt Ltd",
+    "Crestline Pharma",
+    "Blue Harbour Logistics",
+    "Saffron Grid Energy",
+    "Juniper Row Consulting",
+    "Tidewater Textiles",
+    "Kestrel Robotics",
+    "Marigold Foods Pvt Ltd",
+    "Northstar Fintech",
+    "Copperleaf Architects",
+    "Silverline Media Works",
+    "Verdant Agritech",
+    "Horizon Loop Software",
+    "Quartz Bay Engineering",
+    "Lotus Crest Hospitality",
+)
+
+NOTE_TEMPLATES = (
+    "Prefers morning departures; window seat if possible.",
+    "Travelling for a family wedding — flexible by a day either side.",
+    "Corporate trip: needs a refundable fare and GST invoice.",
+    "Vegetarian meals for all travellers.",
+    "Wants at least 20 kg checked baggage per person.",
+    "Anniversary trip — ask about seats together.",
+    "Conference visit; must land a day before the event starts.",
+    "Client is price-sensitive; compare low-cost and full-service options.",
+    "Frequent flyer with Air India; add membership number at booking.",
+    "Travelling with an infant; bassinet seat requested.",
+    "Team offsite — keep everyone on the same flight if possible.",
+    "Needs a short layover; avoid overnight connections.",
+)
+
+# Real routes out of India. The demo keeps the ones whose airports are in the reference data.
+ROUTES: tuple[tuple[str, str], ...] = (
+    ("DEL", "BOM"),
+    ("BOM", "DXB"),
+    ("BLR", "SIN"),
+    ("DEL", "LHR"),
+    ("BOM", "JFK"),
+    ("MAA", "KUL"),
+    ("DEL", "DXB"),
+    ("HYD", "BLR"),
+    ("CCU", "BKK"),
+    ("DEL", "GOI"),
+    ("BOM", "SIN"),
+    ("BLR", "DXB"),
+    ("DEL", "CDG"),
+    ("BOM", "LHR"),
+    ("COK", "DXB"),
+    ("AMD", "BOM"),
+)
+
+LOST_REASONS = (
+    "Client booked directly with the airline",
+    "Trip postponed to next quarter",
+    "Budget too low for the preferred dates",
+    "Went with another agency",
+    "Visa appointment not available in time",
+)
+
+VERSION_MESSAGES = (
+    "Here are the best options for your dates.",
+    "Revised options with more flexible fares.",
+    "Updated prices — these seats are selling quickly.",
+)
+
+CLIENT_TAGS = ("vip", "corporate", "family", "leisure", "frequent", "honeymoon")

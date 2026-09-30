@@ -120,3 +120,17 @@ def assess(price_minor: int, baseline: Baseline, days_to_departure: int) -> Insi
         delta,
         f"Around the typical price for this route and booking window ({sign}{pct}%).",
     )
+
+
+_ROUTES_WITH_HISTORY = text(
+    """
+    SELECT count(DISTINCT (origin, destination)) FROM fare_snapshots
+    WHERE provenance = ANY(:provenances)
+    """
+)
+
+
+async def count_routes_with_history(db: AsyncSession) -> int:
+    """Routes with market fare history (live or cached fares; sandbox fares don't count)."""
+    result = await db.scalar(_ROUTES_WITH_HISTORY, {"provenances": list(PROVENANCES["market"])})
+    return int(result or 0)
