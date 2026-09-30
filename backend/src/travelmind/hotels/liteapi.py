@@ -51,9 +51,17 @@ def _text(value: object) -> str | None:
 
 
 def _photo(value: object) -> str | None:
-    """Only plain web links: the UI renders this, so never pass on e.g. javascript: URLs."""
+    """Only web links, as https: the UI renders this, so never pass on e.g. javascript: URLs,
+    and an http:// image on our https pages would be blocked (or flagged) as mixed content."""
     text = _text(value)
-    return text if text and text.lower().startswith(("https://", "http://")) else None
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered.startswith("https://"):
+        return text
+    if lowered.startswith("http://"):
+        return "https://" + text[len("http://") :]
+    return None
 
 
 def _free_cancellation_until(infos: object) -> str | None:

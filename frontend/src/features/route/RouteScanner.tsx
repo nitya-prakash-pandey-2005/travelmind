@@ -73,13 +73,12 @@ export function RouteScanner({
           />
         </dl>
       )}
-      {km !== null && onScanFares ? (
+      {km !== null && onScanFares && (
         <Button className="mt-4 w-full" onClick={onScanFares}>
           Scan fares for this route
         </Button>
-      ) : (
-        <p className="mt-4 text-xs text-dim">Pick two airports to scan fares.</p>
       )}
+      {km === null && <p className="mt-4 text-xs text-dim">Pick two airports to scan fares.</p>}
     </Panel>
   );
 }

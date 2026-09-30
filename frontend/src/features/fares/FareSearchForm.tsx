@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Cabin, FlightSearchRequest } from "../../api/offers";
 import { isoDateFromNow } from "../../lib/dates";
+import { clampGuests } from "../../lib/guests";
 import { Button } from "../../ui/Button";
 import { Panel } from "../../ui/Panel";
 import { SelectField } from "../../ui/SelectField";
@@ -15,11 +16,8 @@ const CABINS: { value: Cabin; label: string }[] = [
   { value: "first", label: "First" },
 ];
 
-/** 1–9 travellers; an empty or unreadable entry means one. */
-function clampAdults(draft: string): number {
-  const value = Math.trunc(Number(draft));
-  return Number.isFinite(value) && value >= 1 ? Math.min(9, value) : 1;
-}
+/** Travellers per search (the field's max). */
+const MAX_ADULTS = 9;
 
 export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (request: FlightSearchRequest) => void }) {
   const { origin, destination } = useRouteSelection();
@@ -42,7 +40,7 @@ export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (r
         onSubmit={(event) => {
           event.preventDefault();
           if (!ready || !origin || !destination) return;
-          const travellers = clampAdults(adults);
+          const travellers = clampGuests(adults, MAX_ADULTS);
           setAdults(String(travellers));
           onSearch({
             origin: origin.iata_code,
@@ -83,10 +81,10 @@ export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (r
             label="Adults"
             type="number"
             min={1}
-            max={9}
+            max={MAX_ADULTS}
             value={adults}
             onChange={(e) => setAdults(e.target.value)}
-            onBlur={() => setAdults(String(clampAdults(adults)))}
+            onBlur={() => setAdults(String(clampGuests(adults, MAX_ADULTS)))}
           />
           <SelectField label="Cabin" value={cabin} onChange={(e) => setCabin(e.target.value as Cabin)}>
             {CABINS.map((c) => (

@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from travelmind.hotels.liteapi import LITEAPI_BASE_URL, LiteApiHotelSupplier
+from travelmind.hotels.liteapi import LITEAPI_BASE_URL, LiteApiHotelSupplier, _photo
 from travelmind.hotels.models import HotelSearchRequest, RoomRequest
 from travelmind.offers.money import Money
 from travelmind.offers.suppliers.base import SupplierError
@@ -164,7 +164,24 @@ async def test_untrusted_hotel_fields_are_cleaned(respx_mock):
     assert harbour.name == "Unnamed hotel" and harbour.stars is None and harbour.rating is None
     assert harbour.photo_url is None
     assert lodge.name == "Unnamed hotel" and lodge.stars == 3.5
-    assert lodge.photo_url == "http://img.example/x.jpg"
+    assert lodge.photo_url == "https://img.example/x.jpg"  # upgraded: no mixed content
+
+
+@pytest.mark.parametrize(
+    ("raw", "url"),
+    [
+        ("https://img.example/a.jpg", "https://img.example/a.jpg"),
+        ("http://img.example/a.jpg", "https://img.example/a.jpg"),
+        ("  HTTP://img.example/a.jpg ", "https://img.example/a.jpg"),
+        ("javascript:alert(1)", None),
+        ("ftp://img.example/a.jpg", None),
+        ("//img.example/a.jpg", None),
+        ("", None),
+        (42, None),
+    ],
+)
+def test_photo_links_are_https_web_links_only(raw, url):
+    assert _photo(raw) == url
 
 
 async def test_free_cancellation_runs_until_the_earliest_penalty(respx_mock):

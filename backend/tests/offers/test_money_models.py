@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from travelmind.config import Settings
 from travelmind.offers.models import FlightOffer, FlightSearchRequest, Segment, Slice
-from travelmind.offers.money import Money, exponent, per_traveller_minor
+from travelmind.offers.money import _EXPONENTS, Money, exponent, per_traveller_minor
 
 
 def future(days: int) -> date:
@@ -25,6 +25,24 @@ def test_money_rounds_half_up_and_round_trips():
     assert Money.from_decimal("10.005", "USD").amount_minor == 1001
     assert Money(amount_minor=450050, currency="INR").to_decimal() == Decimal("4500.50")
     assert exponent("usd") == 2
+
+
+def test_minor_unit_exponents_are_pinned():
+    # frontend/src/lib/money.ts (EXPONENTS) mirrors this table to format amount_minor: change
+    # both together, or the UI shows every price in that currency 10x or 100x off.
+    assert _EXPONENTS == {
+        "JPY": 0,
+        "KRW": 0,
+        "VND": 0,
+        "IDR": 0,
+        "CLP": 0,
+        "ISK": 0,
+        "KWD": 3,
+        "BHD": 3,
+        "OMR": 3,
+        "JOD": 3,
+        "TND": 3,
+    }
 
 
 @pytest.mark.parametrize(

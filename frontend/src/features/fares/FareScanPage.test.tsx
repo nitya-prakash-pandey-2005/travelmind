@@ -136,12 +136,73 @@ test("the price check compares the cheapest fare with the route's history", asyn
   const check = screen.getByRole("region", { name: "Price check" });
   expect(within(check).getByText("₹5,200")).toBeInTheDocument();
   expect(within(check).getByText(/Good time to book/)).toBeInTheDocument();
-  expect(within(check).getByRole("img", { name: /Cheapest fare ₹4,200 against a typical range of ₹4,500 to ₹6,000/ })).toBeInTheDocument();
+  expect(
+    within(check).getByRole("img", {
+      name: "Cheapest comparable fare (per traveller) ₹4,200 against a typical range of ₹4,500 to ₹6,000 per traveller",
+    }),
+  ).toBeInTheDocument();
+  expect(check).toHaveTextContent("Cheapest comparable fare (per traveller) ₹4,200");
   expect(screen.getAllByRole("article")[0]).toHaveTextContent("Good price");
 });
 
+test("the gauge plots the first comparable fare per traveller, not a sandbox fare ranked above it", async () => {
+  const sandbox = makeOffer({ id: "sandbox~cheap", total: inr(300000), display_total: inr(300000), per_traveller: null, insight: null });
+  const live = makeOffer({
+    id: "duffel~pair",
+    supplier: "duffel",
+    provenance: "LIVE",
+    owner_carrier: "AI",
+    owner_name: "Air India",
+    passenger_count: 2,
+    total: inr(1000000),
+    display_total: inr(1000000),
+    per_traveller: inr(500000),
+    insight: { signal: "typical", delta_pct: -3.8, message: "Around the typical price for this route and booking window (-4%)." },
+  });
+  await scanAndList({
+    [SEARCH]: {
+      status: 200,
+      body: searchResponse({
+        baseline: { family: "market", currency: "INR", sample_size: 24, p25_minor: 450000, median_minor: 520000, p75_minor: 600000, window_days: 45 },
+        offers: [sandbox, live],
+      }),
+    },
+  });
+  const check = screen.getByRole("region", { name: "Price check" });
+  expect(
+    within(check).getByRole("img", {
+      name: "Cheapest comparable fare (per traveller) ₹5,000 against a typical range of ₹4,500 to ₹6,000 per traveller",
+    }),
+  ).toBeInTheDocument();
+  expect(check).toHaveTextContent("Around the typical price");
+  expect(check).not.toHaveTextContent("₹3,000");
+  expect(check).not.toHaveTextContent("₹10,000");
+});
+
+test("without a comparable fare the gauge shows the range and no marker", async () => {
+  await scanAndList({
+    [SEARCH]: {
+      status: 200,
+      body: searchResponse({
+        baseline: { family: "market", currency: "INR", sample_size: 24, p25_minor: 450000, median_minor: 520000, p75_minor: 600000, window_days: 45 },
+        offers: [makeOffer({ per_traveller: null, insight: null })],
+      }),
+    },
+  });
+  const check = screen.getByRole("region", { name: "Price check" });
+  expect(
+    within(check).getByRole("img", { name: "Fares on this route usually fall in a typical range of ₹4,500 to ₹6,000 per traveller" }),
+  ).toBeInTheDocument();
+  expect(check).not.toHaveTextContent("Cheapest comparable fare");
+});
+
 test("a fare in another currency is never placed on the gauge", async () => {
-  const unconverted = { ...indigo, total: { amount_minor: 10000, currency: "USD" }, display_total: { amount_minor: 10000, currency: "USD" } };
+  const unconverted = {
+    ...indigo,
+    total: { amount_minor: 10000, currency: "USD" },
+    display_total: { amount_minor: 10000, currency: "USD" },
+    per_traveller: null,
+  };
   await scanAndList({
     [SEARCH]: {
       status: 200,
@@ -152,7 +213,9 @@ test("a fare in another currency is never placed on the gauge", async () => {
     },
   });
   const check = screen.getByRole("region", { name: "Price check" });
-  expect(within(check).getByRole("img", { name: "Fares on this route usually fall in a typical range of ₹4,500 to ₹6,000" })).toBeInTheDocument();
+  expect(
+    within(check).getByRole("img", { name: "Fares on this route usually fall in a typical range of ₹4,500 to ₹6,000 per traveller" }),
+  ).toBeInTheDocument();
 });
 
 test("sandbox history is labelled as such", async () => {

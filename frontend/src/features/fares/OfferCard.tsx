@@ -1,17 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
 import { asApiError } from "../../api/client";
-import { offersApi, type FlightOffer, type Insight, type Provenance, type Slice } from "../../api/offers";
+import { offersApi, type FlightOffer, type Insight, type Slice } from "../../api/offers";
 import { dayShift, localTime } from "../../lib/dates";
 import { formatDuration, formatNumber } from "../../lib/format";
 import { formatMoney } from "../../lib/money";
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
-
-const PROVENANCE: Record<Provenance, { tone: "ok" | "warn" | "ai"; label: string }> = {
-  LIVE: { tone: "ok", label: "Live" },
-  CACHED: { tone: "warn", label: "Cached · indicative" },
-  SANDBOX: { tone: "ai", label: "Sandbox · not bookable" },
-};
+import { PROVENANCE } from "../../ui/provenance";
 
 const INSIGHT: Record<Insight["signal"], { tone: "ok" | "neutral" | "warn"; label: string }> = {
   good: { tone: "ok", label: "Good price" },

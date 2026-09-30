@@ -30,7 +30,8 @@ from travelmind.identity.ratelimit import LoginRateLimiter
 from travelmind.offers.cache import recall_offer, remember_offers
 from travelmind.offers.carbon import TimClient
 from travelmind.offers.db_models import FlightSearchLog
-from travelmind.offers.fx import FxRates, display_currency_for, get_fx_rates
+from travelmind.offers.display import display_money
+from travelmind.offers.fx import display_currency_for, get_fx_rates
 from travelmind.offers.models import FlightOffer, FlightSearchRequest
 from travelmind.offers.money import Money, per_traveller_minor
 from travelmind.offers.registry import flight_suppliers
@@ -122,12 +123,6 @@ class OfferGone(OfferServiceError):
 
 class PriceCheckFailed(OfferServiceError):
     """The supplier couldn't confirm the price (error or no answer in time)."""
-
-
-def _display(offer: FlightOffer, currency: str, fx: FxRates | None) -> Money | None:
-    if offer.total.currency == currency:
-        return offer.total
-    return fx.convert(offer.total, currency) if fx else None
 
 
 def _per_traveller(
@@ -232,13 +227,16 @@ async def search_flights(
     if not suppliers:
         raise NoSuppliers()
 
-    offers, sources = await fan_out(suppliers, request, settings.search_timeout_seconds)
+    # Exchange rates are fetched while suppliers search, so they never add to the wait.
+    (offers, sources), fx = await asyncio.gather(
+        fan_out(suppliers, request, settings.search_timeout_seconds),
+        get_fx_rates(redis, enabled=settings.fx_enabled),
+    )
     if settings.google_tim_api_key and offers:
         tim = TimClient(settings.google_tim_api_key, redis, timeout_s=TIM_TIMEOUT_SECONDS)
         offers = await tim.enrich(offers, request.cabin)
 
     currency = display_currency_for(origin.country_code)
-    fx = await get_fx_rates(redis, enabled=settings.fx_enabled)
     one_way = request.return_date is None
     days_out = (request.departure_date - datetime.now(UTC).date()).days
     # Sandbox fares are never compared with (or mixed into) the market's history.
@@ -275,8 +273,8 @@ async def search_flights(
         )
 
     views: list[OfferView] = []
-    for offer in rank(offers, lambda o: _display(o, currency, fx)):
-        shown = _display(offer, currency, fx)
+    for offer in rank(offers, lambda o: display_money(o.total, currency, fx)):
+        shown = display_money(offer.total, currency, fx)
         share = _per_traveller(offer, request, currency, family)
         insight = (
             assess(share.amount_minor, baseline, days_out)
@@ -374,7 +372,7 @@ async def reprice_offer(
     fx = await get_fx_rates(redis, enabled=settings.fx_enabled)
     await remember_offers(redis, agency_id, [fresh])
     return RepriceResponse(
-        offer=_view(fresh, _display(fresh, currency, fx), None),
+        offer=_view(fresh, display_money(fresh.total, currency, fx), None),
         price_changed=fresh.total != cached.total,
         previous_total=cached.total,
     )

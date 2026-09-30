@@ -16,6 +16,7 @@ from travelmind.config import Settings
 from travelmind.hotels.liteapi import LiteApiHotelSupplier
 from travelmind.hotels.models import HotelOffer, HotelSearchRequest
 from travelmind.hotels.schemas import HotelOfferView, HotelSearchResponse
+from travelmind.offers.display import display_money, rank_by_display
 from travelmind.offers.fx import display_currency_for, get_fx_rates
 from travelmind.offers.money import Money
 from travelmind.offers.schemas import SourceStatusOut
@@ -116,22 +117,12 @@ async def search_hotels(
     fx = await get_fx_rates(redis, enabled=settings.fx_enabled) if needs_fx else None
 
     def display(offer: HotelOffer) -> Money | None:
-        if offer.total.currency == currency:
-            return offer.total
-        return fx.convert(offer.total, currency) if fx else None
+        return display_money(offer.total, currency, fx)
 
     views = [
         HotelOfferView.model_validate(o.model_dump() | {"display_total": display(o)})
-        for o in offers
+        for o in rank_by_display(offers, display)
     ]
-    # Cheapest first by display price; offers we can't convert go last, grouped by currency.
-    views.sort(
-        key=lambda v: (
-            (0, "", v.display_total.amount_minor)
-            if v.display_total is not None
-            else (1, v.total.currency, v.total.amount_minor)
-        )
-    )
     return HotelSearchResponse(
         display_currency=currency,
         fx_as_of=fx.as_of if fx else None,

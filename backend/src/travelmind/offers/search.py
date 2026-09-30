@@ -6,6 +6,7 @@ from typing import Literal
 
 import structlog
 
+from travelmind.offers.display import rank_by_display
 from travelmind.offers.models import FlightOffer, FlightSearchRequest
 from travelmind.offers.money import Money
 from travelmind.offers.suppliers.base import FlightSupplier, SupplierError
@@ -59,13 +60,7 @@ async def fan_out(
 def rank(
     offers: list[FlightOffer], display: Callable[[FlightOffer], Money | None]
 ) -> list[FlightOffer]:
-    """Cheapest first by display price; unconvertible offers go last, grouped by currency."""
-
-    def key(offer: FlightOffer) -> tuple[int, str, int, int, int]:
-        shown = display(offer)
-        duration = offer.total_duration_minutes or 10**6
-        if shown is not None:
-            return (0, "", shown.amount_minor, duration, offer.stops)
-        return (1, offer.total.currency, offer.total.amount_minor, duration, offer.stops)
-
-    return sorted(offers, key=key)
+    """Cheapest first by display price, then quickest and fewest stops (see rank_by_display)."""
+    return rank_by_display(
+        offers, display, tiebreak=lambda o: (o.total_duration_minutes or 10**6, o.stops)
+    )

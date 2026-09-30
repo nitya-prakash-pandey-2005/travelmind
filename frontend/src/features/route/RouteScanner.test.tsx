@@ -57,3 +57,9 @@ test("without a ready route there is nothing to scan yet", () => {
   expect(screen.queryByRole("button", { name: "Scan fares for this route" })).not.toBeInTheDocument();
   expect(screen.getByText("Pick two airports to scan fares.")).toBeInTheDocument();
 });
+
+test("a ready route without a fare scan shows no hint to pick airports", () => {
+  routeStore.set({ origin: AIRPORTS.DEL, destination: AIRPORTS.BOM });
+  renderWithClient(<RouteScanner />);
+  expect(screen.queryByText("Pick two airports to scan fares.")).not.toBeInTheDocument();
+});

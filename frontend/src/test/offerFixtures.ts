@@ -23,14 +23,18 @@ export function segment(
   };
 }
 
-/** A sandbox DEL→BOM nonstop on IndiGo for ₹5,234; override what a test cares about. */
+/**
+ * A sandbox DEL→BOM nonstop on IndiGo for ₹5,234; override what a test cares about.
+ * One passenger, so `per_traveller` defaults to the total (overridden or not).
+ */
 export function makeOffer(overrides: Partial<FlightOffer> = {}): FlightOffer {
+  const total = overrides.total ?? { amount_minor: 523400, currency: "INR" };
   return {
     id: "sandbox~ref-1",
     supplier: "sandbox",
     supplier_ref: "ref-1",
     provenance: "SANDBOX",
-    total: { amount_minor: 523400, currency: "INR" },
+    total,
     base: null,
     tax: null,
     owner_carrier: "6E",
@@ -56,7 +60,7 @@ export function makeOffer(overrides: Partial<FlightOffer> = {}): FlightOffer {
     stops: 0,
     total_duration_minutes: 130,
     display_total: { amount_minor: 523400, currency: "INR" },
-    per_traveller: { amount_minor: 523400, currency: "INR" },
+    per_traveller: total,
     insight: null,
     ...overrides,
   };

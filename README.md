@@ -76,6 +76,7 @@ cd frontend
 npm test                 # unit + component tests (Vitest)
 npm run lint && npm run typecheck
 npm run e2e              # Playwright golden path + sandbox fare scan; needs the API running on :8010
+                         # with TM_SIGNUP_MAX_PER_IP=1000 (each test signs up; the default is 10/hour)
 ```
 
 First e2e run: `npx playwright install chromium`.

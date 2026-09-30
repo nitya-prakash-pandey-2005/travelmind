@@ -1,4 +1,6 @@
+import asyncio
 import os
+import time
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -8,6 +10,7 @@ import pytest
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 
+from travelmind.offers import fx
 from travelmind.offers.fx import (
     CACHE_KEY,
     ECB_DAILY_URL,
@@ -280,3 +283,24 @@ async def test_fetch_uses_a_tight_timeout(respx_mock):
         await redis.aclose()
     timeout = route.calls.last.request.extensions["timeout"]
     assert timeout == {"connect": 1.0, "read": 2.0, "write": 2.0, "pool": 2.0}
+
+
+async def test_a_stalled_feed_is_cut_off_by_the_deadline(respx_mock, monkeypatch):
+    async def stall(request):
+        await asyncio.sleep(5)
+        return httpx.Response(200, text=XML)
+
+    assert fx.FETCH_DEADLINE_SECONDS == 3.0  # caps the whole fetch; httpx timeouts are per phase
+    monkeypatch.setattr(fx, "FETCH_DEADLINE_SECONDS", 0.2)
+    respx_mock.get(ECB_DAILY_URL).mock(side_effect=stall)
+    redis = await _redis()
+    try:
+        started = time.monotonic()
+        rates = await get_fx_rates(redis, enabled=True)
+        elapsed = time.monotonic() - started
+        backed_off = await redis.exists(FAILURE_KEY)
+    finally:
+        await redis.aclose()
+    assert rates is None
+    assert elapsed < 2
+    assert backed_off

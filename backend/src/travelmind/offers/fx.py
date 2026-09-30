@@ -4,6 +4,7 @@ Never used to price a booking. Any failure (feed down, malformed feed, Redis dow
 means "no rates" (`None`) or a fresh fetch — a rate is never guessed.
 """
 
+import asyncio
 import json
 import re
 from collections.abc import Iterable
@@ -26,6 +27,7 @@ CACHE_TTL_SECONDS = 12 * 3600
 FAILURE_KEY = "fx:ecb:down"  # set after a failed fetch so we back off instead of retrying
 FAILURE_TTL_SECONDS = 300
 FETCH_TIMEOUT = httpx.Timeout(2.0, connect=1.0)
+FETCH_DEADLINE_SECONDS = 3.0  # caps the whole fetch; httpx timeouts are per phase
 _MAX_RATE = Decimal("1e9")  # no real currency is near this; bounds later multiplication
 _NS = "{http://www.ecb.int/vocabulary/2002-08-01/eurofxref}"
 _CODE = re.compile(r"[A-Z]{3}")
@@ -129,11 +131,12 @@ async def get_fx_rates(
     except RedisError as exc:
         log.warning("fx_cache_unavailable", error_type=type(exc).__name__)
     try:
-        async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
-            response = await client.get(url)
+        async with asyncio.timeout(FETCH_DEADLINE_SECONDS):
+            async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+                response = await client.get(url)
         response.raise_for_status()
         rates = parse_ecb_xml(response.text)
-    except (httpx.HTTPError, ValueError) as exc:
+    except (httpx.HTTPError, ValueError, TimeoutError) as exc:
         log.warning("fx_rates_unavailable", error_type=type(exc).__name__)
         try:
             await redis.set(FAILURE_KEY, "1", ex=FAILURE_TTL_SECONDS)

@@ -22,7 +22,10 @@ export function FareScanPage() {
   const [sort, setSort] = useState<SortMode>("price");
   const search = useQuery(flightSearchQueryOptions(request));
   const data = search.data;
-  const cheapest = data?.offers[0] ?? null;
+  // The gauge only plots a fare the server compared with the baseline (it has an insight), per
+  // traveller, like the history: offers[0] may be a sandbox fare next to a market baseline, or a
+  // party's total.
+  const compared = data?.offers.find((o) => o.insight !== null) ?? null;
 
   const submit = (next: FlightSearchRequest) => {
     if (request && JSON.stringify(request) === JSON.stringify(next)) void search.refetch();
@@ -34,7 +37,7 @@ export function FareScanPage() {
       <div className="flex flex-col gap-4">
         <FareSearchForm busy={search.isFetching} onSearch={submit} />
         {data?.baseline && !search.isError && (
-          <FareGauge baseline={data.baseline} price={cheapest?.display_total ?? null} insight={cheapest?.insight ?? null} />
+          <FareGauge baseline={data.baseline} price={compared?.per_traveller ?? null} insight={compared?.insight ?? null} />
         )}
       </div>
       <Panel eyebrow="Offers" title="Fare board">

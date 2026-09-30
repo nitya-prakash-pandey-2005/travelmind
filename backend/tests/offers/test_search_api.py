@@ -586,3 +586,33 @@ async def test_converted_offers_get_no_insight_and_no_snapshot(
     assert native["insight"] is not None
     assert native["per_traveller"] == {"amount_minor": 300000, "currency": "INR"}
     assert await stub_rows(agency) == [(300000, "INR", "LIVE")]
+
+
+class WaitsForRates:
+    """A supplier that only answers once the exchange-rate fetch has started."""
+
+    code = "stub"
+
+    def __init__(self, started: asyncio.Event) -> None:
+        self._started = started
+
+    async def search(self, request):
+        await self._started.wait()
+        return [live_offer()]
+
+
+async def test_exchange_rates_are_fetched_while_suppliers_search(client, airports, monkeypatch):
+    started = asyncio.Event()
+
+    async def rates(redis, *, enabled=True):
+        started.set()
+        return None
+
+    monkeypatch.setattr(offers_service, "get_fx_rates", rates)
+    monkeypatch.setattr(get_settings(), "search_timeout_seconds", 1.0)
+    only_suppliers(monkeypatch, WaitsForRates(started))
+    await signup(client)
+    body = (await client.post(SEARCH, json=trip())).json()
+    # Fetched one after the other, the supplier would wait out its whole budget instead.
+    assert body["sources"][0]["status"] == "ok"
+    assert [o["id"] for o in body["offers"]] == ["stub~live"]

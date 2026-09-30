@@ -127,6 +127,11 @@ test("a converted price is marked approximate and shows what is billed", async (
   expect(screen.getByText(/ECB reference rates of 2026-09-28/)).toBeInTheDocument();
 });
 
+test("cached hotel prices are labelled indicative, like cached fares", async () => {
+  const { list } = await scanAndList({ [SEARCH]: { status: 200, body: response({ offers: [hotel({ provenance: "CACHED" })] }) } });
+  expect(within(list).getByRole("article")).toHaveTextContent("Cached · indicative");
+});
+
 test("an unconverted price is shown as billed, without ≈", async () => {
   const unconverted = hotel({ total: { amount_minor: 20000, currency: "USD" }, display_total: null });
   const { list } = await scanAndList({ [SEARCH]: { status: 200, body: response({ offers: [unconverted] }) } });

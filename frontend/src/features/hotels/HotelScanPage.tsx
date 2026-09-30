@@ -2,30 +2,23 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { asApiError } from "../../api/client";
-import type { HotelOffer, HotelSearchRequest, Provenance } from "../../api/offers";
+import type { HotelOffer, HotelSearchRequest } from "../../api/offers";
 import { hotelSearchQueryOptions } from "../../api/queries";
 import type { Airport } from "../../api/types";
 import { isoDateFromNow } from "../../lib/dates";
+import { clampGuests } from "../../lib/guests";
 import { formatMoney } from "../../lib/money";
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { Panel } from "../../ui/Panel";
+import { PROVENANCE } from "../../ui/provenance";
 import { TextField } from "../../ui/TextField";
 import { AirportPicker } from "../airports/AirportPicker";
 import { SourceStrip } from "../fares/SourceStrip";
 import { routeStore } from "../route/routeStore";
 
-const PROVENANCE: Record<Provenance, { tone: "ok" | "warn" | "ai"; label: string }> = {
-  LIVE: { tone: "ok", label: "Live" },
-  CACHED: { tone: "warn", label: "Cached" },
-  SANDBOX: { tone: "ai", label: "Sandbox · not bookable" },
-};
-
-/** 1–6 adults per room; an empty or unreadable entry means one. */
-function clampAdults(draft: string): number {
-  const value = Math.trunc(Number(draft));
-  return Number.isFinite(value) && value >= 1 ? Math.min(6, value) : 1;
-}
+/** Adults per room (the field's max). */
+const MAX_ADULTS = 6;
 
 function cancellationTerms(offer: HotelOffer): string {
   if (offer.refundable === true) {
@@ -103,7 +96,7 @@ export function HotelScanPage() {
           onSubmit={(event) => {
             event.preventDefault();
             if (!ready || !destination) return;
-            const guests = clampAdults(adults);
+            const guests = clampGuests(adults, MAX_ADULTS);
             setAdults(String(guests));
             const next = { destination: destination.iata_code, checkin, checkout, rooms: [{ adults: guests, children_ages: [] }] };
             if (request && JSON.stringify(request) === JSON.stringify(next)) void search.refetch();
@@ -135,10 +128,10 @@ export function HotelScanPage() {
             label="Adults"
             type="number"
             min={1}
-            max={6}
+            max={MAX_ADULTS}
             value={adults}
             onChange={(e) => setAdults(e.target.value)}
-            onBlur={() => setAdults(String(clampAdults(adults)))}
+            onBlur={() => setAdults(String(clampGuests(adults, MAX_ADULTS)))}
           />
           <Button type="submit" disabled={!ready} loading={search.isFetching}>
             Scan hotels
