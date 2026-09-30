@@ -83,9 +83,10 @@ test("local dates and days until a departure", () => {
 });
 
 test("fare changes and routes read plainly", () => {
-  expect(formatChange(-10.9)).toBe("▼ 10.9%");
-  expect(formatChange(8.2)).toBe("▲ 8.2%");
+  expect(formatChange(-10.9)).toBe("10.9%");
+  expect(formatChange(8.2)).toBe("8.2%");
   expect(formatChange(0)).toBe("0%");
+  expect(formatChange(Number.NaN)).toBe("—");
   expect(routeLabel("DEL", "BOM")).toBe("DEL → BOM");
   expect(routeLabel("BOM", null)).toBe("BOM → —");
   expect(routeLabel(null, null)).toBe("—");

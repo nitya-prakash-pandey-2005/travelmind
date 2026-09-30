@@ -5,24 +5,38 @@ import type { GlobeArc } from "./RouteGlobe";
 import { hasWebGL } from "./webgl";
 
 const RouteGlobe = lazy(() => import("./RouteGlobe"));
+const FlatRouteMap = lazy(() => import("./FlatRouteMap"));
 
-function Standby({ message }: { message: string }) {
+/** Holds the map's space while a chunk loads, so nothing shifts when it lands. */
+function MapPlaceholder({ message }: { message: string }) {
   return (
-    <div className="flex h-full min-h-[340px] items-center justify-center rounded-sm border border-dashed border-line">
-      <p className="max-w-xs text-center font-mono text-xs uppercase tracking-[0.2em] text-dim">{message}</p>
+    <div className="grid h-full min-h-[300px] place-items-center rounded-md border border-dashed border-line">
+      <p className="text-xs text-faint">{message}</p>
     </div>
   );
 }
 
-/** A GPU/WebGL failure must never take down the rest of the Command Center. */
-class GlobeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+/** The flat map, with a one-line note saying why it replaced the globe. */
+function FlatFallback({ arcs, note }: { arcs: GlobeArc[]; note: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Suspense fallback={<MapPlaceholder message="Loading map…" />}>
+        <FlatRouteMap arcs={arcs} />
+      </Suspense>
+      <p className="text-xs text-faint">{note}</p>
+    </div>
+  );
+}
+
+/** A GPU/WebGL failure must never take down the rest of the Command Center: fall back to the flat map. */
+class GlobeBoundary extends Component<{ arcs: GlobeArc[]; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
   render() {
     return this.state.failed ? (
-      <Standby message="The orbital view went offline. Route data below still works." />
+      <FlatFallback arcs={this.props.arcs} note="The 3D globe stopped working, so this is a flat map of the same routes." />
     ) : (
       this.props.children
     );
@@ -32,41 +46,46 @@ class GlobeBoundary extends Component<{ children: ReactNode }, { failed: boolean
 type GlobePanelProps = {
   arcs: GlobeArc[];
   title?: string;
-  eyebrow?: string;
+  /** One line under the title. */
+  description?: ReactNode;
   variant?: PanelVariant;
   actions?: ReactNode;
+  footer?: ReactNode;
   className?: string;
-  /** Shown under the globe (legend, route list, empty state). */
+  /** Shown under the map (route list, empty state). */
   children?: ReactNode;
 };
 
+/** Route map card: the 3D globe where WebGL works, otherwise a flat map of the same arcs. */
 export function GlobePanel({
   arcs,
-  title = "Route globe",
-  eyebrow = "Orbital view",
+  title = "Route map",
+  description,
   variant,
   actions,
+  footer,
   className,
   children,
 }: GlobePanelProps) {
   const [webgl] = useState(hasWebGL);
   return (
     <Panel
-      eyebrow={eyebrow}
       title={title}
+      description={description}
       variant={variant}
       actions={actions}
-      className={cn("flex min-h-[420px] flex-1 flex-col", className)}
+      footer={footer}
+      className={cn("flex flex-col", className)}
     >
-      <div className="flex-1">
+      <div className="flex min-h-0 flex-1 flex-col">
         {webgl ? (
-          <GlobeBoundary>
-            <Suspense fallback={<Standby message="Initialising orbital view…" />}>
+          <GlobeBoundary arcs={arcs}>
+            <Suspense fallback={<MapPlaceholder message="Loading globe…" />}>
               <RouteGlobe arcs={arcs} />
             </Suspense>
           </GlobeBoundary>
         ) : (
-          <Standby message="3D globe isn't available on this device. Route data below still works." />
+          <FlatFallback arcs={arcs} note="3D globe isn't available on this device, so this is a flat map." />
         )}
       </div>
       {children}

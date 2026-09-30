@@ -1,9 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import type { CSSProperties } from "react";
 import { summaryQueryOptions, type DashboardRange, type Kpi, type KpiKey } from "../../api/dashboard";
-import { KpiTile } from "../../ui/charts";
-import { cn } from "../../ui/cn";
-import { Skeleton } from "../../ui/Skeleton";
+import { KpiStrip, KpiTile } from "../../ui/charts";
 import { formatKpiValue, kpiDelta, kpiSeries } from "./format";
 import { PanelError } from "./PanelError";
 
@@ -30,11 +27,6 @@ const TREND_LABELS: Record<KpiKey, string> = {
   co2_quoted: "CO₂ quoted per day",
   searches: "Searches per day",
 };
-
-// Two columns on phones, three on tablets, four on laptops, all seven in one row on wide screens.
-// The first tile spans two columns until then, so no row is left with a gap.
-const GRID = "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 min-[1600px]:grid-cols-7";
-const TILE = (index: number) => cn("grid min-w-0 tm-enter", index === 0 && "col-span-2 min-[1600px]:col-span-1");
 
 /** Why a tile has no figure: no closed enquiries, no CO₂ on any quoted option, else no quotes sent. */
 const EMPTY_HINTS: Partial<Record<KpiKey, string>> = {
@@ -64,18 +56,13 @@ export function KpiRow({ range }: { range: DashboardRange }) {
   if (!summary.data) {
     // Placeholder tiles stay out of the accessibility tree: a labelled tile only appears with its figure.
     return (
-      <section aria-label="Key figures" aria-busy="true" className={GRID}>
-        <span className="sr-only">Loading key figures…</span>
-        {KPI_LABELS.map(({ key, label }, index) => (
-          <div key={key} aria-hidden="true" className={TILE(index)} style={{ "--tm-enter-index": index } as CSSProperties}>
-            <div className="tm-glass tm-edge relative flex min-w-0 flex-col gap-2 rounded-md p-4">
-              <p className="truncate font-mono text-[11px] uppercase tracking-[0.22em] text-dim">{label}</p>
-              <Skeleton className="h-8 w-24" />
-              <Skeleton className="h-8 w-full" />
-            </div>
+      <KpiStrip label="Key figures" columns={7} busy>
+        {KPI_LABELS.map(({ key, label }) => (
+          <div key={key} aria-hidden="true" className="grid min-w-0">
+            <KpiTile label={label} value="" loading />
           </div>
         ))}
-      </section>
+      </KpiStrip>
     );
   }
 
@@ -83,28 +70,26 @@ export function KpiRow({ range }: { range: DashboardRange }) {
   const currency = summary.data.currency;
 
   return (
-    <section aria-label="Key figures" aria-busy={summary.isPlaceholderData || undefined} className={GRID}>
-      {KPI_LABELS.map(({ key }, index) => {
+    <KpiStrip label="Key figures" columns={7} busy={summary.isPlaceholderData}>
+      {KPI_LABELS.map(({ key }) => {
         const kpi = byKey.get(key);
         if (!kpi) return null;
-        const style = { "--tm-enter-index": index } as CSSProperties;
         const { value, unit } = formatKpiValue(kpi, currency);
         // Gaps are skipped; a period of zeros has no trend worth drawing.
         const series = kpiSeries(kpi).filter((v): v is number => v !== null);
         return (
-          <div key={key} className={TILE(index)} style={style}>
-            <KpiTile
-              label={kpi.label}
-              value={value}
-              unit={unit}
-              delta={kpiDelta(kpi)}
-              series={series.some((v) => v !== 0) ? series : undefined}
-              trendLabel={TREND_LABELS[key]}
-              hint={hintFor(kpi, summary.data.range)}
-            />
-          </div>
+          <KpiTile
+            key={key}
+            label={kpi.label}
+            value={value}
+            unit={unit}
+            delta={kpiDelta(kpi)}
+            series={series.some((v) => v !== 0) ? series : undefined}
+            trendLabel={TREND_LABELS[key]}
+            hint={hintFor(kpi, summary.data.range)}
+          />
         );
       })}
-    </section>
+    </KpiStrip>
   );
 }
