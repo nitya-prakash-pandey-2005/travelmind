@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { Gauge, ScrollText, Tags } from "lucide-react";
-import type { ReactNode } from "react";
-import { FareRowsPreview } from "../features/landing/ConsolePreview";
+import type { CSSProperties, ReactNode } from "react";
+import { FareInsightCard, FareRowsCard, Illustration, SupplierStatusCard } from "../features/landing/ConsolePreview";
+import { DATA_SOURCES, SourceMark } from "../features/landing/IntegrationsStrip";
 import { Wordmark } from "../features/landing/Wordmark";
 import { ThemeToggle } from "../ui/ThemeToggle";
 
@@ -11,29 +12,59 @@ const POINTS = [
   { icon: ScrollText, text: "Roles, tenant isolation and an audit log" },
 ];
 
-/** The product side of the sign-in screens: what the workspace looks like, drawn with sample data. */
+const GLOW: CSSProperties = {
+  background: "radial-gradient(closest-side, color-mix(in oklab, var(--tm-primary) 13%, transparent), transparent)",
+};
+
+/** The product side of the sign-in screens: the pitch, a slice of the product with sample data, and its sources. */
 function ProductPanel() {
   return (
     <aside
       aria-label="About TravelMind"
-      className="relative isolate hidden flex-col justify-between gap-10 overflow-hidden border-l border-line bg-surface p-10 lg:flex xl:p-14"
+      className="relative isolate hidden flex-col justify-center overflow-hidden border-l border-line bg-surface px-10 py-12 lg:flex xl:px-16"
     >
-      <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-10" />
-      <div className="max-w-md">
-        <p className="text-[22px] font-semibold leading-7 tracking-[-0.01em] text-ink">
-          Answer travel enquiries with fares you can explain.
-        </p>
-        <ul className="mt-6 flex flex-col gap-3">
-          {POINTS.map(({ icon: Icon, text }) => (
-            <li key={text} className="flex items-center gap-3 text-sm text-dim">
-              <Icon size={16} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-primary" />
-              {text}
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="max-w-lg">
-        <FareRowsPreview caption="Illustration with sample data, not live fares." />
+      <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-20" />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[40rem] w-[40rem] -translate-x-1/2 -translate-y-1/2"
+        style={GLOW}
+      />
+      <div className="mx-auto flex w-full max-w-[36rem] flex-col gap-9">
+        <div>
+          <p className="text-2xl font-semibold leading-8 tracking-[-0.015em] text-ink">
+            Answer travel enquiries with fares you can explain.
+          </p>
+          <ul className="mt-5 grid gap-2.5">
+            {POINTS.map(({ icon: Icon, text }) => (
+              <li key={text} className="flex items-center gap-3 text-sm text-dim">
+                <span
+                  aria-hidden="true"
+                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-line-strong bg-bg text-primary"
+                >
+                  <Icon size={13} strokeWidth={1.75} />
+                </span>
+                {text}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <Illustration caption="Illustration with sample data, not live fares.">
+          <div className="relative pb-28 pl-8">
+            <FareRowsCard rows={3} className="shadow-[0_32px_64px_-32px_rgb(0_0_0/0.55)]" />
+            <FareInsightCard className="absolute bottom-0 left-0 z-10 w-60 shadow-[var(--tm-shadow-pop)]" />
+            <SupplierStatusCard className="absolute bottom-3 right-6 z-10 w-60 shadow-[var(--tm-shadow-pop)] max-xl:hidden" />
+          </div>
+        </Illustration>
+        <div className="border-t border-line pt-6">
+          <p className="text-[13px] font-medium text-ink">Connects to</p>
+          <ul className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 xl:grid-cols-3">
+            {DATA_SOURCES.map((source) => (
+              <li key={source.name} className="min-w-0">
+                <SourceMark source={source} size="sm" />
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </aside>
   );
@@ -55,7 +86,7 @@ export function AuthFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="grid min-h-dvh bg-bg lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+    <div className="grid min-h-dvh bg-bg lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       <div className="flex min-w-0 flex-col px-4 py-6 sm:px-10">
         <header className="flex items-center justify-between gap-3">
           <Link to="/" className="rounded-sm">

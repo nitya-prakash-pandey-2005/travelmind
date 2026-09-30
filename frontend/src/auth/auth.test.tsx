@@ -318,3 +318,18 @@ test("accepting an invitation into another agency drops the previous agency's ca
   await waitFor(() => expect(team()).toHaveTextContent("Meera Iyer"));
   expect(team()).not.toHaveTextContent("Ravi Kumar");
 });
+
+test("the sign-in and sign-up panels show the product with sample data and its real data sources", async () => {
+  mockApi(withSession(null));
+  for (const path of ["/login", "/signup"]) {
+    const { unmount } = renderApp(path);
+    const panel = await screen.findByRole("complementary", { name: "About TravelMind" });
+    expect(within(panel).getByText("Illustration with sample data, not live fares.")).toBeInTheDocument();
+    expect(within(panel).getAllByRole("listitem").map((li) => li.textContent)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^Duffel/), expect.stringMatching(/^LiteAPI/), expect.stringMatching(/^OurAirports/)]),
+    );
+    expect(within(panel).getByText("Connects to")).toBeInTheDocument();
+    expect(panel).not.toHaveTextContent(/trusted by|testimonial/i);
+    unmount();
+  }
+});
