@@ -5,6 +5,7 @@ import {
   useRef,
   type KeyboardEvent,
   type MouseEvent,
+  type PointerEvent,
   type ReactNode,
   type SyntheticEvent,
 } from "react";
@@ -38,6 +39,10 @@ const PLACEMENT = {
  */
 export function ModalSurface({ onClose, title, description, children, footer, className, placement }: ModalSurfaceProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const pointerDownOnBackdrop = useRef(false);
   const titleId = useId();
   const descriptionId = useId();
   const onCloseRef = useRef(onClose);
@@ -51,11 +56,15 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!dialog.open) dialog.showModal();
     // Initial focus: an element marked data-autofocus (React's autoFocus fires before the dialog is shown,
-    // so it can't be used here); otherwise the platform's choice, the first focusable element, which we
-    // also apply where the engine did not move focus (jsdom, older engines).
-    const preferred = dialog.querySelector<HTMLElement>("[data-autofocus]");
-    if (preferred) preferred.focus();
-    else if (!dialog.contains(document.activeElement)) dialog.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    // so it can't be used here); else the first focusable element of the body, then of the footer; the
+    // header Close button only as a last resort. This overrides the platform default (the first focusable
+    // element in the dialog, i.e. Close).
+    const initial =
+      dialog.querySelector<HTMLElement>("[data-autofocus]") ??
+      bodyRef.current?.querySelector<HTMLElement>(FOCUSABLE) ??
+      footerRef.current?.querySelector<HTMLElement>(FOCUSABLE) ??
+      closeRef.current;
+    initial?.focus();
     // Closed by the platform (e.g. a <form method="dialog">): tell the owner.
     const onNativeClose = () => onCloseRef.current();
     dialog.addEventListener("close", onNativeClose);
@@ -78,9 +87,17 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
     onClose();
   }
 
+  // The <dialog> box has no padding, so an event whose target is the element itself hit the backdrop.
+  // Close only when the press also started there: a text selection dragged out of an input ends with a
+  // click on the dialog element and must not dismiss it.
+  function onPointerDown(event: PointerEvent<HTMLDialogElement>) {
+    pointerDownOnBackdrop.current = event.target === event.currentTarget;
+  }
+
   function onClick(event: MouseEvent<HTMLDialogElement>) {
-    // The <dialog> box has no padding: a click whose target is the element itself landed on the backdrop.
-    if (event.target === event.currentTarget) onClose();
+    const startedOnBackdrop = pointerDownOnBackdrop.current;
+    pointerDownOnBackdrop.current = false;
+    if (startedOnBackdrop && event.target === event.currentTarget) onClose();
   }
 
   return (
@@ -90,6 +107,7 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
       aria-describedby={description ? descriptionId : undefined}
       onCancel={onCancel}
       onKeyDown={onKeyDown}
+      onPointerDown={onPointerDown}
       onClick={onClick}
       className={cn(
         "tm-edge bg-glass-strong p-0 text-ink backdrop-blur-xl",
@@ -110,6 +128,7 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
           )}
         </div>
         <button
+          ref={closeRef}
           type="button"
           aria-label="Close"
           onClick={onClose}
@@ -118,9 +137,16 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
           <X size={18} aria-hidden="true" />
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+      <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {children}
+      </div>
       {footer && (
-        <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-3">{footer}</footer>
+        <footer
+          ref={footerRef}
+          className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-3"
+        >
+          {footer}
+        </footer>
       )}
     </dialog>
   );

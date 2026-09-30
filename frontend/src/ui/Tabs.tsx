@@ -50,7 +50,7 @@ export function Tabs({ tabs, value, onChange, label, className }: TabsProps) {
       role="tablist"
       aria-label={label}
       onKeyDown={onKeyDown}
-      className={cn("flex max-w-full gap-1 overflow-x-auto border-b border-line", className)}
+      className={cn("flex max-w-full gap-1 overflow-x-auto overflow-y-hidden border-b border-line", className)}
     >
       {tabs.map((tab) => {
         const selected = tab.id === value;
@@ -69,9 +69,12 @@ export function Tabs({ tabs, value, onChange, label, className }: TabsProps) {
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.id)}
             className={cn(
-              "relative -mb-px shrink-0 border-b-2 px-3 pb-2.5 pt-2 font-display text-xs uppercase tracking-[0.16em]",
+              "relative shrink-0 px-3 pb-2.5 pt-2 font-display text-xs uppercase tracking-[0.16em]",
               "transition-colors duration-200 ease-tm focus-visible:outline-offset-[-2px]",
-              selected ? "border-primary text-ink" : "border-transparent text-dim hover:text-ink",
+              // The selected underline is painted inside the tab (not over the list's border) so the
+              // horizontally scrolling list never overflows vertically.
+              "after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors",
+              selected ? "text-ink after:bg-primary" : "text-dim after:bg-transparent hover:text-ink",
             )}
           >
             {tab.label}

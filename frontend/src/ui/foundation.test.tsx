@@ -4,7 +4,7 @@ import {
   createRootRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Inbox, Pencil, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -116,6 +116,38 @@ test("dialog closes from its close button and from a backdrop click", async () =
   expect(onClose).toHaveBeenCalledTimes(2);
 });
 
+test("dialog focuses the first focusable element in its body, not the header Close button", async () => {
+  const user = userEvent.setup();
+  function Harness() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          Open
+        </button>
+        <Dialog open={open} onClose={() => setOpen(false)} title="Share quote" footer={<button type="button">Send</button>}>
+          <p>Copy the link below.</p>
+          <button type="button">Copy link</button>
+        </Dialog>
+      </>
+    );
+  }
+  render(<Harness />);
+  await user.click(screen.getByRole("button", { name: "Open" }));
+  expect(screen.getByRole("button", { name: "Copy link" })).toHaveFocus();
+});
+
+test("a drag that starts inside the dialog and ends on the backdrop does not close it", async () => {
+  const user = userEvent.setup();
+  render(<DialogHarness />);
+  await user.click(screen.getByRole("button", { name: "New enquiry" }));
+  const dialog = screen.getByRole("dialog");
+  // Text selection: the pointer goes down in the input and the click lands on the <dialog> (the backdrop).
+  fireEvent.pointerDown(within(dialog).getByLabelText("Notes"));
+  fireEvent.click(dialog);
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+});
+
 test("drawer is a labelled modal side panel that closes on Escape", async () => {
   const user = userEvent.setup();
   function Harness() {
@@ -134,6 +166,8 @@ test("drawer is a labelled modal side panel that closes on Escape", async () => 
   render(<Harness />);
   await user.click(screen.getByRole("button", { name: "Open client" }));
   expect(screen.getByRole("dialog", { name: "Priya Sharma" })).toHaveTextContent("priya@example.com");
+  // Nothing focusable in the body or footer: focus falls back to the Close button.
+  expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
   await user.keyboard("{Escape}");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Open client" })).toHaveFocus();
@@ -194,6 +228,7 @@ function renderMenu() {
         ]}
       />
       <p>Outside</p>
+      <button type="button">After</button>
     </>,
   );
   return { edit, remove, trigger: screen.getByRole("button", { name: "Quote actions" }) };
@@ -237,6 +272,38 @@ test("menu closes on Escape and on an outside click, and wraps with arrow keys",
   trigger.focus();
   await user.keyboard("{ArrowDown}");
   expect(screen.getByRole("menuitem", { name: "Edit" })).toHaveFocus();
+  // Tab leaves the menu and carries on to the next control; focus is not parked back on the trigger.
+  await user.keyboard("{Tab}");
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+});
+
+test("menu items with duplicate labels keep distinct identities via id", async () => {
+  const user = userEvent.setup();
+  const first = vi.fn();
+  const second = vi.fn();
+  render(
+    <Menu
+      label="Duplicates"
+      trigger="More"
+      items={[
+        { id: "a", label: "Open", onSelect: first },
+        { id: "b", label: "Open", onSelect: second },
+      ]}
+    />,
+  );
+  await user.click(screen.getByRole("button", { name: "Duplicates" }));
+  await user.keyboard("{ArrowDown}{Enter}");
+  expect(second).toHaveBeenCalledOnce();
+  expect(first).not.toHaveBeenCalled();
+});
+
+test("the selected tab draws its underline inside the tab and the list never scrolls vertically", () => {
+  render(<TabsHarness />);
+  const list = screen.getByRole("tablist");
+  expect(list.className).toMatch(/\boverflow-y-hidden\b/);
+  for (const tab of screen.getAllByRole("tab")) expect(tab.className).not.toMatch(/-mb-px/);
+  expect(screen.getByRole("tab", { name: "Overview" }).className).toMatch(/after:bg-primary/);
 });
 
 test("avatar initials and stack overflow", () => {

@@ -3,6 +3,8 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import { cn } from "./cn";
 
 export type MenuItem = {
+  /** Stable identity; defaults to the item's position. */
+  id?: string;
   label: string;
   onSelect: () => void;
   icon?: LucideIcon;
@@ -82,7 +84,11 @@ export function Menu({ trigger, items, label, align = "end", className, triggerC
       event.stopPropagation(); // don't also close an enclosing dialog
       close(true);
     } else if (event.key === "Tab") {
-      close(false);
+      // Tab/Shift+Tab leave the menu for the neighbouring control. Focus is anchored on the trigger
+      // without preventDefault, so the browser's own Tab continues from the menu button's position
+      // (rather than restarting from <body> once the focused item unmounts) and does not stay on it.
+      triggerRef.current?.focus();
+      setOpen(false);
     }
   }
 
@@ -129,7 +135,7 @@ export function Menu({ trigger, items, label, align = "end", className, triggerC
             const Icon = item.icon;
             return (
               <button
-                key={item.label}
+                key={item.id ?? index}
                 ref={(node) => {
                   itemRefs.current[index] = node;
                 }}

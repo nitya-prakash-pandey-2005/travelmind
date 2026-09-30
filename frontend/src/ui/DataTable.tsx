@@ -28,6 +28,10 @@ type DataTableProps<T> = {
   loading?: boolean;
   onRowClick?: (row: T) => void;
   initialSort?: SortState;
+  /**
+   * Classes for the scroll box around the table. The header is sticky only within this box, so give it a
+   * height limit (e.g. "max-h-96") when the header should stay visible while rows scroll.
+   */
   className?: string;
 };
 

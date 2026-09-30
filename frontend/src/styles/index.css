@@ -4,6 +4,8 @@
 @layer base {
   html {
     color-scheme: dark;
+    /* Reserve the scrollbar's space so locking scroll under an open dialog doesn't shift the layout. */
+    scrollbar-gutter: stable;
   }
   html[data-theme="daylight"] {
     color-scheme: light;

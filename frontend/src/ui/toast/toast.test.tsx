@@ -13,6 +13,22 @@ function Trigger({ input }: { input: ToastInput }) {
   );
 }
 
+function politeRegion() {
+  return screen.getByRole("status");
+}
+
+function assertiveRegion() {
+  const region = document.querySelector<HTMLElement>('[aria-live="assertive"]');
+  if (!region) throw new Error("assertive region missing");
+  return region;
+}
+
+function toastElement(title: string) {
+  const element = screen.getByText(title).closest<HTMLElement>("[data-toast]");
+  if (!element) throw new Error(`toast ${title} missing`);
+  return element;
+}
+
 function renderToasts(input: ToastInput) {
   return render(
     <ToastProvider>
@@ -20,6 +36,21 @@ function renderToasts(input: ToastInput) {
     </ToastProvider>,
   );
 }
+
+test("live regions are mounted before any toast, so insertions are announced", async () => {
+  const user = userEvent.setup();
+  renderToasts({ tone: "ok", title: "Saved" });
+  const polite = politeRegion();
+  const assertive = assertiveRegion();
+  expect(polite).toBeEmptyDOMElement();
+  expect(polite).toHaveAttribute("aria-live", "polite");
+  expect(assertive).toBeEmptyDOMElement();
+  await user.click(screen.getByRole("button", { name: "Fire" }));
+  expect(politeRegion()).toBe(polite);
+  expect(polite).toHaveTextContent("Saved");
+  // Toasts themselves are not nested live regions.
+  expect(toastElement("Saved")).not.toHaveAttribute("role");
+});
 
 test("toasts announce and dismiss", async () => {
   const user = userEvent.setup();
@@ -32,19 +63,20 @@ test("toasts announce and dismiss", async () => {
   expect(screen.queryByText("Saved")).not.toBeInTheDocument();
 });
 
-test("danger toasts use role=alert", async () => {
+test("danger toasts render in the assertive region", async () => {
   const user = userEvent.setup();
   renderToasts({ tone: "danger", title: "Send failed" });
   await user.click(screen.getByRole("button", { name: "Fire" }));
-  expect(screen.getByRole("alert")).toHaveTextContent("Send failed");
-  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(assertiveRegion()).toHaveTextContent("Send failed");
+  expect(politeRegion()).not.toHaveTextContent("Send failed");
 });
 
 test("toasts auto-dismiss after 5 s, pausing while hovered", () => {
   vi.useFakeTimers();
   renderToasts({ tone: "info", title: "Heads up" });
   fireEvent.click(screen.getByRole("button", { name: "Fire" }));
-  const toast = screen.getByRole("status");
+  const toast = toastElement("Heads up");
+  expect(politeRegion()).toContainElement(toast);
 
   act(() => vi.advanceTimersByTime(3000));
   fireEvent.mouseEnter(toast);
@@ -86,7 +118,7 @@ test("at most three toasts are visible; the oldest leaves first", () => {
     </ToastProvider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "Burst" }));
-  expect(screen.getAllByRole("status")).toHaveLength(3);
+  expect(within(politeRegion()).getAllByRole("button", { name: /dismiss/i })).toHaveLength(3);
   expect(screen.queryByText("Toast 1")).not.toBeInTheDocument();
   expect(screen.getByText("Toast 4")).toBeInTheDocument();
 });

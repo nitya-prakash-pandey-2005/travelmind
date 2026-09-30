@@ -45,10 +45,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext value={api}>
       {children}
+      {/* Both regions are always mounted (empty until needed): screen readers announce content added to an
+          existing live region, but not reliably a region that arrives already filled. */}
       <div className="pointer-events-none fixed inset-x-4 bottom-4 z-[60] flex flex-col gap-2 sm:left-auto sm:right-4 sm:w-96">
-        {toasts.map((item) => (
-          <ToastItem key={item.id} toast={item} onDismiss={dismiss} />
-        ))}
+        <div aria-live="assertive" className="flex flex-col gap-2">
+          {toasts
+            .filter((item) => item.tone === "danger")
+            .map((item) => (
+              <ToastItem key={item.id} toast={item} onDismiss={dismiss} />
+            ))}
+        </div>
+        <div role="status" aria-live="polite" className="flex flex-col gap-2">
+          {toasts
+            .filter((item) => item.tone !== "danger")
+            .map((item) => (
+              <ToastItem key={item.id} toast={item} onDismiss={dismiss} />
+            ))}
+        </div>
       </div>
     </ToastContext>
   );
@@ -78,8 +91,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
 
   return (
     <div
-      role={toast.tone === "danger" ? "alert" : "status"}
-      aria-atomic="true"
+      data-toast=""
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)}
