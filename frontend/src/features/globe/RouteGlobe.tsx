@@ -5,7 +5,7 @@ import type { Airport } from "../../api/types";
 import { useTheme, type Theme } from "../../ui/theme";
 import { useReducedMotion } from "../../ui/useReducedMotion";
 import { COUNTRIES } from "./countries";
-import { useElementSize } from "./useElementSize";
+import { useElementSize } from "../../lib/useElementSize";
 import { useFlyToActiveRoute } from "./useFlyToActiveRoute";
 
 export type GlobeArc = { from: Airport; to: Airport; active: boolean };

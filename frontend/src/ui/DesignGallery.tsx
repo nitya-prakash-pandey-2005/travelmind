@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Avatar, AvatarStack } from "./Avatar";
 import { Badge } from "./Badge";
 import { Button } from "./Button";
+import { AreaTrend, BarList, Donut, Funnel, KpiTile, LatencyBand, type TrendSeries } from "./charts";
 import { DataTable, type DataTableColumn } from "./DataTable";
 import { Dialog } from "./Dialog";
 import { Drawer } from "./Drawer";
@@ -49,6 +50,14 @@ const SPECIMEN_COLUMNS: DataTableColumn<SpecimenRow>[] = [
   { key: "travellers", header: "Pax", cell: (r) => r.travellers, sortValue: (r) => r.travellers, align: "right" },
   { key: "status", header: "Status", cell: (r) => <StatusPill status={r.status} /> },
 ];
+
+// Chart specimens: small inline shapes for the component showcase only; never product data.
+const SPECIMEN_DAYS = Array.from({ length: 14 }, (_, i) => `2026-09-${String(i + 1).padStart(2, "0")}`);
+const SPECIMEN_TREND: TrendSeries[] = [
+  { key: "a", label: "Series A", color: 1, points: SPECIMEN_DAYS.map((date, i) => ({ date, value: 6 + ((i * 7) % 9) + i })) },
+  { key: "b", label: "Series B", color: 2, points: SPECIMEN_DAYS.map((date, i) => ({ date, value: 2 + ((i * 5) % 6) + Math.floor(i / 2) })) },
+];
+const SPECIMEN_SPARK = [3, 5, 4, 6, 8, 7, 9];
 
 const RANGES = [
   { value: "7d", label: "7d" },
@@ -153,6 +162,56 @@ export function DesignGallery() {
 
       <Section title="Chart palette">
         <Swatches tokens={CHART_TOKENS} />
+      </Section>
+
+      <Section title="Charts">
+        <p className="text-sm text-dim">Component showcase with specimen shapes — not product data.</p>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <KpiTile label="Metric A" value="24" delta={{ pct: 12, direction: "up", good: true }} series={SPECIMEN_SPARK} hint="vs previous period" />
+          <KpiTile label="Metric B" value="—" delta={{ pct: null, direction: "flat", good: true }} />
+          <KpiTile label="Metric C" value="" loading />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Panel variant="glass" eyebrow="Specimen" title="Area trend">
+            <AreaTrend label="Specimen trend" valueFormat={String} series={SPECIMEN_TREND} />
+          </Panel>
+          <Panel variant="glass" eyebrow="Specimen" title="Bar list">
+            <BarList
+              label="Specimen ranking"
+              valueFormat={String}
+              items={[
+                { label: "Item one", value: 18, hint: "Hint text" },
+                { label: "Item two", value: 11 },
+                { label: "Item three", value: 6 },
+                { label: "Item four", value: 2 },
+              ]}
+            />
+          </Panel>
+          <Panel variant="glass" eyebrow="Specimen" title="Funnel">
+            <Funnel
+              label="Specimen funnel"
+              valueFormat={String}
+              stages={[
+                { label: "Stage 1", count: 40 },
+                { label: "Stage 2", count: 22 },
+                { label: "Stage 3", count: 9 },
+              ]}
+            />
+          </Panel>
+          <Panel variant="glass" eyebrow="Specimen" title="Donut and latency">
+            <div className="flex flex-col gap-5">
+              <Donut
+                label="Specimen share"
+                slices={[
+                  { label: "Part one", value: 5 },
+                  { label: "Part two", value: 3 },
+                  { label: "Part three", value: 2 },
+                ]}
+              />
+              <LatencyBand p50={120} p95={480} max={900} />
+            </div>
+          </Panel>
+        </div>
       </Section>
 
       <Section title="Typography">

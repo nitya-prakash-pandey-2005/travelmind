@@ -12,6 +12,7 @@ test("the design gallery documents every token and component family", () => {
   for (const section of [
     "Colour tokens",
     "Chart palette",
+    "Charts",
     "Typography",
     "Controls",
     "Fields",
@@ -33,4 +34,7 @@ test("the design gallery documents every token and component family", () => {
   }
   expect(screen.getByRole("table", { name: "Specimen enquiries" })).toBeInTheDocument();
   expect(screen.getByRole("tablist", { name: "Specimen sections" })).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: /^Specimen trend/ })).toBeInTheDocument();
+  expect(screen.getByRole("table", { name: "Specimen funnel data" })).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Metric C" })).toHaveAttribute("aria-busy", "true");
 });

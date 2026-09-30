@@ -118,6 +118,20 @@
   animation-delay: calc(var(--tm-enter-index, 0) * 45ms);
 }
 
+/* Chart entrance. Lines draw in (the path needs pathLength="1"), areas fade, bars grow from their baseline. */
+@utility tm-draw {
+  stroke-dasharray: 1;
+  animation: tm-draw 900ms var(--ease-tm) both;
+}
+@utility tm-fade-in {
+  animation: tm-fade 600ms var(--ease-tm) both;
+}
+@utility tm-grow-x {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: tm-grow-x 600ms var(--ease-tm) both;
+}
+
 /* Modal surfaces (<dialog>): themed backdrop and a short pop-in. */
 @utility tm-modal {
   box-shadow: var(--tm-shadow-pop);
@@ -169,6 +183,18 @@
   }
 }
 
+@keyframes tm-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes tm-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+
 @keyframes tm-fade {
   from {
     opacity: 0;
@@ -208,6 +234,9 @@
     background-image: none;
   }
   .tm-enter,
+  .tm-draw,
+  .tm-fade-in,
+  .tm-grow-x,
   .tm-modal,
   .tm-modal-side,
   .tm-modal::backdrop,
