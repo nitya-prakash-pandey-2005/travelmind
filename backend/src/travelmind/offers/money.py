@@ -54,3 +54,11 @@ class Money(BaseModel):
 
     def to_decimal(self) -> Decimal:
         return Decimal(self.amount_minor) / (Decimal(10) ** exponent(self.currency))
+
+
+def per_traveller_minor(total_minor: int, travellers: int) -> int:
+    """One traveller's share of a party's total, rounded half-up to a whole minor unit."""
+    if travellers < 1:
+        raise ValueError("A fare is shared by at least one traveller.")
+    share = Decimal(total_minor) / Decimal(travellers)
+    return int(share.quantize(Decimal(1), rounding=ROUND_HALF_UP))

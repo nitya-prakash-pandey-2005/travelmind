@@ -56,6 +56,7 @@ export function makeOffer(overrides: Partial<FlightOffer> = {}): FlightOffer {
     stops: 0,
     total_duration_minutes: 130,
     display_total: { amount_minor: 523400, currency: "INR" },
+    per_traveller: { amount_minor: 523400, currency: "INR" },
     insight: null,
     ...overrides,
   };

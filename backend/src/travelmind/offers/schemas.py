@@ -30,6 +30,9 @@ class BaselineOut(BaseModel):
 
 class OfferView(FlightOffer):
     display_total: Money | None = None
+    # One traveller's share of the total, only when it can be compared with fare history:
+    # an adults-only party, billed in the display currency, from the baseline's family.
+    per_traveller: Money | None = None
     insight: InsightOut | None = None
 
 

@@ -6,9 +6,10 @@ import httpx
 import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
 
-from tests.helpers import exec_as_tenant, make_client, signup
+from tests.helpers import exec_as_tenant, make_client, run_as_owner, signup
 from tests.offers.offer_factory import make_offer
 from travelmind.config import get_settings
+from travelmind.db import get_sessionmaker
 from travelmind.fareintel.models import FareSnapshot
 from travelmind.offers import service as offers_service
 from travelmind.offers.fx import ECB_DAILY_URL
@@ -89,6 +90,7 @@ async def test_sandbox_search_returns_labelled_sorted_offers(client, airports):
     first = body["offers"][0]
     assert first["provenance"] == "SANDBOX"
     assert first["display_total"] == first["total"]
+    assert first["per_traveller"] == first["total"]  # one adult, billed in INR
     assert first["stops"] == 0 and first["total_duration_minutes"] > 0
     assert body["baseline"] is None and first["insight"] is None
 
@@ -346,7 +348,8 @@ async def test_identical_market_fares_are_recorded_once(client, airports, monkey
         )
     )
     assert counts["LIVE"] == 2  # two distinct fares, each recorded once across both searches
-    assert counts["SANDBOX"] == 2 * sandbox_per_search  # the demo gauge still counts repeats
+    # Next to live fares, sandbox fares aren't comparable, so they aren't recorded at all.
+    assert sandbox_per_search > 0 and "SANDBOX" not in counts
 
 
 class BrokenPipeline:
@@ -426,3 +429,129 @@ async def test_reprice_when_the_supplier_was_disconnected(client, airports, monk
     r = await client.post("/api/v1/flights/offers/stub~orphan/price")
     assert r.status_code == 409
     assert r.json()["detail"] == "The supplier for this offer is no longer connected."
+
+
+async def seed_market_history(totals: list[int]) -> None:
+    """Per-traveller LIVE DEL→BOM economy fares for the booking window `trip()` searches."""
+    day = datetime.now(UTC).date() + timedelta(days=30)
+    async with get_sessionmaker()() as db:
+        db.add_all(
+            FareSnapshot(
+                origin="DEL",
+                destination="BOM",
+                departure_date=day,
+                days_to_departure=30,
+                cabin="economy",
+                carrier="AI",
+                stops=0,
+                total_minor=total,
+                currency="INR",
+                provenance="LIVE",
+                source="history",
+            )
+            for total in totals
+        )
+        await db.commit()
+
+
+class PerPartySupplier:
+    """A LIVE supplier quoting the party's total: `per_person` for each passenger, plus `extra`."""
+
+    code = "stub"
+
+    def __init__(self, per_person: int, *, extra: int = 0, currency: str = "INR") -> None:
+        self._per_person = per_person
+        self._extra = extra
+        self._currency = currency
+
+    async def search(self, request):
+        count = request.passenger_count
+        return [
+            make_offer(
+                [("DEL", "BOM", "AI", "101", "2026-11-20T06:00")],
+                offer_ref=f"party{count}",
+                total_minor=self._per_person * count + self._extra,
+                currency=self._currency,
+                provenance="LIVE",
+                passenger_count=count,
+            )
+        ]
+
+
+def only_suppliers(monkeypatch, *suppliers):
+    monkeypatch.setattr(offers_service, "flight_suppliers", lambda settings, lookup: [*suppliers])
+
+
+async def stub_rows(agency) -> list[tuple]:
+    return await exec_as_tenant(
+        agency,
+        "SELECT total_minor, currency, provenance FROM fare_snapshots WHERE source = 'stub'",
+    )
+
+
+HISTORY = list(range(400000, 600000, 20000))  # 10 per-traveller fares, median ₹4,900
+
+
+async def test_two_adults_are_judged_per_traveller_like_one(client, airports, monkeypatch):
+    await seed_market_history(HISTORY)
+    agency = (await signup(client)).json()["agency"]["id"]
+    # Two adults pay ₹6,000.01 in all: ₹3,000.005 each, which rounds half-up to ₹3,000.01.
+    only_suppliers(monkeypatch, PerPartySupplier(300001, extra=-1))
+    pair = (await client.post(SEARCH, json=trip(adults=2))).json()["offers"][0]
+    assert pair["total"] == {"amount_minor": 600001, "currency": "INR"}
+    assert pair["per_traveller"] == {"amount_minor": 300001, "currency": "INR"}
+    assert await stub_rows(agency) == [(300001, "INR", "LIVE")]  # never the party's total
+
+    # The same fare for one adult, against the same history, reads exactly the same.
+    await run_as_owner("DELETE FROM fare_snapshots WHERE source = 'stub'")
+    only_suppliers(monkeypatch, PerPartySupplier(300001))
+    solo = (await client.post(SEARCH, json=trip())).json()["offers"][0]
+    assert solo["per_traveller"] == {"amount_minor": 300001, "currency": "INR"}
+    assert pair["insight"]["signal"] == "good"
+    assert pair["insight"] == solo["insight"]
+    assert "per-traveller fares" in pair["insight"]["message"]
+
+
+async def test_parties_with_children_record_nothing_and_get_no_insight(
+    client, airports, monkeypatch
+):
+    await seed_market_history(HISTORY)
+    agency = (await signup(client)).json()["agency"]["id"]
+    only_suppliers(monkeypatch, PerPartySupplier(300000))
+    body = (await client.post(SEARCH, json=trip(adults=2, children_ages=[8]))).json()
+    assert body["offers"]
+    assert all(o["insight"] is None and o["per_traveller"] is None for o in body["offers"])
+    assert await stub_rows(agency) == []
+
+
+async def test_sandbox_searches_with_children_record_nothing(client, airports):
+    agency = (await signup(client)).json()["agency"]["id"]
+    body = (await client.post(SEARCH, json=trip(children_ages=[4]))).json()
+    assert body["offers"]
+    assert all(o["insight"] is None and o["per_traveller"] is None for o in body["offers"])
+    assert await exec_as_tenant(agency, "SELECT count(*) FROM fare_snapshots") == [(0,)]
+
+
+async def test_converted_offers_get_no_insight_and_no_snapshot(
+    client, airports, monkeypatch, respx_mock
+):
+    respx_mock.get(ECB_DAILY_URL).mock(return_value=httpx.Response(200, text=ECB_XML))
+    monkeypatch.setattr(get_settings(), "fx_enabled", True)
+    await seed_market_history(HISTORY)
+    agency = (await signup(client)).json()["agency"]["id"]
+    usd = make_offer(
+        [("DEL", "BOM", "UA", "1", "2026-11-20T06:00")],
+        offer_ref="usd",
+        total_minor=3000,
+        currency="USD",
+        provenance="LIVE",
+    )
+    only_suppliers(monkeypatch, StubSupplier("stub", [usd, live_offer("inr", 300000)]))
+    body = (await client.post(SEARCH, json=trip())).json()
+    offers = {o["id"]: o for o in body["offers"]}
+    converted, native = offers["stub~usd"], offers["stub~inr"]
+    assert converted["display_total"]["currency"] == "INR"  # shown as ≈ ₹, but billed in USD
+    assert converted["insight"] is None and converted["per_traveller"] is None
+    assert native["insight"] is not None
+    assert native["per_traveller"] == {"amount_minor": 300000, "currency": "INR"}
+    assert await stub_rows(agency) == [(300000, "INR", "LIVE")]

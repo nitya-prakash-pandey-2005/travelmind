@@ -92,10 +92,12 @@ async def compute_baseline(
 
 
 def assess(price_minor: int, baseline: Baseline, days_to_departure: int) -> Insight:
+    """What one traveller's fare (`price_minor`, in the baseline's currency) means today."""
     delta = round((price_minor - baseline.median_minor) / baseline.median_minor * 100, 1)
     # Whole percent shown to the user, rounded half-up (f"{x:.0f}" would round 0.5 down to 0).
     pct = int(Decimal(str(abs(delta))).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-    seen = f"the median of {baseline.sample_size} fares seen for this route"
+    # Fare history holds one traveller's fare per row, so `price_minor` must be per traveller too.
+    seen = f"the median of {baseline.sample_size} per-traveller fares seen for this route"
     # A verdict needs a real, visible difference from the median: sitting on a percentile that
     # ties with the median, or a difference that rounds to 0%, is just the typical price.
     if pct > 0 and price_minor <= baseline.p25_minor and price_minor < baseline.median_minor:

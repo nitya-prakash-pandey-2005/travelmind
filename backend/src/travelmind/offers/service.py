@@ -32,7 +32,7 @@ from travelmind.offers.carbon import TimClient
 from travelmind.offers.db_models import FlightSearchLog
 from travelmind.offers.fx import FxRates, display_currency_for, get_fx_rates
 from travelmind.offers.models import FlightOffer, FlightSearchRequest
-from travelmind.offers.money import Money
+from travelmind.offers.money import Money, per_traveller_minor
 from travelmind.offers.registry import flight_suppliers
 from travelmind.offers.schemas import (
     BaselineOut,
@@ -115,11 +115,36 @@ def _display(offer: FlightOffer, currency: str, fx: FxRates | None) -> Money | N
     return fx.convert(offer.total, currency) if fx else None
 
 
-def _view(offer: FlightOffer, shown: Money | None, insight: Insight | None) -> OfferView:
+def _per_traveller(
+    offer: FlightOffer, request: FlightSearchRequest, currency: str, family: Family
+) -> Money | None:
+    """One traveller's fare when the offer is comparable with fare history, else None.
+
+    Comparable means: an adults-only party (children pay less, so a share would understate the
+    adult fare), billed in the display currency (converted amounts move with the rate, not the
+    market) and from the baseline's family (sandbox and market fares are never mixed).
+    """
+    if (
+        request.children_ages
+        or offer.total.currency != currency
+        or offer.provenance not in PROVENANCES[family]
+    ):
+        return None
+    amount = per_traveller_minor(offer.total.amount_minor, offer.passenger_count)
+    return Money(amount_minor=amount, currency=currency)
+
+
+def _view(
+    offer: FlightOffer,
+    shown: Money | None,
+    insight: Insight | None,
+    per_traveller: Money | None = None,
+) -> OfferView:
     return OfferView.model_validate(
         offer.model_dump()
         | {
             "display_total": shown,
+            "per_traveller": per_traveller,
             "insight": InsightOut(
                 signal=insight.signal, delta_pct=insight.delta_pct, message=insight.message
             )
@@ -237,16 +262,16 @@ async def search_flights(
     views: list[OfferView] = []
     for offer in rank(offers, lambda o: _display(o, currency, fx)):
         shown = _display(offer, currency, fx)
+        share = _per_traveller(offer, request, currency, family)
         insight = (
-            assess(shown.amount_minor, baseline, days_out)
-            if baseline is not None
-            and shown is not None
-            and offer.provenance in PROVENANCES[family]
+            assess(share.amount_minor, baseline, days_out)
+            if baseline is not None and share is not None
             else None
         )
-        views.append(_view(offer, shown, insight))
+        views.append(_view(offer, shown, insight, share))
 
     if one_way:
+        # Only comparable offers, one traveller's fare each: the history stays like with like.
         observed = [
             FareSnapshot(
                 origin=request.origin,
@@ -256,13 +281,13 @@ async def search_flights(
                 cabin=request.cabin,
                 carrier=v.owner_carrier[:3],
                 stops=v.stops,
-                total_minor=v.display_total.amount_minor,
+                total_minor=v.per_traveller.amount_minor,
                 currency=currency,
                 provenance=v.provenance,
                 source=v.supplier[:30],
             )
             for v in views
-            if v.display_total is not None
+            if v.per_traveller is not None
         ]
         db.add_all(await new_observations(redis, observed))
     cheapest = next((v.display_total.amount_minor for v in views if v.display_total), None)

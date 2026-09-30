@@ -57,6 +57,11 @@ export type FlightOffer = {
   total_duration_minutes: number | null;
   /** The total in the agency's display currency; null when no exchange rate is available. */
   display_total: Money | null;
+  /**
+   * One traveller's fare in the display currency, set only when the offer is comparable with fare
+   * history (adults-only party, billed in the display currency, from the baseline's family).
+   */
+  per_traveller: Money | null;
   insight: Insight | null;
 };
 

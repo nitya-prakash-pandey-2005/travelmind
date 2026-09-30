@@ -123,7 +123,7 @@ test("every supplier's outcome is reported", async () => {
 });
 
 test("the price check compares the cheapest fare with the route's history", async () => {
-  const good = { ...indigo, insight: { signal: "good" as const, delta_pct: -19.2, message: "19% under the median of 24 fares seen for this route. Good time to book." } };
+  const good = { ...indigo, insight: { signal: "good" as const, delta_pct: -19.2, message: "19% under the median of 24 per-traveller fares seen for this route. Good time to book." } };
   await scanAndList({
     [SEARCH]: {
       status: 200,

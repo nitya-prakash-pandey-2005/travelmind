@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from travelmind.config import Settings
 from travelmind.offers.models import FlightOffer, FlightSearchRequest, Segment, Slice
-from travelmind.offers.money import Money, exponent
+from travelmind.offers.money import Money, exponent, per_traveller_minor
 
 
 def future(days: int) -> date:
@@ -25,6 +25,19 @@ def test_money_rounds_half_up_and_round_trips():
     assert Money.from_decimal("10.005", "USD").amount_minor == 1001
     assert Money(amount_minor=450050, currency="INR").to_decimal() == Decimal("4500.50")
     assert exponent("usd") == 2
+
+
+@pytest.mark.parametrize(
+    ("total", "travellers", "each"),
+    [(500000, 1, 500000), (600001, 2, 300001), (600003, 2, 300002), (100, 3, 33), (200, 3, 67)],
+)
+def test_per_traveller_share_rounds_half_up_to_a_minor_unit(total, travellers, each):
+    assert per_traveller_minor(total, travellers) == each
+
+
+def test_per_traveller_share_needs_a_traveller():
+    with pytest.raises(ValueError):
+        per_traveller_minor(1000, 0)
 
 
 def test_money_is_immutable_and_validates_currency():

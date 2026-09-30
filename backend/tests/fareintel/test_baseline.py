@@ -111,6 +111,10 @@ def test_assess_signals():
     )
     good = assess(3800, base, 30)
     assert good.signal == "good" and good.delta_pct == -24.0 and "Good time to book" in good.message
+    # Fare history is per traveller, and the message says so.
+    assert good.message == (
+        "24% under the median of 20 per-traveller fares seen for this route. Good time to book."
+    )
     assert assess(5100, base, 30).signal == "typical"
     high_far = assess(6500, base, 45)
     assert high_far.signal == "high" and "consider waiting" in high_far.message
