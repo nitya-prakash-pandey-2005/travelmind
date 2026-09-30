@@ -5,13 +5,14 @@ from tests.helpers import make_client, run_as_owner, signup
 from travelmind.config import Settings
 
 DAY = (datetime.now(UTC).date() + timedelta(days=30)).isoformat()
+# Agency details and sending quotes have no screen yet: listed as coming, without a link.
 ONBOARDING = [
-    ("profile", "Add your agency details", "/app/settings"),
-    ("supplier", "Connect a live supplier", "/app/suppliers"),
-    ("team", "Invite a teammate", "/app/team"),
-    ("fare_scan", "Run your first fare scan", "/app/fares"),
-    ("client", "Add a client", "/app"),
-    ("quote", "Send your first quote", "/app"),
+    ("profile", "Add your agency details", None, False),
+    ("supplier", "Connect a live supplier", "/app/suppliers", True),
+    ("team", "Invite a teammate", "/app/team", True),
+    ("fare_scan", "Run your first fare scan", "/app/fares", True),
+    ("client", "Add a client", "/app", True),
+    ("quote", "Send your first quote", None, False),
 ]
 
 
@@ -100,7 +101,7 @@ async def test_notifications_are_tenant_scoped(client, app):
 async def test_onboarding_progression(client, airports):
     me = (await signup(client)).json()
     body = (await client.get("/api/v1/onboarding")).json()
-    assert [(i["key"], i["label"], i["href"]) for i in body["items"]] == ONBOARDING
+    assert [(i["key"], i["label"], i["href"], i["available"]) for i in body["items"]] == ONBOARDING
     assert (body["completed"], body["total"]) == (0, 6)
     assert not any(i["done"] for i in body["items"])
 

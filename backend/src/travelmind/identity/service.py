@@ -30,6 +30,21 @@ class InvalidCredentials(Exception):
     pass
 
 
+DEMO_LOCKED_MESSAGE = "Demo workspaces can't invite people or change settings."
+
+
+class DemoWorkspaceLocked(Exception):
+    """A demo workspace is shared sample data: it can't invite people or change its settings."""
+
+
+async def ensure_not_demo(db: AsyncSession, agency_id: UUID) -> Agency:
+    """The agency, unless it is a demo workspace (then DemoWorkspaceLocked)."""
+    agency = await db.get_one(Agency, agency_id)
+    if agency.is_demo:
+        raise DemoWorkspaceLocked
+    return agency
+
+
 @dataclass(frozen=True)
 class SessionContext:
     user_agent: str | None
@@ -254,13 +269,14 @@ async def update_agency_profile(
     db: AsyncSession, agency_id: UUID, changes: dict[str, str]
 ) -> tuple[Agency, dict[str, str], dict[str, str]]:
     """Apply profile changes; returns the agency plus the (before, after) of what changed.
+    Raises DemoWorkspaceLocked for a demo workspace.
 
     `agencies` has no RLS, so `agency_id` must come from the authenticated user.
     """
     unknown = changes.keys() - AGENCY_PROFILE_FIELDS
     if unknown:
         raise ValueError(f"Not an agency profile field: {sorted(unknown)}")
-    agency = await db.get_one(Agency, agency_id)
+    agency = await ensure_not_demo(db, agency_id)
     before: dict[str, str] = {}
     after: dict[str, str] = {}
     for field, value in changes.items():

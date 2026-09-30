@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, onTestFinished, test, vi } from "vitest";
-import { AIRPORTS, ME_AGENT, ME_BETA, ME_OWNER } from "../../test/fixtures";
+import { AIRPORTS, ME_AGENT, ME_BETA, ME_DEMO, ME_OWNER } from "../../test/fixtures";
 import { mockApi } from "../../test/mockApi";
 import { renderApp, withSession } from "../../test/renderApp";
 import { routeStore } from "../route/routeStore";
@@ -82,6 +82,16 @@ test("agents see the roster but no invitation controls", async () => {
   await screen.findByRole("table", { name: "Crew members" });
   expect(screen.queryByLabelText("Crew member email")).not.toBeInTheDocument();
   expect(screen.getByText(/ask an agency owner or admin/i)).toBeInTheDocument();
+  expect(calls.some((c) => c.path === "/api/v1/invitations")).toBe(false);
+});
+
+test("a demo workspace shows the roster but can't invite anyone", async () => {
+  const { calls } = mockApi(withSession(ME_DEMO, { "GET /api/v1/team": { status: 200, body: TEAM } }));
+  renderApp("/app/team");
+  await screen.findByRole("table", { name: "Crew members" });
+  expect(screen.queryByLabelText("Crew member email")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Generate invitation" })).not.toBeInTheDocument();
+  expect(screen.getByText("Demo workspaces can't invite people. Start your own agency to build a crew.")).toBeInTheDocument();
   expect(calls.some((c) => c.path === "/api/v1/invitations")).toBe(false);
 });
 

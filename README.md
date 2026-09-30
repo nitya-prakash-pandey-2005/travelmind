@@ -26,16 +26,17 @@ With the API and the frontend running (see [Run locally](#run-locally)), open ht
 2. **Explore live demo** (`/demo`): one click builds a private demo agency with a small team, sample clients,
    enquiries and quotes, priced with real sandbox searches, then opens its Command Center. The workspace is
    labelled "Demo workspace" throughout and is deleted after 7 days; **Exit demo** in the banner signs out
-   and returns to the landing page. Each IP can start 5 demos an hour (`TM_DEMO_MAX_PER_IP`).
+   and returns to the landing page. A demo can't invite people or change agency settings. Each IP can
+   start 5 demos an hour (`TM_DEMO_MAX_PER_IP`).
 3. **Command Center** (`/app`): key figures for the last 7, 30 or 90 days (open enquiries, quotes sent, win
    rate, pipeline value, response time, CO₂ quoted, searches), the enquiry pipeline, activity trends, a
    route globe, a live activity feed, market pulse (routes with the biggest fare moves), supplier health,
    the team leaderboard and upcoming departures. **New enquiry** captures a trip request and can add the
    client on the spot. The top bar has the command palette (Ctrl+K), which also finds clients, enquiries
    and quotes, and notifications; the account menu switches theme and signs out.
-4. **Start free** (`/signup`): creates your own agency. The country (India, United Arab Emirates, United
-   Kingdom, United States or Singapore) sets its currency and time zone. A new agency starts empty with a
-   six-step setup checklist on the Command Center.
+4. **Start free** (`/signup`): creates your own agency. The country (India or the United States for now)
+   sets its currency and time zone. A new agency starts empty with a six-step setup checklist on the
+   Command Center (agency details and sending quotes are marked as coming in the next release).
 
 Fare scan, hotel scan, suppliers and the crew roster live under `/app/fares`, `/app/hotels`,
 `/app/suppliers` and `/app/team`; the old top-level addresses (`/fares`, …) redirect there.

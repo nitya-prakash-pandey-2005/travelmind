@@ -5,7 +5,7 @@ from typing import Annotated
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, StringConstraints
 
 from travelmind.audit.service import record_event
@@ -82,9 +82,14 @@ async def get_agency_route(current: AuthedUser, db: DbSession) -> AgencyProfile:
 async def update_agency_route(
     body: AgencyUpdate, current: ManagerUser, db: DbSession
 ) -> AgencyProfile:
-    agency, before, after = await identity_service.update_agency_profile(
-        db, current.agency_id, body.model_dump(exclude_none=True)
-    )
+    try:
+        agency, before, after = await identity_service.update_agency_profile(
+            db, current.agency_id, body.model_dump(exclude_none=True)
+        )
+    except identity_service.DemoWorkspaceLocked:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, identity_service.DEMO_LOCKED_MESSAGE
+        ) from None
     if after:
         await record_event(
             db,

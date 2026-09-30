@@ -1,4 +1,4 @@
-from tests.helpers import DEFAULT_PASSWORD, exec_as_tenant, make_client, signup
+from tests.helpers import DEFAULT_PASSWORD, exec_as_tenant, make_client, run_as_owner, signup
 
 INVITE = "/api/v1/invitations"
 ACCEPT = "/api/v1/invitations/accept"
@@ -104,3 +104,12 @@ async def test_pending_invitations_and_team_are_tenant_scoped(client, app):
     assert [i["email"] for i in listed] == ["b1@betatrips.com"]
     assert "token" not in listed[0]
     assert [m["email"] for m in team] == ["owner@betatrips.com"]
+
+
+async def test_demo_workspaces_cannot_invite(client):
+    agency = (await signup(client)).json()["agency"]["id"]
+    await run_as_owner("UPDATE agencies SET is_demo = true WHERE id = :id", {"id": agency})
+    r = await _invite(client)
+    assert r.status_code == 403
+    assert r.json() == {"detail": "Demo workspaces can't invite people or change settings."}
+    assert (await client.get(INVITE)).json() == []

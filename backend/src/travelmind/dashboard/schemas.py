@@ -143,7 +143,9 @@ class OnboardingItem(BaseModel):
     key: Literal["profile", "supplier", "team", "fare_scan", "client", "quote"]
     label: str
     done: bool
-    href: str
+    # False for a step whose screen isn't built yet (listed as coming, with no link).
+    available: bool
+    href: str | None
 
 
 class OnboardingOut(BaseModel):

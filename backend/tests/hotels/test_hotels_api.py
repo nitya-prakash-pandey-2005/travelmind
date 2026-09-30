@@ -224,15 +224,7 @@ async def test_guest_nationality_follows_agency_country(client, airports, monkey
     route = respx_mock.post(f"{LITEAPI_BASE_URL}/hotels/rates").mock(
         return_value=httpx.Response(200, json=FIXTURE)
     )
-    await client.post(
-        "/api/v1/auth/signup",
-        json={
-            "agency_name": "Gulf",
-            "full_name": "O",
-            "email": "o@gulf.ae",
-            "password": "correct-horse-battery",
-            "country_code": "AE",
-        },
-    )
+    await signup(client)
+    await client.patch("/api/v1/agency", json={"country_code": "AE"})
     await client.post(SEARCH, json=stay())
     assert json.loads(route.calls.last.request.content)["guestNationality"] == "AE"

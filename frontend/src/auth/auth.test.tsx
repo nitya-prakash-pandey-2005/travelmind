@@ -159,24 +159,21 @@ test("signup asks for the agency's country, India by default", async () => {
   expect(country).toHaveAccessibleDescription("Sets your currency and time zone.");
   expect(Array.from((country as HTMLSelectElement).options).map((o) => [o.value, o.text])).toEqual([
     ["IN", "India"],
-    ["AE", "United Arab Emirates"],
-    ["GB", "United Kingdom"],
     ["US", "United States"],
-    ["SG", "Singapore"],
   ]);
 });
 
-test("choosing United Arab Emirates sends country_code AE", async () => {
+test("choosing United States sends country_code US", async () => {
   const { calls } = mockApi(withSession(null, { "POST /api/v1/auth/signup": { status: 201, body: ME_OWNER } }));
   const { router, user } = renderApp("/signup");
   await user.type(await screen.findByLabelText("Agency name"), "Alpha Travels");
   await user.type(screen.getByLabelText("Your name"), "Asha Rao");
   await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
-  await user.selectOptions(screen.getByLabelText("Country"), "United Arab Emirates");
+  await user.selectOptions(screen.getByLabelText("Country"), "United States");
   await user.click(screen.getByRole("button", { name: "Create command deck" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
-  expect(calls.find((c) => c.path === "/api/v1/auth/signup")?.body).toMatchObject({ country_code: "AE" });
+  expect(calls.find((c) => c.path === "/api/v1/auth/signup")?.body).toMatchObject({ country_code: "US" });
 });
 
 test("a server error about the country is shown on the form", async () => {
@@ -186,7 +183,7 @@ test("a server error about the country is shown on the form", async () => {
         status: 422,
         body: {
           detail: "Some of the information you entered isn't valid.",
-          errors: [{ field: "country_code", message: "Input should be 'IN', 'AE', 'GB', 'US' or 'SG'" }],
+          errors: [{ field: "country_code", message: "String should match pattern '^[A-Z]{2}$'" }],
         },
       },
     }),
@@ -198,8 +195,20 @@ test("a server error about the country is shown on the form", async () => {
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Create command deck" }));
   expect(await screen.findByLabelText("Country")).toHaveAccessibleDescription(
-    "Input should be 'IN', 'AE', 'GB', 'US' or 'SG'",
+    "String should match pattern '^[A-Z]{2}$'",
   );
+});
+
+test("an unsupported country is explained on the form", async () => {
+  const message = "We support agencies in India and the United States for now.";
+  mockApi(withSession(null, { "POST /api/v1/auth/signup": { status: 422, body: { detail: message } } }));
+  const { user } = renderApp("/signup");
+  await user.type(await screen.findByLabelText("Agency name"), "Alpha Travels");
+  await user.type(screen.getByLabelText("Your name"), "Asha Rao");
+  await user.type(screen.getByLabelText("Email"), "asha@alphatravels.in");
+  await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
+  await user.click(screen.getByRole("button", { name: "Create command deck" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
 });
 
 test("signed-in users skip the login page", async () => {

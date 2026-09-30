@@ -762,13 +762,14 @@ _ONBOARDING = text(
     """
 )
 OnboardingKey = Literal["profile", "supplier", "team", "fare_scan", "client", "quote"]
-_STEPS: list[tuple[OnboardingKey, str, str]] = [
-    ("profile", "Add your agency details", "/app/settings"),
+# (key, label, link). No link: the step's screen isn't built yet, so it is listed as coming.
+_STEPS: list[tuple[OnboardingKey, str, str | None]] = [
+    ("profile", "Add your agency details", None),
     ("supplier", "Connect a live supplier", "/app/suppliers"),
     ("team", "Invite a teammate", "/app/team"),
     ("fare_scan", "Run your first fare scan", "/app/fares"),
     ("client", "Add a client", "/app"),
-    ("quote", "Send your first quote", "/app"),
+    ("quote", "Send your first quote", None),
 ]
 
 
@@ -786,7 +787,7 @@ async def onboarding(db: AsyncSession, agency: AgencySettings, settings: Setting
         "quote": row.quote,
     }
     items = [
-        OnboardingItem(key=key, label=label, done=done[key], href=href)
+        OnboardingItem(key=key, label=label, done=done[key], available=href is not None, href=href)
         for key, label, href in _STEPS
     ]
     return OnboardingOut(items=items, completed=sum(item.done for item in items), total=len(items))

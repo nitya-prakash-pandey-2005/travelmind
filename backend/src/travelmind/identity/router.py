@@ -31,6 +31,10 @@ from travelmind.identity.schemas import (
 
 auth_router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
+# Display currency only follows the agency for these markets so far.
+SIGNUP_COUNTRIES = frozenset({"IN", "US"})
+UNSUPPORTED_COUNTRY_MESSAGE = "We support agencies in India and the United States for now."
+
 
 def me_response(user: User, agency: Agency) -> MeResponse:
     return MeResponse(
@@ -55,6 +59,8 @@ async def signup_route(
     db: DbSession,
     redis: RedisClient,
 ) -> MeResponse:
+    if body.country_code not in SIGNUP_COUNTRIES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, UNSUPPORTED_COUNTRY_MESSAGE)
     settings = get_settings()
     signup_limiter = LoginRateLimiter(
         redis, settings.signup_max_per_ip, settings.signup_window_seconds
@@ -154,6 +160,8 @@ async def create_invitation_route(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "This person already has a TravelMind account."
         ) from None
+    except service.DemoWorkspaceLocked:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, service.DEMO_LOCKED_MESSAGE) from None
     return InvitationCreated(
         id=invitation.id,
         email=invitation.email,

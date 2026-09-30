@@ -211,6 +211,15 @@ test("the onboarding checklist tracks progress and can be dismissed per agency",
   expect(within(checklist).getByText("3 of 6 done")).toBeInTheDocument();
   expect(within(checklist).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "3");
   expect(within(checklist).getByRole("link", { name: /Run your first fare scan/ })).toHaveAttribute("href", "/app/fares");
+  expect(within(checklist).getByRole("button", { name: /Add a client/ })).toBeInTheDocument();
+  // Steps whose screens aren't built yet are listed, but lead nowhere.
+  for (const label of ["Add your agency details", "Send your first quote"]) {
+    expect(within(checklist).queryByRole("link", { name: new RegExp(label) })).not.toBeInTheDocument();
+    expect(within(checklist).queryByRole("button", { name: new RegExp(label) })).not.toBeInTheDocument();
+    const item = within(checklist).getByText(label).closest("li")!;
+    expect(within(item).getByText("Coming in the next release")).toBeInTheDocument();
+  }
+  expect(within(checklist).getAllByText("Coming in the next release")).toHaveLength(2);
 
   await user.click(within(checklist).getByRole("button", { name: "Dismiss checklist" }));
   expect(screen.queryByRole("region", { name: "Get set up" })).not.toBeInTheDocument();
@@ -231,12 +240,12 @@ test("a finished checklist is hidden", async () => {
         status: 200,
         body: {
           items: [
-            { key: "profile", label: "Add your agency details", done: true, href: "/app/settings" },
-            { key: "supplier", label: "Connect a live supplier", done: true, href: "/app/suppliers" },
-            { key: "team", label: "Invite a teammate", done: true, href: "/app/team" },
-            { key: "fare_scan", label: "Run your first fare scan", done: true, href: "/app/fares" },
-            { key: "client", label: "Add a client", done: true, href: "/app" },
-            { key: "quote", label: "Send your first quote", done: true, href: "/app" },
+            { key: "profile", label: "Add your agency details", done: true, available: false, href: null },
+            { key: "supplier", label: "Connect a live supplier", done: true, available: true, href: "/app/suppliers" },
+            { key: "team", label: "Invite a teammate", done: true, available: true, href: "/app/team" },
+            { key: "fare_scan", label: "Run your first fare scan", done: true, available: true, href: "/app/fares" },
+            { key: "client", label: "Add a client", done: true, available: true, href: "/app" },
+            { key: "quote", label: "Send your first quote", done: true, available: false, href: null },
           ],
           completed: 6,
           total: 6,

@@ -46,7 +46,11 @@ export function TeamPage() {
           </table>
         )}
       </Panel>
-      {isManager ? (
+      {me.agency.is_demo ? (
+        <Panel eyebrow="Invitations" title="Invites are off in the demo">
+          <p className="text-sm text-dim">Demo workspaces can't invite people. Start your own agency to build a crew.</p>
+        </Panel>
+      ) : isManager ? (
         <InvitePanel />
       ) : (
         <Panel eyebrow="Invitations" title="Need another seat?">

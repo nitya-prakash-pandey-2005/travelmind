@@ -4,6 +4,7 @@ import { ArrowRight, Circle, CircleCheck, X } from "lucide-react";
 import { useState } from "react";
 import { onboardingQueryOptions, type OnboardingItem } from "../../api/workspace";
 import { APP_HOME } from "../../app/paths";
+import { Badge } from "../../ui/Badge";
 import { Panel } from "../../ui/Panel";
 import { PanelSkeleton } from "../../ui/Skeleton";
 import { cn } from "../../ui/cn";
@@ -30,10 +31,9 @@ function saveDismissed(agencyId: string): void {
   }
 }
 
-const ITEM_CLASS = cn(
-  "group flex w-full items-center gap-2.5 rounded-sm border border-line/70 px-3 py-2 text-left text-sm",
-  "transition-colors duration-200 ease-tm hover:border-primary/60 hover:bg-hover",
-);
+const ITEM_BASE = "group flex w-full items-center gap-2.5 rounded-sm border border-line/70 px-3 py-2 text-left text-sm";
+const ITEM_CLASS = cn(ITEM_BASE, "transition-colors duration-200 ease-tm hover:border-primary/60 hover:bg-hover");
+const COMING_SOON = "Coming in the next release";
 
 function ItemBody({ item }: { item: OnboardingItem }) {
   const Icon = item.done ? CircleCheck : Circle;
@@ -44,7 +44,8 @@ function ItemBody({ item }: { item: OnboardingItem }) {
         {item.label}
       </span>
       <span className="sr-only">{item.done ? "(done)" : "(to do)"}</span>
-      {!item.done && (
+      {!item.available && <Badge>{COMING_SOON}</Badge>}
+      {item.available && !item.done && (
         <ArrowRight
           size={14}
           aria-hidden="true"
@@ -57,7 +58,8 @@ function ItemBody({ item }: { item: OnboardingItem }) {
 
 /**
  * First-week setup steps, shown until all are done or the agency dismisses it (remembered per agency on
- * this device). Steps that happen on this page (adding a client, a first quote) open the New enquiry dialog.
+ * this device). Steps that happen on this page (adding a client) open the New enquiry dialog; steps whose
+ * screens aren't built yet (`available: false`) are listed without a link.
  */
 export function OnboardingChecklist({ agencyId, onNewEnquiry }: { agencyId: string; onNewEnquiry: () => void }) {
   const [dismissed, setDismissed] = useState(() => readDismissed(agencyId));
@@ -116,7 +118,11 @@ export function OnboardingChecklist({ agencyId, onNewEnquiry }: { agencyId: stri
       <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => (
           <li key={item.key}>
-            {item.href === APP_HOME ? (
+            {!item.available || item.href === null ? (
+              <div className={ITEM_BASE}>
+                <ItemBody item={item} />
+              </div>
+            ) : item.href === APP_HOME ? (
               <button type="button" className={ITEM_CLASS} onClick={onNewEnquiry}>
                 <ItemBody item={item} />
               </button>

@@ -1,26 +1,48 @@
 import json
 
-from tests.helpers import exec_as_tenant, make_client, signup
+from tests.helpers import exec_as_tenant, make_client, run_as_owner, signup
+
+DEMO_LOCKED = "Demo workspaces can't invite people or change settings."
 
 
 async def test_signup_country_sets_currency_and_timezone(client):
     r = await client.post(
         "/api/v1/auth/signup",
         json={
-            "agency_name": "Gulf Trips",
-            "full_name": "Omar",
-            "email": "omar@gulf.ae",
+            "agency_name": "Liberty Trips",
+            "full_name": "Sam",
+            "email": "sam@liberty.us",
             "password": "correct-horse-battery",
-            "country_code": "ae",
+            "country_code": "us",
         },
     )
     agency = r.json()["agency"]
     assert (agency["country_code"], agency["currency"], agency["timezone"], agency["is_demo"]) == (
-        "AE",
-        "AED",
-        "Asia/Dubai",
+        "US",
+        "USD",
+        "America/New_York",
         False,
     )
+
+
+async def test_signup_is_limited_to_supported_countries(client):
+    for country in ("AE", "gb", "SG"):
+        r = await client.post(
+            "/api/v1/auth/signup",
+            json={
+                "agency_name": "Gulf Trips",
+                "full_name": "Omar",
+                "email": "omar@gulf.ae",
+                "password": "correct-horse-battery",
+                "country_code": country,
+            },
+        )
+        assert r.status_code == 422
+        assert r.json()["detail"] == "We support agencies in India and the United States for now."
+    # The profile can still name any country (an agency set up before signup was limited).
+    await signup(client)
+    r = await client.patch("/api/v1/agency", json={"country_code": "AE"})
+    assert r.status_code == 200 and r.json()["country_code"] == "AE"
 
 
 async def test_signup_defaults_to_india(client):
@@ -108,3 +130,16 @@ async def test_signup_rejects_a_bad_country(client):
         },
     )
     assert r.status_code == 422
+
+
+async def test_demo_workspace_settings_are_locked(client):
+    agency = (await signup(client)).json()["agency"]["id"]
+    await run_as_owner("UPDATE agencies SET is_demo = true WHERE id = :id", {"id": agency})
+    r = await client.patch("/api/v1/agency", json={"name": "Renamed"})
+    assert r.status_code == 403 and r.json()["detail"] == DEMO_LOCKED
+    body = (await client.get("/api/v1/agency")).json()
+    assert body["name"] == "Alpha Travels"
+    rows = await exec_as_tenant(
+        agency, "SELECT count(*) FROM audit_log WHERE action = 'agency.updated'"
+    )
+    assert rows == [(0,)]

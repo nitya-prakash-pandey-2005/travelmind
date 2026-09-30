@@ -49,13 +49,14 @@ const POPULATED_KPIS: Record<KpiKey, { value: number; previous: number | null; d
   searches: { value: 146, previous: 120, daily: (i) => 3 + (i % 5) },
 };
 
+/** Agency details and sending quotes have no screen yet: the API lists them as coming, without a link. */
 const ONBOARDING_ITEMS = [
-  { key: "profile", label: "Add your agency details", href: "/app/settings" },
-  { key: "supplier", label: "Connect a live supplier", href: "/app/suppliers" },
-  { key: "team", label: "Invite a teammate", href: "/app/team" },
-  { key: "fare_scan", label: "Run your first fare scan", href: "/app/fares" },
-  { key: "client", label: "Add a client", href: "/app" },
-  { key: "quote", label: "Send your first quote", href: "/app" },
+  { key: "profile", label: "Add your agency details", available: false, href: null },
+  { key: "supplier", label: "Connect a live supplier", available: true, href: "/app/suppliers" },
+  { key: "team", label: "Invite a teammate", available: true, href: "/app/team" },
+  { key: "fare_scan", label: "Run your first fare scan", available: true, href: "/app/fares" },
+  { key: "client", label: "Add a client", available: true, href: "/app" },
+  { key: "quote", label: "Send your first quote", available: false, href: null },
 ] as const;
 
 const ASHA = { id: "u-owner", full_name: "Asha Rao" };

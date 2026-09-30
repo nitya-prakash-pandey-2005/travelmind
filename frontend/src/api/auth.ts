@@ -2,13 +2,13 @@ import { ApiError, apiFetch } from "./client";
 import type { Me } from "./types";
 
 export type LoginInput = { email: string; password: string };
-/** Countries an agency can sign up from; the country sets its currency and time zone. */
+/**
+ * Countries an agency can sign up from; the country sets its currency and time zone. Limited to the
+ * markets whose display currency follows the agency (the server refuses the rest).
+ */
 export const SIGNUP_COUNTRIES = [
   { code: "IN", name: "India" },
-  { code: "AE", name: "United Arab Emirates" },
-  { code: "GB", name: "United Kingdom" },
   { code: "US", name: "United States" },
-  { code: "SG", name: "Singapore" },
 ] as const;
 export type SignupCountryCode = (typeof SIGNUP_COUNTRIES)[number]["code"];
 

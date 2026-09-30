@@ -37,7 +37,14 @@ export type QuoteHit = { id: string; number: string; status: string; client_name
 export type SearchResponse = { clients: ClientHit[]; enquiries: EnquiryHit[]; quotes: QuoteHit[] };
 
 export type OnboardingKey = "profile" | "supplier" | "team" | "fare_scan" | "client" | "quote";
-export type OnboardingItem = { key: OnboardingKey; label: string; done: boolean; href: string };
+/** `available` is false (and `href` null) for a step whose screen isn't built yet. */
+export type OnboardingItem = {
+  key: OnboardingKey;
+  label: string;
+  done: boolean;
+  available: boolean;
+  href: string | null;
+};
 export type OnboardingResponse = { items: OnboardingItem[]; completed: number; total: number };
 
 /** The server rejects shorter terms (after trimming). */
