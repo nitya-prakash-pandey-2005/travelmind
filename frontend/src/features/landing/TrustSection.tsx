@@ -1,4 +1,6 @@
 import { DatabaseZap, LockKeyhole, ScrollText, Tags, UsersRound, type LucideIcon } from "lucide-react";
+import { cn } from "../../ui/cn";
+import { ANCHOR, CONTAINER, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
 
 type Control = { icon: LucideIcon; title: string; body: string };
 
@@ -7,7 +9,7 @@ const CONTROLS: Control[] = [
   {
     icon: DatabaseZap,
     title: "Each agency's data kept apart",
-    body: "Workspace data sits behind PostgreSQL row-level security. Queries only see the signed-in agency's rows, enforced by the database, not by application code alone.",
+    body: "Workspace tables sit behind PostgreSQL row-level security, so queries only see the signed-in agency's rows.",
   },
   {
     icon: UsersRound,
@@ -27,36 +29,71 @@ const CONTROLS: Control[] = [
   {
     icon: Tags,
     title: "Provenance on every price",
-    body: "Live, Cached and Sandbox labels follow a price everywhere it appears, and demo workspaces are marked as demos on every screen.",
+    body: "Live, Cached and Sandbox labels follow a price everywhere, and demo workspaces are marked on every screen.",
   },
 ];
 
+/** The policy exactly as backend/db.tenant_rls_statements writes it, shown for one of the tables it guards. */
+const POLICY = [
+  { text: "ALTER TABLE enquiries FORCE ROW LEVEL SECURITY;", tone: "text-dim" },
+  { text: "", tone: "" },
+  { text: "CREATE POLICY tenant_isolation ON enquiries", tone: "text-ink" },
+  { text: "  USING (agency_id = NULLIF(", tone: "text-ink" },
+  {
+    text: "    current_setting('app.agency_id', true), ''",
+    tone: "text-primary",
+  },
+  { text: "  )::uuid);", tone: "text-ink" },
+];
+
+function PolicyCard() {
+  return (
+    <figure className="mt-8 min-w-0 overflow-hidden rounded-lg border border-line bg-bg">
+      <div className="flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-2.5">
+        <span className="text-[13px] font-medium text-ink">Tenant isolation policy</span>
+        <span className="font-mono text-[11px] text-faint">PostgreSQL</span>
+      </div>
+      <pre className="overflow-x-auto px-4 py-4 font-mono text-[12px] leading-5">
+        {POLICY.map((line, index) => (
+          <span key={index} className={cn("block", line.tone)}>
+            {line.text || " "}
+          </span>
+        ))}
+      </pre>
+      <figcaption className="border-t border-line px-4 py-2.5 text-xs text-faint">
+        Applied to every workspace table: clients, enquiries, quotes, activity and searches.
+      </figcaption>
+    </figure>
+  );
+}
+
 export function TrustSection() {
   return (
-    <section id="security" aria-labelledby="security-title" className="scroll-mt-20 border-t border-line">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] lg:gap-16 lg:py-24">
-        <div className="max-w-md">
-          <h2 id="security-title" className="text-[28px] font-semibold leading-tight tracking-[-0.015em] text-ink sm:text-[32px]">
+    <section id="security" aria-labelledby="security-title" className={ANCHOR}>
+      <div className={cn(CONTAINER, SECTION_Y, "grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-16")}>
+        <div className="min-w-0">
+          <h2 id="security-title" className={SECTION_TITLE}>
             Security and data handling
           </h2>
-          <p className="mt-3 text-base leading-7 text-dim">
-            Your clients' trips and your margins stay inside your workspace. These controls are enforced by the
-            platform, not by policy documents.
+          <p className={SECTION_LEAD}>
+            Your clients' trips and your margins stay inside your workspace. These controls are enforced by the platform, not by policy
+            documents.
           </p>
+          <PolicyCard />
         </div>
-        <ul className="flex flex-col divide-y divide-line border-y border-line">
-          {CONTROLS.map(({ icon: Icon, title, body }) => (
-            <li key={title} className="grid grid-cols-[2rem_minmax(0,1fr)] gap-4 py-5">
-              <span
-                aria-hidden="true"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line-strong bg-surface text-dim"
-              >
-                <Icon size={16} strokeWidth={1.75} />
-              </span>
-              <div>
+        <ul className="grid content-start gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2">
+          {CONTROLS.map(({ icon: Icon, title, body }, index) => (
+            <li key={title} className={cn("flex flex-col bg-bg p-5", index === 0 && "sm:col-span-2")}>
+              <span className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line-strong bg-surface text-primary"
+                >
+                  <Icon size={16} strokeWidth={1.75} />
+                </span>
                 <h3 className="text-[15px] font-semibold text-ink">{title}</h3>
-                <p className="mt-1 text-sm leading-6 text-dim">{body}</p>
-              </div>
+              </span>
+              <p className="mt-2.5 text-[13px] leading-5 text-dim">{body}</p>
             </li>
           ))}
         </ul>

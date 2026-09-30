@@ -1,39 +1,48 @@
 import { Link } from "@tanstack/react-router";
 import { useDocumentTitle } from "../../lib/useDocumentTitle";
+import { cn } from "../../ui/cn";
 import { ThemeToggle } from "../../ui/ThemeToggle";
-import { ConsolePreview } from "./ConsolePreview";
+import { ClosingCall } from "./ClosingCall";
 import { CtaLink } from "./CtaLink";
+import { Faq } from "./Faq";
 import { FeatureGrid } from "./FeatureGrid";
 import { Hero } from "./Hero";
 import { HowItWorks } from "./HowItWorks";
+import { IntegrationsStrip } from "./IntegrationsStrip";
+import { CONTAINER } from "./layout";
 import { LandingFooter } from "./LandingFooter";
 import { PlatformFacts } from "./PlatformFacts";
+import { ProductTour } from "./ProductTour";
 import { TrustSection } from "./TrustSection";
 import { Wordmark } from "./Wordmark";
 
-const CREATE_CONTEXT = " for your agency";
-const NAV_LINK = "hidden rounded-sm text-[13px] text-dim transition-colors duration-150 ease-tm hover:text-ink md:inline";
+const NAV_LINK = "hidden rounded-sm text-[13px] text-dim transition-colors duration-150 ease-tm hover:text-ink lg:inline";
+
+const SECTIONS = [
+  { href: "#product", label: "Product" },
+  { href: "#features", label: "Features" },
+  { href: "#how-it-works", label: "How it works" },
+  { href: "#security", label: "Security" },
+  { href: "#faq", label: "FAQ" },
+];
 
 function TopNav() {
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
-      <nav aria-label="Main" className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:gap-6 sm:px-6">
+      <nav aria-label="Main" className={cn(CONTAINER, "flex h-14 items-center gap-3 sm:gap-6")}>
         <Link to="/" className="mr-auto rounded-sm">
           <Wordmark />
         </Link>
-        <a href="#features" className={NAV_LINK}>
-          Features
-        </a>
-        <a href="#how-it-works" className={NAV_LINK}>
-          How it works
-        </a>
-        <a href="#security" className={NAV_LINK}>
-          Security
-        </a>
+        {SECTIONS.map((section) => (
+          <a key={section.href} href={section.href} className={NAV_LINK}>
+            {section.label}
+          </a>
+        ))}
+        <span aria-hidden="true" className="hidden h-4 w-px bg-line lg:block" />
         <Link to="/login" className="rounded-sm text-[13px] text-dim transition-colors duration-150 ease-tm hover:text-ink">
           Sign in
         </Link>
-        <CtaLink to="/signup" size="sm" context={CREATE_CONTEXT}>
+        <CtaLink to="/signup" size="sm" context=" for your agency">
           Create workspace
         </CtaLink>
         <span className="hidden sm:inline-flex">
@@ -44,57 +53,7 @@ function TopNav() {
   );
 }
 
-function ProductPreview() {
-  return (
-    <section aria-labelledby="preview-title" className="relative isolate">
-      <div className="mx-auto max-w-6xl px-4 pt-20 sm:px-6 lg:pt-24">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
-          <h2 id="preview-title" className="max-w-lg text-[28px] font-semibold leading-tight tracking-[-0.015em] text-ink sm:text-[32px]">
-            Search once, compare every supplier
-          </h2>
-          <p className="max-w-lg text-base leading-7 text-dim">
-            Results from each connected supplier land in one table, with the source, the emissions and a verdict on the
-            price beside every fare.
-          </p>
-        </div>
-        <div className="mt-10">
-          <ConsolePreview caption="Illustration of fare search with sample data. Airlines, times, prices and latencies are examples, not live results." />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ClosingCall() {
-  return (
-    <section aria-labelledby="closing-title" className="border-t border-line">
-      <div className="relative isolate mx-auto max-w-6xl overflow-hidden px-4 py-20 sm:px-6 lg:py-24">
-        <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-10" />
-        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-xl">
-            <h2 id="closing-title" className="text-[28px] font-semibold leading-tight tracking-[-0.015em] text-ink sm:text-[32px]">
-              See it with sample data first
-            </h2>
-            <p className="mt-3 text-base leading-7 text-dim">
-              The demo opens a private workspace with sample clients and enquiries, priced by real sandbox searches and
-              labelled as demo data throughout. It is deleted after 7 days.
-            </p>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <CtaLink to="/demo" size="lg" context=": no sign-up needed">
-              Open demo workspace
-            </CtaLink>
-            <CtaLink to="/signup" size="lg" variant="secondary" context={CREATE_CONTEXT}>
-              Create workspace
-            </CtaLink>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/** The public front door: the pitch, live platform facts, the product, and two ways in (demo or sign-up). */
+/** The public front door: the pitch with the product beside it, what it connects to, a tour, and two ways in. */
 export function LandingPage() {
   useDocumentTitle("TravelMind — Operations console for travel agencies");
   return (
@@ -108,11 +67,13 @@ export function LandingPage() {
       <TopNav />
       <main id="main" tabIndex={-1} className="outline-none">
         <Hero />
+        <IntegrationsStrip />
+        <ProductTour />
         <PlatformFacts />
-        <ProductPreview />
         <FeatureGrid />
         <HowItWorks />
         <TrustSection />
+        <Faq />
         <ClosingCall />
       </main>
       <LandingFooter />

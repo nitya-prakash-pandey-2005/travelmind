@@ -1,33 +1,50 @@
-import { Gauge, SquareKanban, Leaf, Radar, ReceiptText, Tags, type LucideIcon } from "lucide-react";
+import { BedDouble, Command, Gauge, Leaf, Radar, ReceiptText, SquareKanban, Tags, type LucideIcon } from "lucide-react";
 import { Badge } from "../../ui/Badge";
+import { cn } from "../../ui/cn";
+import { ANCHOR, CONTAINER, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
 
-type Feature = { icon: LucideIcon; title: string; body: string; comingSoon?: boolean };
+type Feature = {
+  icon: LucideIcon;
+  title: string;
+  body: string;
+  comingSoon?: boolean;
+};
 
 const FEATURES: Feature[] = [
   {
     icon: Radar,
     title: "Every supplier in one search",
-    body: "One search goes to every connected airline and hotel supplier. Each supplier's status and response time sit beside the results.",
+    body: "One search reaches every connected airline and hotel supplier, with each one's status and response time.",
   },
   {
     icon: Tags,
     title: "Prices labelled by source",
-    body: "Every price is marked Live, Cached or Sandbox, and converted amounts carry ≈, so nobody quotes an estimate as a firm fare.",
+    body: "Live, Cached or Sandbox on every price, and ≈ on converted amounts, so estimates never pass as firm fares.",
   },
   {
     icon: Gauge,
     title: "Fare insight",
-    body: "See whether a fare is good, typical or high for its route, per traveller, measured against the fares the platform has recorded.",
+    body: "Whether a fare is good, typical or high for its route, per traveller, against the fares recorded for it.",
   },
   {
     icon: Leaf,
     title: "CO₂ per passenger",
-    body: "Emissions estimates from Google's Travel Impact Model, shown per passenger next to the fare.",
+    body: "Emissions estimates from Google's Travel Impact Model, shown next to each fare.",
+  },
+  {
+    icon: BedDouble,
+    title: "Hotel search",
+    body: "Hotel rates by city and dates, with star rating, cancellation terms and the same source labels.",
   },
   {
     icon: SquareKanban,
     title: "One pipeline for enquiries",
-    body: "Every enquiry moves from new through quoting to won or lost, with its client, route, dates and assignee attached.",
+    body: "Every enquiry moves from new through quoting to won or lost, with its client, route and assignee.",
+  },
+  {
+    icon: Command,
+    title: "Search from anywhere",
+    body: "Press Ctrl K to open a client or enquiry, or jump to any page, without leaving the keyboard.",
   },
   {
     icon: ReceiptText,
@@ -39,22 +56,22 @@ const FEATURES: Feature[] = [
 
 export function FeatureGrid() {
   return (
-    <section id="features" aria-labelledby="features-title" className="scroll-mt-20">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:py-24">
-        <div className="max-w-2xl">
-          <h2 id="features-title" className="text-[28px] font-semibold leading-tight tracking-[-0.015em] text-ink sm:text-[32px]">
+    <section id="features" aria-labelledby="features-title" className={ANCHOR}>
+      <div className={cn(CONTAINER, SECTION_Y)}>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
+          <h2 id="features-title" className={SECTION_TITLE}>
             Features
           </h2>
-          <p className="mt-3 text-base leading-7 text-dim">
-            Search, pricing context and the enquiry pipeline in one workspace, so agents stop switching between
-            supplier tabs and spreadsheets.
+          <p className={cn(SECTION_LEAD, "lg:mt-0")}>
+            Search, pricing context and the enquiry pipeline in one workspace, so agents stop switching between supplier tabs and
+            spreadsheets.
           </p>
         </div>
-        <ul className="mt-10 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-10 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
           {FEATURES.map(({ icon: Icon, title, body, comingSoon }) => (
             <li key={title} className="flex bg-bg">
-              <article className="flex w-full flex-col p-6">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+              <article className="flex w-full flex-col p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span
                     aria-hidden="true"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line-strong bg-surface text-primary"
@@ -63,8 +80,8 @@ export function FeatureGrid() {
                   </span>
                   {comingSoon && <Badge tone="info">Coming in the next release</Badge>}
                 </div>
-                <h3 className="mt-5 text-[15px] font-semibold text-ink">{title}</h3>
-                <p className="mt-2 text-sm leading-6 text-dim">{body}</p>
+                <h3 className="mt-4 text-[15px] font-semibold text-ink">{title}</h3>
+                <p className="mt-1.5 text-[13px] leading-5 text-dim">{body}</p>
               </article>
             </li>
           ))}
