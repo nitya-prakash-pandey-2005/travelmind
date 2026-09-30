@@ -1,4 +1,4 @@
-import { ChartDataTable, ChartEmpty, GRID, chartColor, percent, useChartAnimation } from "./shared";
+import { ChartDataTable, ChartEmpty, GRID, chartColor, formatValue, isValue, percent, useChartAnimation } from "./shared";
 
 export type BarItem = { label: string; value: number; hint?: string };
 
@@ -24,8 +24,8 @@ export function BarList({
   const animate = useChartAnimation();
   if (items.length === 0) return <ChartEmpty label={label} height={96} />;
 
-  const top = max ?? Math.max(0, ...items.map((item) => item.value));
-  const listed = items.slice(0, SUMMARY_ITEMS).map((item) => `${item.label} ${valueFormat(item.value)}`);
+  const top = max ?? Math.max(0, ...items.map((item) => item.value).filter(isValue));
+  const listed = items.slice(0, SUMMARY_ITEMS).map((item) => `${item.label} ${formatValue(item.value, valueFormat)}`);
   const more = items.length > SUMMARY_ITEMS ? `, and ${items.length - SUMMARY_ITEMS} more` : "";
 
   return (
@@ -43,19 +43,20 @@ export function BarList({
                 <rect width="100%" height={BAR} rx={RADIUS} fill={GRID} />
                 {width !== "0%" && (
                   <g
-                    fill={chartColor(1)}
                     data-animate={animate ? "" : undefined}
                     className={animate ? "tm-grow-x" : undefined}
                     style={animate ? { animationDelay: `${i * 50}ms` } : undefined}
                   >
-                    <rect data-bar="" width={width} height={BAR} rx={RADIUS} />
-                    {/* Squares off the baseline end so only the data end is rounded. */}
-                    <rect width={RADIUS} height={BAR} />
+                    {/* The bar's own viewport clips a longer rounded rect that starts off to the left:
+                        the baseline end is square, the data end rounded, and nothing draws past the value. */}
+                    <svg data-bar="" width={width} height={BAR} overflow="hidden">
+                      <rect x="-50%" width="150%" height={BAR} rx={RADIUS} fill={chartColor(1)} />
+                    </svg>
                   </g>
                 )}
               </svg>
               <span data-value="" className="text-right font-mono text-sm tabular-nums text-ink">
-                {valueFormat(item.value)}
+                {formatValue(item.value, valueFormat)}
               </span>
             </div>
           );
@@ -64,7 +65,7 @@ export function BarList({
       <ChartDataTable
         caption={`${label} data`}
         headers={["Item", "Value"]}
-        rows={items.map((item) => [item.hint ? `${item.label} (${item.hint})` : item.label, valueFormat(item.value)])}
+        rows={items.map((item) => [item.hint ? `${item.label} (${item.hint})` : item.label, formatValue(item.value, valueFormat)])}
       />
     </div>
   );

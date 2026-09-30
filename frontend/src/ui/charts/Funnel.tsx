@@ -1,7 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import { Fragment } from "react";
 import { formatNumber } from "../../lib/format";
-import { ChartDataTable, ChartEmpty, GRID, chartColor, useChartAnimation } from "./shared";
+import { ChartDataTable, ChartEmpty, GRID, chartColor, formatValue, isValue, useChartAnimation } from "./shared";
 
 export type FunnelStage = { label: string; count: number; value?: number };
 
@@ -10,7 +10,9 @@ const GRID_COLS = "grid grid-cols-[minmax(0,1.3fr)_minmax(0,3fr)_minmax(4.5rem,a
 
 /** Step-to-step conversion: round(next / prev × 100) %, or "—" when the previous stage is empty. */
 function conversion(prev: FunnelStage | undefined, next: FunnelStage): string {
-  return prev && prev.count > 0 ? `${Math.round((next.count / prev.count) * 100)}%` : "—";
+  return prev && isValue(prev.count) && prev.count > 0 && isValue(next.count)
+    ? `${Math.round((next.count / prev.count) * 100)}%`
+    : "—";
 }
 
 /** Pipeline stages as centred bars narrowing by count, with the conversion between each pair of steps. */
@@ -26,12 +28,12 @@ export function Funnel({
   const animate = useChartAnimation();
   if (stages.length === 0) return <ChartEmpty label={label} height={120} />;
 
-  const top = Math.max(0, ...stages.map((s) => s.count));
+  const top = Math.max(0, ...stages.map((s) => s.count).filter(isValue));
   const hasValue = stages.some((s) => s.value !== undefined);
   const steps = stages.map((stage, i) => ({ stage, prev: i > 0 ? stages[i - 1] : undefined }));
   const summary = steps
     .map(({ stage, prev }) => {
-      const base = `${stage.label} ${formatNumber(stage.count)}`;
+      const base = `${stage.label} ${formatValue(stage.count, formatNumber)}`;
       return prev && prev.count > 0 ? `${base} (${conversion(prev, stage)} of ${prev.label})` : base;
     })
     .join(", ");
@@ -41,7 +43,8 @@ export function Funnel({
       <div role="img" aria-label={`${label}: ${summary}`} className="flex flex-col">
         {steps.map(({ stage, prev }, i) => {
           // Non-empty stages keep a sliver so they never vanish next to a large first step.
-          const pct = top > 0 ? Math.max((stage.count / top) * 100, stage.count > 0 ? 1.5 : 0) : 0;
+          const count = isValue(stage.count) ? stage.count : 0;
+          const pct = top > 0 ? Math.max((count / top) * 100, count > 0 ? 1.5 : 0) : 0;
           const width = Math.round(pct * 100) / 100;
           return (
             <Fragment key={`${stage.label}-${i}`}>
@@ -76,11 +79,11 @@ export function Funnel({
                 </svg>
                 <span className="flex flex-col items-end">
                   <span data-count="" className="font-mono text-sm tabular-nums text-ink">
-                    {formatNumber(stage.count)}
+                    {formatValue(stage.count, formatNumber)}
                   </span>
                   {stage.value !== undefined && (
                     <span data-value="" className="font-mono text-[11px] tabular-nums text-dim">
-                      {valueFormat(stage.value)}
+                      {formatValue(stage.value, valueFormat)}
                     </span>
                   )}
                 </span>
@@ -94,8 +97,8 @@ export function Funnel({
         headers={["Stage", "Count", ...(hasValue ? ["Value"] : []), "Conversion"]}
         rows={steps.map(({ stage, prev }) => [
           stage.label,
-          formatNumber(stage.count),
-          ...(hasValue ? [stage.value === undefined ? "—" : valueFormat(stage.value)] : []),
+          formatValue(stage.count, formatNumber),
+          ...(hasValue ? [formatValue(stage.value, valueFormat)] : []),
           prev && prev.count > 0 ? `${conversion(prev, stage)} from ${prev.label}` : "—",
         ])}
       />

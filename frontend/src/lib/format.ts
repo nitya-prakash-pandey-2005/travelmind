@@ -17,9 +17,11 @@ export function formatDate(iso: string): string {
   return DATE.format(new Date(iso));
 }
 
-/** Compact axis/tooltip date, e.g. "12 Sep". Accepts a date ("2026-09-12") or a full ISO timestamp. */
+/** Compact axis/tooltip date, e.g. "12 Sep". Accepts a date ("2026-09-12") or a full ISO timestamp; "—" if invalid. */
 export function formatDayMonth(iso: string): string {
-  const parts = DAY_MONTH.formatToParts(new Date(iso));
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  const parts = DAY_MONTH.formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
   return `${part("day")} ${part("month")}`;
 }

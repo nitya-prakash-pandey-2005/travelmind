@@ -7,6 +7,11 @@ export type KpiDelta = { pct: number | null; direction: "up" | "down" | "flat"; 
 
 const ARROW = { up: ArrowUpRight, down: ArrowDownRight, flat: ArrowRight };
 
+/** A non-finite change (NaN, ±Infinity from a zero base) reads as "no comparison". */
+function normalise(delta: KpiDelta): KpiDelta {
+  return delta.pct !== null && !Number.isFinite(delta.pct) ? { ...delta, pct: null } : delta;
+}
+
 function deltaTone(delta: KpiDelta): string {
   if (delta.pct === null || delta.direction === "flat") return "text-dim";
   return delta.good ? "text-ok" : "text-danger";
@@ -18,7 +23,8 @@ function deltaPhrase(delta: KpiDelta): string {
   return `${delta.direction} ${Math.round(Math.abs(delta.pct))}%`;
 }
 
-function DeltaChip({ delta }: { delta: KpiDelta }) {
+function DeltaChip({ delta: raw }: { delta: KpiDelta }) {
+  const delta = normalise(raw);
   const Arrow = ARROW[delta.direction];
   return (
     <span
@@ -56,7 +62,7 @@ export function KpiTile({
   hint?: string;
 }) {
   const summary =
-    loading || !value ? label : `${label}: ${value}${unit ? ` ${unit}` : ""}${delta ? `, ${deltaPhrase(delta)}` : ""}`;
+    loading || !value ? label : `${label}: ${value}${unit ? ` ${unit}` : ""}${delta ? `, ${deltaPhrase(normalise(delta))}` : ""}`;
   return (
     <div
       role="group"

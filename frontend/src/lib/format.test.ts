@@ -20,4 +20,6 @@ test("formatDate is short and unambiguous", () => {
 test("formatDayMonth is a compact axis date", () => {
   expect(formatDayMonth("2026-09-12")).toBe("12 Sep");
   expect(formatDayMonth("2026-09-01T23:30:00Z")).toBe("1 Sep");
+  expect(formatDayMonth("not a date")).toBe("—");
+  expect(formatDayMonth("")).toBe("—");
 });

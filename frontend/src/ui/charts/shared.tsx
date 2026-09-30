@@ -15,6 +15,16 @@ export const SURFACE = "var(--color-deck)";
 /** Charts measure their container; before the first measurement (and in tests) they draw at this width. */
 export const FALLBACK_WIDTH = 640;
 
+/** True for a plottable number: not null, undefined, NaN or ±Infinity. */
+export function isValue(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/** Formats a plottable number, or "—" for a gap (null, undefined, NaN, ±Infinity). */
+export function formatValue(value: number | null | undefined, format: (value: number) => string): string {
+  return isValue(value) ? format(value) : "—";
+}
+
 /** Entrance animation is on unless the user prefers reduced motion. */
 export function useChartAnimation(): boolean {
   return !useReducedMotion();
@@ -22,7 +32,7 @@ export function useChartAnimation(): boolean {
 
 /** Percentage for SVG geometry, clamped to 0–100 and trimmed to 2 decimals. */
 export function percent(value: number, max: number): string {
-  if (!(max > 0) || !Number.isFinite(value)) return "0%";
+  if (!(max > 0) || !Number.isFinite(max) || !Number.isFinite(value)) return "0%";
   const pct = Math.min(100, Math.max(0, (value / max) * 100));
   return `${Math.round(pct * 100) / 100}%`;
 }

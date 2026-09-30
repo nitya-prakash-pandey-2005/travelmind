@@ -1,7 +1,9 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { AreaTrend, BarList, Donut, Funnel, KpiTile, LatencyBand, Sparkline } from "./index";
+
+afterEach(() => vi.unstubAllGlobals());
 
 test("area trend exposes data to assistive tech and keyboard", async () => {
   const user = userEvent.setup();
@@ -195,4 +197,91 @@ test("entrance animation is skipped under reduced motion", () => {
   vi.stubGlobal("matchMedia", reduce);
   const reduced = render(<AreaTrend label="Anim" valueFormat={String} series={TWO_SERIES} />);
   expect(reduced.container.querySelectorAll("[data-animate]")).toHaveLength(0);
+});
+
+// ── Gaps and bad numbers (fix round 1) ──────────────────────────────────────
+
+test("area trend shows null and NaN values as dashes and plots only finite points", async () => {
+  const user = userEvent.setup();
+  const { container } = render(
+    <AreaTrend
+      label="Gappy"
+      valueFormat={(v) => `${v} x`}
+      series={[
+        { key: "a", label: "Alpha", color: 1, points: [{ date: "2026-09-01", value: null }, { date: "2026-09-02", value: 4 }, { date: "2026-09-03", value: Number.NaN }] },
+        { key: "b", label: "Beta", color: 2, points: [{ date: "2026-09-01", value: Number.NaN }, { date: "2026-09-02", value: null }] },
+      ]}
+    />,
+  );
+  const table = screen.getByRole("table", { name: "Gappy data" });
+  expect(within(within(table).getByRole("row", { name: /^1 Sep/ })).getAllByRole("cell").map((td) => td.textContent)).toEqual(["—", "—"]);
+  expect(within(within(table).getByRole("row", { name: /^2 Sep/ })).getAllByRole("cell").map((td) => td.textContent)).toEqual(["4 x", "—"]);
+  const chart = screen.getByRole("img", { name: /Gappy/ });
+  expect(chart.getAttribute("aria-label")).toMatch(/Alpha latest —, peak 4 x; Beta no data/);
+  await user.tab();
+  expect(screen.getByRole("tooltip")).toHaveTextContent(/Alpha\s*—.*Beta\s*—/);
+  expect(container.querySelector("[data-line]")).toHaveAttribute("d", expect.stringMatching(/^M[\d.]+ [\d.]+$/));
+  expect(container.innerHTML).not.toMatch(/null|NaN|Infinity|undefined/);
+});
+
+test("area trend clamps negative values to the baseline", () => {
+  const height = 180;
+  const { container } = render(
+    <AreaTrend label="Neg" height={height} valueFormat={String} series={[{ key: "a", label: "A", color: 1, points: [{ date: "2026-09-01", value: -5 }, { date: "2026-09-02", value: 3 }] }]} />,
+  );
+  const d = container.querySelector("[data-line]")?.getAttribute("d") ?? "";
+  const ys = [...d.matchAll(/[ML][\d.-]+ ([\d.-]+)/g)].map((m) => Number(m[1]));
+  expect(ys).toHaveLength(2);
+  const baseline = Number(container.querySelector("[data-gridline]")?.getAttribute("y1")) - 0.5;
+  for (const y of ys) expect(y).toBeLessThanOrEqual(baseline);
+  expect(ys[0]).toBe(baseline);
+});
+
+test("area trend survives an invalid date", () => {
+  render(<AreaTrend label="Odd" valueFormat={String} series={[{ key: "a", label: "A", color: 1, points: [{ date: "garbage", value: 1 }] }]} />);
+  expect(within(screen.getByRole("table", { name: "Odd data" })).getByRole("row", { name: /^—/ })).toBeInTheDocument();
+});
+
+test("kpi tile treats a non-finite change as no comparison", () => {
+  const { rerender } = render(<KpiTile label="Rate" value="4" delta={{ pct: Number.NaN, direction: "up", good: true }} />);
+  expect(screen.getByText("—", { selector: "[data-delta]" })).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Rate: 4, no earlier period to compare" })).toBeInTheDocument();
+  rerender(<KpiTile label="Rate" value="4" delta={{ pct: Number.POSITIVE_INFINITY, direction: "up", good: true }} />);
+  expect(screen.getByText("—", { selector: "[data-delta]" })).toHaveClass("text-dim");
+  expect(document.body.innerHTML).not.toMatch(/NaN|Infinity/);
+});
+
+test("bar list, funnel, sparkline and latency band never print NaN", () => {
+  const { container } = render(
+    <>
+      <BarList label="Bars" valueFormat={String} items={[{ label: "a", value: Number.NaN }, { label: "b", value: 2 }]} />
+      <Funnel label="Stages" valueFormat={String} stages={[{ label: "a", count: Number.NaN, value: Number.NaN }, { label: "b", count: 3 }]} />
+      <Sparkline label="Spark" values={[Number.NaN, 2, Number.POSITIVE_INFINITY, 5]} />
+      <LatencyBand p50={Number.NaN} p95={200} max={400} />
+    </>,
+  );
+  expect(container.innerHTML).not.toMatch(/NaN|Infinity/);
+  expect(screen.getAllByText("—", { selector: "[data-value]" }).length).toBeGreaterThan(0);
+  expect(screen.getByRole("img", { name: "Spark: from 2 to 5" })).toBeInTheDocument();
+  expect(container.querySelectorAll("[data-bar]")).toHaveLength(1);
+});
+
+test("latency bands take their own label for distinct accessible names", () => {
+  render(
+    <>
+      <LatencyBand label="Supplier A latency" p50={100} p95={300} max={500} />
+      <LatencyBand label="Supplier B latency" p50={80} p95={200} max={500} />
+    </>,
+  );
+  expect(screen.getByRole("img", { name: /^Supplier A latency: p50 100 ms/ })).toBeInTheDocument();
+  expect(screen.getByRole("table", { name: "Supplier B latency data" })).toBeInTheDocument();
+});
+
+test("a tiny bar is clipped to its own width, with no square cap overstating it", () => {
+  const { container } = render(<BarList label="Skewed" valueFormat={String} items={[{ label: "big", value: 1000 }, { label: "tiny", value: 1 }]} />);
+  const tiny = container.querySelectorAll("[data-bar]")[1];
+  expect(tiny?.tagName.toLowerCase()).toBe("svg");
+  expect(tiny).toHaveAttribute("width", "0.1%");
+  expect(tiny).toHaveAttribute("overflow", "hidden");
+  expect(tiny?.parentElement?.querySelectorAll("rect")).toHaveLength(1);
 });

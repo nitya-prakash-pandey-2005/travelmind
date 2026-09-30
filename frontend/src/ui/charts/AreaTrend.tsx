@@ -3,13 +3,29 @@ import { formatDayMonth } from "../../lib/format";
 import { useElementSize } from "../../lib/useElementSize";
 import { ChartTooltip } from "./ChartTooltip";
 import { areaPath, linearScale, niceMax, niceTicks, pathFromPoints, pickTickIndices, type Point } from "./scale";
-import { AXIS, ChartDataTable, ChartEmpty, FALLBACK_WIDTH, GRID, SURFACE, chartColor, useChartAnimation, type ChartColor } from "./shared";
+import {
+  AXIS,
+  ChartDataTable,
+  ChartEmpty,
+  FALLBACK_WIDTH,
+  GRID,
+  SURFACE,
+  chartColor,
+  formatValue,
+  isValue,
+  useChartAnimation,
+  type ChartColor,
+} from "./shared";
 
 export type TrendSeries = {
   key: string;
   label: string;
   color: ChartColor;
-  points: { date: string; value: number }[];
+  /**
+   * A non-negative series (counts, amounts): negative values are drawn on the baseline.
+   * A null or non-finite value is a gap: skipped by the line, shown as "—" in the tooltip and table.
+   */
+  points: { date: string; value: number | null }[];
 };
 
 type AreaTrendProps = {
@@ -45,7 +61,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
 
   const width = size.width || FALLBACK_WIDTH;
   const n = dates.length;
-  const values = series.flatMap((s) => s.points.map((p) => p.value)).filter(Number.isFinite);
+  const values = series.flatMap((s) => s.points.map((p) => p.value)).filter(isValue);
   const max = Math.max(0, ...values);
   const top = niceMax(max);
   const integerData = values.every(Number.isInteger);
@@ -67,7 +83,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
   const plotted = series.map((_, si) =>
     dates.flatMap((_, di): Point[] => {
       const v = valueAt(si, di);
-      return v === undefined || !Number.isFinite(v) ? [] : [[x(di), y(v)]];
+      return isValue(v) ? [[x(di), y(Math.max(0, v))]] : [];
     }),
   );
 
@@ -96,7 +112,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
     setActive((i) => move(i ?? 0));
   };
 
-  const formatted = (v: number | undefined) => (v === undefined ? "—" : valueFormat(v));
+  const formatted = (v: number | null | undefined) => formatValue(v, valueFormat);
   const tooltipRows =
     active === null
       ? []
@@ -106,7 +122,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
 
   const summary = `${label}: ${n} ${n === 1 ? "point" : "points"}, ${dayAt(0)} to ${dayAt(n - 1)}. ${series
     .map((s, si) => {
-      const own = s.points.map((p) => p.value);
+      const own = s.points.map((p) => p.value).filter(isValue);
       return own.length === 0 ? `${s.label} no data` : `${s.label} latest ${formatted(valueAt(si, n - 1))}, peak ${valueFormat(Math.max(...own))}`;
     })
     .join("; ")}. Use arrow keys to read each date.`;
@@ -242,8 +258,8 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
                 />
                 {series.map((s, si) => {
                   const v = valueAt(si, active);
-                  if (v === undefined || !Number.isFinite(v)) return null;
-                  return <circle key={s.key} cx={x(active)} cy={y(v)} r={4} fill={chartColor(s.color)} stroke={SURFACE} strokeWidth={2} />;
+                  if (!isValue(v)) return null;
+                  return <circle key={s.key} cx={x(active)} cy={y(Math.max(0, v))} r={4} fill={chartColor(s.color)} stroke={SURFACE} strokeWidth={2} />;
                 })}
               </g>
             )}
