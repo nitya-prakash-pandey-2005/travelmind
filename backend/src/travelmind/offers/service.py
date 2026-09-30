@@ -144,12 +144,13 @@ def _per_traveller(
     return Money(amount_minor=amount, currency=currency)
 
 
-def _view(
+def offer_view(
     offer: FlightOffer,
     shown: Money | None,
     insight: Insight | None,
     per_traveller: Money | None = None,
 ) -> OfferView:
+    """An offer as shown to the agency: `shown` is its total in the display currency."""
     return OfferView.model_validate(
         offer.model_dump()
         | {
@@ -281,7 +282,7 @@ async def search_flights(
             if baseline is not None and share is not None
             else None
         )
-        views.append(_view(offer, shown, insight, share))
+        views.append(offer_view(offer, shown, insight, share))
 
     if one_way:
         # Only comparable offers, one traveller's fare each: the history stays like with like.
@@ -372,7 +373,7 @@ async def reprice_offer(
     fx = await get_fx_rates(redis, enabled=settings.fx_enabled)
     await remember_offers(redis, agency_id, [fresh])
     return RepriceResponse(
-        offer=_view(fresh, display_money(fresh.total, currency, fx), None),
+        offer=offer_view(fresh, display_money(fresh.total, currency, fx), None),
         price_changed=fresh.total != cached.total,
         previous_total=cached.total,
     )

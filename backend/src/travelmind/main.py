@@ -20,6 +20,7 @@ from travelmind.reference.router import reference_router
 from travelmind.workspace.agency import agency_router
 from travelmind.workspace.clients import clients_router
 from travelmind.workspace.enquiries import enquiries_router
+from travelmind.workspace.quotes import quotes_router
 
 
 def create_app() -> FastAPI:
@@ -53,4 +54,5 @@ def create_app() -> FastAPI:
     app.include_router(agency_router)
     app.include_router(clients_router)
     app.include_router(enquiries_router)
+    app.include_router(quotes_router)
     return app
