@@ -15,6 +15,17 @@ const KPI_LABELS: ReadonlyArray<{ key: KpiKey; label: string }> = [
   { key: "searches", label: "Searches" },
 ];
 
+/**
+ * The strip has 2 columns on phones, 3 on tablets, 4 on laptops and 7 from 1600px. Seven tiles leave a
+ * short last row everywhere but the widest screens, so the last tile stretches over the free cells.
+ */
+const LAST_TILE = "col-span-2 sm:col-span-3 lg:col-span-2 min-[1600px]:col-span-1";
+
+/** Grid cell for the tile at `index`: the last one fills its row. */
+function cellClass(index: number): string {
+  return index === KPI_LABELS.length - 1 ? `grid min-w-0 ${LAST_TILE}` : "grid min-w-0";
+}
+
 const RANGE_DAYS: Record<DashboardRange, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
 /** What each tile's sparkline plots (the daily series, not the headline figure). */
@@ -57,8 +68,8 @@ export function KpiRow({ range }: { range: DashboardRange }) {
     // Placeholder tiles stay out of the accessibility tree: a labelled tile only appears with its figure.
     return (
       <KpiStrip label="Key figures" columns={7} busy>
-        {KPI_LABELS.map(({ key, label }) => (
-          <div key={key} aria-hidden="true" className="grid min-w-0">
+        {KPI_LABELS.map(({ key, label }, index) => (
+          <div key={key} aria-hidden="true" className={cellClass(index)}>
             <KpiTile label={label} value="" loading />
           </div>
         ))}
@@ -71,23 +82,24 @@ export function KpiRow({ range }: { range: DashboardRange }) {
 
   return (
     <KpiStrip label="Key figures" columns={7} busy={summary.isPlaceholderData}>
-      {KPI_LABELS.map(({ key }) => {
+      {KPI_LABELS.map(({ key }, index) => {
         const kpi = byKey.get(key);
         if (!kpi) return null;
         const { value, unit } = formatKpiValue(kpi, currency);
         // Gaps are skipped; a period of zeros has no trend worth drawing.
         const series = kpiSeries(kpi).filter((v): v is number => v !== null);
         return (
-          <KpiTile
-            key={key}
-            label={kpi.label}
-            value={value}
-            unit={unit}
-            delta={kpiDelta(kpi)}
-            series={series.some((v) => v !== 0) ? series : undefined}
-            trendLabel={TREND_LABELS[key]}
-            hint={hintFor(kpi, summary.data.range)}
-          />
+          <div key={key} className={cellClass(index)}>
+            <KpiTile
+              label={kpi.label}
+              value={value}
+              unit={unit}
+              delta={kpiDelta(kpi)}
+              series={series.some((v) => v !== 0) ? series : undefined}
+              trendLabel={TREND_LABELS[key]}
+              hint={hintFor(kpi, summary.data.range)}
+            />
+          </div>
         );
       })}
     </KpiStrip>
