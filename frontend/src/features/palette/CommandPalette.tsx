@@ -1,6 +1,21 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Command } from "cmdk";
-import { FileText, Inbox, Search, UserRound } from "lucide-react";
+import {
+  BedDouble,
+  FileText,
+  Inbox,
+  LayoutDashboard,
+  LogOut,
+  Moon,
+  Palette,
+  Plane,
+  PlugZap,
+  Search,
+  Sun,
+  UserRound,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "../../api/client";
 import { useLogout } from "../../auth/useLogout";
@@ -12,13 +27,26 @@ import { routeStore } from "../route/routeStore";
 import { formatRoute, RecordDrawer, Status, type RecordSelection } from "./RecordDrawer";
 import { useRecordSearch } from "./useRecordSearch";
 
-type PaletteCommand = { id: string; group: "Navigate" | "Actions"; label: string; keywords: string; run: () => void };
+type PaletteCommand = {
+  id: string;
+  group: "Navigate" | "Actions";
+  label: string;
+  icon: LucideIcon;
+  keywords: string;
+  run: () => void;
+};
 
 const GROUPS = ["Navigate", "Actions"] as const;
-const itemClass =
-  "flex h-9 cursor-pointer items-center gap-3 rounded-md px-3 text-[13px] text-dim data-[selected=true]:bg-hover data-[selected=true]:text-ink";
+const itemClass = cn(
+  "group/item relative flex h-9 cursor-pointer items-center gap-3 rounded-md px-2.5 text-[13px] text-dim",
+  "data-[selected=true]:bg-surface-2 data-[selected=true]:text-ink",
+);
+const iconClass = "shrink-0 text-faint group-data-[selected=true]/item:text-ink";
 const groupClass =
-  "[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.06em] [&_[cmdk-group-heading]]:text-faint";
+  "px-1.5 [&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:pt-2.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:leading-4 [&_[cmdk-group-heading]]:tracking-[0.06em] [&_[cmdk-group-heading]]:text-faint";
+/** The IATA code chip, as in the airport picker. */
+const codeClass =
+  "inline-flex h-5 min-w-10 shrink-0 items-center justify-center rounded-[4px] border border-line px-1 font-mono text-xs font-semibold text-ink group-data-[selected=true]/item:border-primary/40 group-data-[selected=true]/item:text-primary";
 
 /**
  * Global search and commands (Ctrl/⌘+K or the top bar's search field): navigation, actions, the
@@ -64,20 +92,21 @@ export function CommandPalette() {
   const openRecord = (selection: RecordSelection) => runAndClose(() => setRecord(selection));
 
   const commands: PaletteCommand[] = [
-    { id: "nav-command", group: "Navigate", label: "Command Center", keywords: "home dashboard mission control metrics globe route", run: () => void navigate({ to: "/app" }) },
-    { id: "nav-fares", group: "Navigate", label: "Fare search", keywords: "flights fares prices offers scan", run: () => void navigate({ to: "/app/fares" }) },
-    { id: "nav-hotels", group: "Navigate", label: "Hotel search", keywords: "hotels rooms stay accommodation scan", run: () => void navigate({ to: "/app/hotels" }) },
-    { id: "nav-team", group: "Navigate", label: "Team", keywords: "team members invite crew roster", run: () => void navigate({ to: "/app/team" }) },
-    { id: "nav-suppliers", group: "Navigate", label: "Suppliers", keywords: "suppliers connections keys duffel liteapi data", run: () => void navigate({ to: "/app/suppliers" }) },
-    { id: "nav-design", group: "Navigate", label: "Design system", keywords: "styles components tokens", run: () => void navigate({ to: "/app/design" }) },
+    { id: "nav-command", group: "Navigate", label: "Command Center", icon: LayoutDashboard, keywords: "home dashboard mission control metrics globe route", run: () => void navigate({ to: "/app" }) },
+    { id: "nav-fares", group: "Navigate", label: "Fare search", icon: Plane, keywords: "flights fares prices offers scan", run: () => void navigate({ to: "/app/fares" }) },
+    { id: "nav-hotels", group: "Navigate", label: "Hotel search", icon: BedDouble, keywords: "hotels rooms stay accommodation scan", run: () => void navigate({ to: "/app/hotels" }) },
+    { id: "nav-team", group: "Navigate", label: "Team", icon: Users, keywords: "team members invite crew roster", run: () => void navigate({ to: "/app/team" }) },
+    { id: "nav-suppliers", group: "Navigate", label: "Suppliers", icon: PlugZap, keywords: "suppliers connections keys duffel liteapi data", run: () => void navigate({ to: "/app/suppliers" }) },
+    { id: "nav-design", group: "Navigate", label: "Design system", icon: Palette, keywords: "styles components tokens", run: () => void navigate({ to: "/app/design" }) },
     {
       id: "theme",
       group: "Actions",
       label: theme === "dark" ? "Switch to daylight theme" : "Switch to dark theme",
+      icon: theme === "dark" ? Sun : Moon,
       keywords: "theme light dark daylight mode",
       run: () => setTheme(theme === "dark" ? "daylight" : "dark"),
     },
-    { id: "logout", group: "Actions", label: "Sign out", keywords: "logout exit leave", run: () => logout.mutate() },
+    { id: "logout", group: "Actions", label: "Sign out", icon: LogOut, keywords: "logout exit leave", run: () => logout.mutate() },
   ];
   const needle = search.trim().toLowerCase();
   const visible = needle
@@ -118,20 +147,26 @@ export function CommandPalette() {
         label="Command palette"
         shouldFilter={false}
         overlayClassName="fixed inset-0 z-40 bg-(--tm-backdrop)"
-        contentClassName="tm-popover fixed left-1/2 top-[14vh] z-50 w-[min(40rem,92vw)] -translate-x-1/2 rounded-lg p-1.5"
+        contentClassName="tm-popover fixed left-1/2 top-[12vh] z-50 flex w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2 flex-col overflow-hidden rounded-lg"
       >
-        <Command.Input
-          value={search}
-          onValueChange={setSearch}
-          placeholder="Type a command or an airport, or find a client, enquiry or quote…"
-          className="h-11 w-full border-b border-line bg-transparent px-3 text-sm text-ink outline-none placeholder:text-faint"
-        />
-        <Command.List className="max-h-[50vh] overflow-auto py-2">
+        <div className="flex items-center gap-2.5 border-b border-line px-4">
+          <Search size={16} aria-hidden="true" className="shrink-0 text-faint" />
+          <Command.Input
+            value={search}
+            onValueChange={setSearch}
+            placeholder="Type a command or an airport, or find a client, enquiry or quote…"
+            className="h-12 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-faint"
+          />
+          <Kbd className="shrink-0 max-sm:hidden">Esc</Kbd>
+        </div>
+        <Command.List className="max-h-[min(26rem,55vh)] overflow-auto py-1.5">
           {!scanning && !airportError && !records.pending && (
-            <Command.Empty className="px-3 py-6 text-center text-sm text-dim">No matches.</Command.Empty>
+            <Command.Empty className="px-4 py-8 text-center text-[13px] text-dim">
+              {search.trim() ? `No results for “${search.trim()}”` : "No matches."}
+            </Command.Empty>
           )}
           {records.error && (
-            <p className="px-3 py-2 text-sm text-dim">
+            <p className="px-4 py-2 text-[13px] text-dim">
               {records.error instanceof ApiError ? records.error.message : "Record search failed."}
             </p>
           )}
@@ -144,9 +179,9 @@ export function CommandPalette() {
                   onSelect={() => openRecord({ type: "client", record: client })}
                   className={itemClass}
                 >
-                  <UserRound size={15} aria-hidden="true" className="shrink-0 text-primary" />
+                  <UserRound size={15} aria-hidden="true" className={iconClass} />
                   <span className="truncate text-ink">{client.name}</span>
-                  <span className="ml-auto truncate text-xs">
+                  <span className="ml-auto truncate text-xs text-faint">
                     {[client.company_name, client.email].filter(Boolean).join(" · ")}
                   </span>
                 </Command.Item>
@@ -162,9 +197,9 @@ export function CommandPalette() {
                   onSelect={() => openRecord({ type: "enquiry", record: enquiry })}
                   className={itemClass}
                 >
-                  <Inbox size={15} aria-hidden="true" className="shrink-0 text-primary" />
+                  <Inbox size={15} aria-hidden="true" className={iconClass} />
                   <span className="font-mono text-ink">{enquiry.number}</span>
-                  <span className="truncate font-mono text-xs">{formatRoute(enquiry.origin, enquiry.destination)}</span>
+                  <span className="truncate font-mono text-xs text-dim">{formatRoute(enquiry.origin, enquiry.destination)}</span>
                   <span className="ml-auto shrink-0">
                     <Status status={enquiry.status} />
                   </span>
@@ -181,9 +216,9 @@ export function CommandPalette() {
                   onSelect={() => openRecord({ type: "quote", record: quote })}
                   className={itemClass}
                 >
-                  <FileText size={15} aria-hidden="true" className="shrink-0 text-primary" />
+                  <FileText size={15} aria-hidden="true" className={iconClass} />
                   <span className="font-mono text-ink">{quote.number}</span>
-                  <span className="truncate text-xs">{quote.client_name ?? "No client"}</span>
+                  <span className="truncate text-xs text-dim">{quote.client_name ?? "No client"}</span>
                   <span className="ml-auto shrink-0">
                     <Status status={quote.status} />
                   </span>
@@ -196,9 +231,10 @@ export function CommandPalette() {
             if (items.length === 0) return null;
             return (
               <Command.Group key={group} heading={group} className={groupClass}>
-                {items.map((command) => (
-                  <Command.Item key={command.id} value={command.id} onSelect={() => runAndClose(command.run)} className={itemClass}>
-                    {command.label}
+                {items.map(({ id, label, icon: Icon, run }) => (
+                  <Command.Item key={id} value={id} onSelect={() => runAndClose(run)} className={itemClass}>
+                    <Icon size={15} aria-hidden="true" className={iconClass} />
+                    {label}
                   </Command.Item>
                 ))}
               </Command.Group>
@@ -208,12 +244,12 @@ export function CommandPalette() {
             <Command.Group heading="Airports" className={groupClass}>
               {scanning ? (
                 <Command.Loading label="Searching airports">
-                  <span className="block px-3 py-2 text-[13px] text-dim">
+                  <span className="block px-2.5 py-2 text-[13px] text-dim">
                     Searching airports…
                   </span>
                 </Command.Loading>
               ) : airportError ? (
-                <p role="alert" className="px-3 py-2 text-sm text-danger">
+                <p role="alert" className="px-2.5 py-2 text-[13px] text-danger">
                   {airportError}
                 </p>
               ) : (
@@ -229,9 +265,9 @@ export function CommandPalette() {
                     }
                     className={itemClass}
                   >
-                    <span className="w-10 font-mono text-primary">{airport.iata_code}</span>
+                    <span className={codeClass}>{airport.iata_code}</span>
                     <span className="truncate text-ink">{airport.name}</span>
-                    <span className="ml-auto truncate text-xs">
+                    <span className="ml-auto truncate text-xs text-faint">
                       {[airport.city, airport.country_name].filter(Boolean).join(", ")}
                     </span>
                   </Command.Item>
@@ -240,9 +276,22 @@ export function CommandPalette() {
             </Command.Group>
           )}
         </Command.List>
-        <p className="border-t border-line px-3 pb-1 pt-2 text-[11px] leading-4 text-faint">
-          ↑↓ to move · Enter to select · Esc to close · Airports fill From, then To
-        </p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line bg-surface-2/50 px-4 py-2 text-[11px] leading-4 text-faint">
+          <span className="inline-flex items-center gap-1.5">
+            <Kbd>↑</Kbd>
+            <Kbd>↓</Kbd>
+            Move
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Kbd>Enter</Kbd>
+            Open
+          </span>
+          <span className="inline-flex items-center gap-1.5 max-sm:hidden">
+            <Kbd>Esc</Kbd>
+            Close
+          </span>
+          <span className="ml-auto">Airports fill From, then To</span>
+        </div>
       </Command.Dialog>
       <RecordDrawer selection={record} onClose={() => setRecord(null)} />
     </>

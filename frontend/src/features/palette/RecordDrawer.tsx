@@ -24,7 +24,7 @@ export function formatRoute(origin: string | null, destination: string | null): 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1 border-b border-line py-3 last:border-b-0">
-      <dt className="font-mono text-[10px] uppercase tracking-[0.2em] text-dim">{label}</dt>
+      <dt className="tm-micro">{label}</dt>
       <dd className="text-sm text-ink">{children}</dd>
     </div>
   );
