@@ -46,3 +46,25 @@ export function formatMoney(money: Money): string {
   const scale = 10 ** digits;
   return formatter(money.currency, digits, money.amount_minor % scale === 0).format(money.amount_minor / scale);
 }
+
+const compactCache = new Map<string, Intl.NumberFormat>();
+
+/**
+ * Integer minor units → a short headline amount: "₹6.2L", "₹1.9Cr" (Indian grouping for INR),
+ * "$12.4K", "£1.3M". "—" for an amount that isn't a finite number.
+ */
+export function formatMoneyCompact(money: Money): string {
+  if (!Number.isFinite(money.amount_minor)) return "—";
+  const currency = money.currency.toUpperCase();
+  let format = compactCache.get(currency);
+  if (!format) {
+    format = new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", {
+      style: "currency",
+      currency,
+      notation: "compact",
+      maximumFractionDigits: 1,
+    });
+    compactCache.set(currency, format);
+  }
+  return format.format(money.amount_minor / 10 ** exponent(currency));
+}

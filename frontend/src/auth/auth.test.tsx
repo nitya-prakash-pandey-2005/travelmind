@@ -4,6 +4,7 @@ import { ME_BETA, ME_OWNER } from "../test/fixtures";
 import { mockApi } from "../test/mockApi";
 import { renderApp, withSession } from "../test/renderApp";
 import { safeRedirect } from "../router";
+import { commandCenterMocks } from "../test/workspaceFixtures";
 
 test("signed-out visitors are sent to login with a return path", async () => {
   mockApi(withSession(null));
@@ -55,7 +56,7 @@ test.each([
   await user.type(screen.getByLabelText("Password"), "correct-horse-battery");
   await user.click(screen.getByRole("button", { name: "Engage" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
-  expect(await screen.findByRole("heading", { name: "Welcome aboard, Asha" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { level: 1, name: /Asha/ })).toBeInTheDocument();
 });
 
 test.each(["/.//evil.example", "/a/..//evil.example", "/%2e//evil.example"])(
@@ -213,18 +214,24 @@ test("accepting an invitation into another agency drops the previous agency's ca
     releaseBetaTeam = resolve;
   });
   const ME_BETA_AGENT = { ...ME_BETA, user: { ...ME_BETA.user, role: "agent" as const } };
+  const member = (user: { id: string; full_name: string; role: string }) => ({
+    user: { id: user.id, full_name: user.full_name, role: user.role },
+    enquiries: 1,
+    quotes_sent: 1,
+    won_value_minor: 0,
+  });
   const ALPHA_TEAM = [
-    { id: "u-owner", email: "asha@alphatravels.in", full_name: "Asha Rao", role: "owner" },
-    { id: "u-agent", email: "ravi@alphatravels.in", full_name: "Ravi Kumar", role: "agent" },
+    member({ id: "u-owner", full_name: "Asha Rao", role: "owner" }),
+    member({ id: "u-agent", full_name: "Ravi Kumar", role: "agent" }),
   ];
   mockApi(
     withSession(ME_OWNER, {
-      "GET /api/v1/team": async () => {
-        if (session === "alpha") return { status: 200, body: ALPHA_TEAM };
+      ...commandCenterMocks(),
+      "GET /api/v1/dashboard/team": async () => {
+        if (session === "alpha") return { status: 200, body: { members: ALPHA_TEAM } };
         await betaTeamReady;
-        return { status: 200, body: [{ ...ME_BETA_AGENT.user }] };
+        return { status: 200, body: { members: [member(ME_BETA_AGENT.user)] } };
       },
-      "GET /api/v1/invitations": { status: 200, body: [] },
       "POST /api/v1/invitations/accept": () => {
         session = "beta";
         return { status: 201, body: ME_BETA_AGENT };
@@ -232,8 +239,8 @@ test("accepting an invitation into another agency drops the previous agency's ca
     }),
   );
   const { router, user } = renderApp("/app");
-  const crewAboard = () => screen.getByText("Crew aboard").nextElementSibling;
-  await waitFor(() => expect(crewAboard()).toHaveTextContent("2"));
+  const team = () => screen.getByRole("region", { name: "Team" });
+  await waitFor(() => expect(team()).toHaveTextContent("Ravi Kumar"));
 
   await act(() => router.navigate({ to: "/invite/$token", params: { token: "a-beta.secret-token" } }));
   await user.type(await screen.findByLabelText("Your name"), "Meera Iyer");
@@ -241,8 +248,11 @@ test("accepting an invitation into another agency drops the previous agency's ca
   await user.click(screen.getByRole("button", { name: "Join the crew" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app"));
 
-  expect(await screen.findByRole("region", { name: "Beta Tours" })).toBeInTheDocument();
-  expect(crewAboard()).toHaveTextContent("—");
+  expect(await screen.findByRole("heading", { level: 1, name: /Meera/ })).toBeInTheDocument();
+  expect(await screen.findByRole("banner")).toHaveTextContent("Beta Tours");
+  expect(team()).not.toHaveTextContent("Ravi Kumar");
+  expect(team()).toHaveAttribute("aria-busy", "true");
   releaseBetaTeam();
-  await waitFor(() => expect(crewAboard()).toHaveTextContent("1"));
+  await waitFor(() => expect(team()).toHaveTextContent("Meera Iyer"));
+  expect(team()).not.toHaveTextContent("Ravi Kumar");
 });

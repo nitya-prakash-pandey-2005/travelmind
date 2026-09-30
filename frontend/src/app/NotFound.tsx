@@ -8,7 +8,7 @@ export function NotFound() {
         <h1 className="font-display text-2xl text-ink">Signal lost</h1>
         <p className="mb-4 mt-1 text-sm text-dim">There's nothing at this address.</p>
         <Link to="/" className="text-primary hover:underline">
-          Return to Mission Control
+          Return to Command Center
         </Link>
       </Panel>
     </div>

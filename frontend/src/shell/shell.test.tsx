@@ -73,7 +73,7 @@ test("unknown pages show a way home", async () => {
   mockApi(withSession(ME_OWNER));
   renderApp("/nowhere");
   expect(await screen.findByRole("heading", { name: "Signal lost" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Return to Mission Control" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Return to Command Center" })).toBeInTheDocument();
 });
 
 test("a failing route shows the error with its trace ID instead of a blank screen", () => {

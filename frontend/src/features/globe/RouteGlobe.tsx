@@ -8,7 +8,15 @@ import { COUNTRIES } from "./countries";
 import { useElementSize } from "../../lib/useElementSize";
 import { useFlyToActiveRoute } from "./useFlyToActiveRoute";
 
-export type GlobeArc = { from: Airport; to: Airport; active: boolean };
+/** `weight` (default 1) thickens a route with more enquiries on it. */
+export type GlobeArc = { from: Airport; to: Airport; active: boolean; weight?: number };
+
+/** Stroke width: active arcs stand out; others thicken gently with weight, capped. */
+function arcStroke(arc: GlobeArc): number {
+  const weight = Number.isFinite(arc.weight) ? Math.max(1, arc.weight ?? 1) : 1;
+  const extra = Math.min(weight - 1, 4) * 0.12;
+  return (arc.active ? 0.9 : 0.35) + extra;
+}
 
 type GlobeColors = { primary: string; ai: string; dim: string; land: string; ocean: string };
 
@@ -75,7 +83,7 @@ export default function RouteGlobe({ arcs }: { arcs: GlobeArc[] }) {
           arcEndLat={(d: object) => (d as GlobeArc).to.latitude}
           arcEndLng={(d: object) => (d as GlobeArc).to.longitude}
           arcColor={(d: object) => ((d as GlobeArc).active ? [colors.primary, colors.ai] : colors.dim)}
-          arcStroke={(d: object) => ((d as GlobeArc).active ? 0.9 : 0.35)}
+          arcStroke={(d: object) => arcStroke(d as GlobeArc)}
           arcDashLength={0.45}
           arcDashGap={0.18}
           arcDashAnimateTime={reducedMotion ? 0 : 2200}

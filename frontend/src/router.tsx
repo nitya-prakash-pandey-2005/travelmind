@@ -7,6 +7,7 @@ import {
   redirect,
   type RouterHistory,
 } from "@tanstack/react-router";
+import { isDashboardRange, type DashboardRange } from "./api/dashboard";
 import { meQueryOptions } from "./api/queries";
 import { setUnauthorizedHandler } from "./api/queryClient";
 import { NotFound } from "./app/NotFound";
@@ -17,7 +18,7 @@ import { AcceptInvitePage } from "./auth/AcceptInvitePage";
 import { LoginPage } from "./auth/LoginPage";
 import { resetSessionState } from "./auth/resetSessionState";
 import { SignupPage } from "./auth/SignupPage";
-import { MissionControlPage } from "./features/dashboard/MissionControlPage";
+import { CommandCenterPage } from "./features/command/CommandCenterPage";
 import { FareScanPage } from "./features/fares/FareScanPage";
 import { HotelScanPage } from "./features/hotels/HotelScanPage";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
@@ -109,7 +110,15 @@ const appRoute = createRoute({
   component: AppShell,
 });
 
-const commandRoute = createRoute({ getParentRoute: () => appRoute, path: "/", component: MissionControlPage });
+const commandRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/",
+  // The dashboard range lives in the URL (?range=7d|30d|90d); anything else falls back to the default.
+  validateSearch: (search: Record<string, unknown>): { range?: DashboardRange } => ({
+    range: isDashboardRange(search.range) ? search.range : undefined,
+  }),
+  component: CommandCenterPage,
+});
 const teamRoute = createRoute({ getParentRoute: () => appRoute, path: "/team", component: TeamPage });
 const designRoute = createRoute({ getParentRoute: () => appRoute, path: "/design", component: DesignGallery });
 const faresRoute = createRoute({ getParentRoute: () => appRoute, path: "/fares", component: FareScanPage });
