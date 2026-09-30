@@ -7,6 +7,7 @@ from travelmind.hotels import service
 from travelmind.hotels.models import HotelSearchRequest
 from travelmind.hotels.schemas import HotelSearchResponse
 from travelmind.identity.deps import AuthedUser
+from travelmind.identity.service import get_agency
 
 hotels_router = APIRouter(prefix="/api/v1/hotels", tags=["hotels"])
 
@@ -15,9 +16,15 @@ hotels_router = APIRouter(prefix="/api/v1/hotels", tags=["hotels"])
 async def search_hotels_route(
     body: HotelSearchRequest, current: AuthedUser, db: DbSession, redis: RedisClient
 ) -> HotelSearchResponse:
+    agency = await get_agency(db, current.agency_id)
     try:
         return await service.search_hotels(
-            db, redis, get_settings(), body, agency_id=current.agency_id
+            db,
+            redis,
+            get_settings(),
+            body,
+            agency_id=current.agency_id,
+            guest_nationality=agency.country_code,
         )
     except service.RateLimited as exc:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, exc.message) from None

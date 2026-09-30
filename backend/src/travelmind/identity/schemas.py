@@ -27,11 +27,22 @@ AgencyName = Annotated[
 NewPassword = Annotated[str, StringConstraints(min_length=10, max_length=256)]
 
 
+def _normalize_code(value: object) -> object:
+    return value.strip().upper() if isinstance(value, str) else value
+
+
+# ISO 3166-1 alpha-2, accepted in any case and stored upper-case.
+CountryCode = Annotated[
+    str, BeforeValidator(_normalize_code), StringConstraints(pattern=r"^[A-Z]{2}$")
+]
+
+
 class SignupRequest(BaseModel):
     agency_name: AgencyName
     full_name: PersonName
     email: NormalizedEmail
     password: NewPassword
+    country_code: CountryCode = "IN"
 
 
 class LoginRequest(BaseModel):
@@ -49,6 +60,11 @@ class UserOut(BaseModel):
 class AgencyOut(BaseModel):
     id: UUID
     name: str
+    country_code: str
+    currency: str
+    timezone: str
+    brand_color: str
+    is_demo: bool
 
 
 class MeResponse(BaseModel):

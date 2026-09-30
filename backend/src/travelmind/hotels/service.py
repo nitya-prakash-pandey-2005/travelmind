@@ -40,6 +40,7 @@ async def _search_supplier(
     latitude: float,
     longitude: float,
     currency: str,
+    guest_nationality: str,
 ) -> tuple[list[HotelOffer], SourceStatusOut]:
     supplier = LiteApiHotelSupplier(settings.liteapi_key)
     timeout_s = settings.search_timeout_seconds
@@ -58,6 +59,7 @@ async def _search_supplier(
                 latitude=latitude,
                 longitude=longitude,
                 currency=currency,
+                guest_nationality=guest_nationality,
                 timeout_s=timeout_s,
             ),
             timeout=timeout_s,
@@ -79,8 +81,11 @@ async def search_hotels(
     request: HotelSearchRequest,
     *,
     agency_id: UUID,
+    guest_nationality: str,
 ) -> HotelSearchResponse:
     """Hotels near the destination airport, cheapest first in the display currency.
+
+    `guest_nationality` (ISO-2) is the agency's country: suppliers price by it.
 
     Raises RateLimited when the agency's per-minute hotel budget (separate from flights) is
     spent, and UnknownAirport when the destination isn't a known airport.
@@ -112,6 +117,7 @@ async def search_hotels(
         latitude=airport.latitude,
         longitude=airport.longitude,
         currency=currency,
+        guest_nationality=guest_nationality,
     )
     needs_fx = any(o.total.currency != currency for o in offers)
     fx = await get_fx_rates(redis, enabled=settings.fx_enabled) if needs_fx else None

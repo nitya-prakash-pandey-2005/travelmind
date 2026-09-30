@@ -12,6 +12,7 @@ from travelmind.db import bind_tenant
 from travelmind.identity.models import Agency, User, UserSession
 from travelmind.identity.passwords import hash_password, hash_password_async, verify_password_async
 from travelmind.identity.tokens import hash_token, new_token
+from travelmind.workspace.regions import default_currency_for, default_timezone_for
 
 # Verified against when the email is unknown, so response time doesn't reveal which emails exist.
 # Argon2 is CPU-heavy (~50 ms): request paths use the bounded async wrappers in passwords.py.
@@ -55,11 +56,18 @@ async def signup(
     email: str,
     password: str,
     ctx: SessionContext,
+    country_code: str = "IN",
 ) -> tuple[User, Agency, str]:
     if await db.scalar(select(User.id).where(User.email == email)) is not None:
         raise EmailAlreadyRegistered
     password_hash = await hash_password_async(password)
-    agency = Agency(id=uuid4(), name=agency_name)
+    agency = Agency(
+        id=uuid4(),
+        name=agency_name,
+        country_code=country_code,
+        currency=default_currency_for(country_code),
+        timezone=default_timezone_for(country_code),
+    )
     user = User(
         id=uuid4(),
         agency_id=agency.id,
@@ -141,6 +149,38 @@ async def get_user_and_agency(db: AsyncSession, user_id: UUID) -> tuple[User, Ag
     user = await db.get_one(User, user_id)
     agency = await db.get_one(Agency, user.agency_id)
     return user, agency
+
+
+async def get_agency(db: AsyncSession, agency_id: UUID) -> Agency:
+    return await db.get_one(Agency, agency_id)
+
+
+# Agency fields an owner or admin may change from the settings screen.
+AGENCY_PROFILE_FIELDS = frozenset({"name", "country_code", "currency", "timezone", "brand_color"})
+
+
+async def update_agency_profile(
+    db: AsyncSession, agency_id: UUID, changes: dict[str, str]
+) -> tuple[Agency, dict[str, str], dict[str, str]]:
+    """Apply profile changes; returns the agency plus the (before, after) of what changed.
+
+    `agencies` has no RLS, so `agency_id` must come from the authenticated user.
+    """
+    unknown = changes.keys() - AGENCY_PROFILE_FIELDS
+    if unknown:
+        raise ValueError(f"Not an agency profile field: {sorted(unknown)}")
+    agency = await db.get_one(Agency, agency_id)
+    before: dict[str, str] = {}
+    after: dict[str, str] = {}
+    for field, value in changes.items():
+        if getattr(agency, field) != value:
+            before[field] = getattr(agency, field)
+            after[field] = value
+            setattr(agency, field, value)
+    if after:
+        agency.updated_at = datetime.now(UTC)
+        await db.flush()
+    return agency, before, after
 
 
 async def list_team(db: AsyncSession, agency_id: UUID) -> list[User]:

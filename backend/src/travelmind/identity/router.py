@@ -35,7 +35,15 @@ auth_router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 def me_response(user: User, agency: Agency) -> MeResponse:
     return MeResponse(
         user=UserOut(id=user.id, email=user.email, full_name=user.full_name, role=user.role),
-        agency=AgencyOut(id=agency.id, name=agency.name),
+        agency=AgencyOut(
+            id=agency.id,
+            name=agency.name,
+            country_code=agency.country_code,
+            currency=agency.currency,
+            timezone=agency.timezone,
+            brand_color=agency.brand_color,
+            is_demo=agency.is_demo,
+        ),
     )
 
 
@@ -64,6 +72,7 @@ async def signup_route(
             email=body.email,
             password=body.password,
             ctx=session_context(request),
+            country_code=body.country_code,
         )
     except service.EmailAlreadyRegistered:
         raise HTTPException(

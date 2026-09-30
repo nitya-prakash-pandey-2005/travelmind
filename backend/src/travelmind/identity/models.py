@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from travelmind.db import Base, utcnow
@@ -12,7 +12,18 @@ class Agency(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(200))
+    country_code: Mapped[str] = mapped_column(String(2), default="IN", server_default="IN")
+    currency: Mapped[str] = mapped_column(String(3), default="INR", server_default="INR")
+    timezone: Mapped[str] = mapped_column(
+        String(64), default="Asia/Kolkata", server_default="Asia/Kolkata"
+    )
+    brand_color: Mapped[str] = mapped_column(String(7), default="#22d3ee", server_default="#22d3ee")
+    is_demo: Mapped[bool] = mapped_column(default=False, server_default=false())
+    demo_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, server_default=func.now()
     )
 
@@ -30,6 +41,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, server_default=func.now()
     )
+    notifications_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class UserSession(Base):
