@@ -308,7 +308,7 @@ test("each member shows enquiries, quotes sent and won value for the last 30 day
 
   const totals = screen.getByRole("region", { name: "Team totals" });
   expect(within(totals).getByRole("group", { name: "Enquiries: 15" })).toBeInTheDocument();
-  expect(within(totals).getByRole("group", { name: "Won value: ₹42,000" })).toBeInTheDocument();
+  expect(within(totals).getByRole("group", { name: "Won value: ₹42K" })).toBeInTheDocument();
   expect(within(totals).getByRole("group", { name: "Members: 2" })).toHaveTextContent("1 owner or admin");
 });
 

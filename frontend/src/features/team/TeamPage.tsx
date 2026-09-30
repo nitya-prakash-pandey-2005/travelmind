@@ -7,7 +7,7 @@ import { invitationsQueryOptions, teamQueryOptions } from "../../api/queries";
 import type { Invitation, Role, TeamMember } from "../../api/types";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { formatDate, formatNumber, formatRelativeTime } from "../../lib/format";
-import { formatMoney } from "../../lib/money";
+import { formatMoney, formatMoneyCompact } from "../../lib/money";
 import { Avatar } from "../../ui/Avatar";
 import { Badge, type BadgeTone } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
@@ -116,7 +116,7 @@ function TeamTotals({ members, stats, currency }: { members: TeamMember[] | unde
       <KpiTile label="Quotes sent" value={figure(formatNumber(sum((s) => s.quotes_sent)))} hint={hint} loading={stats.pending} />
       <KpiTile
         label="Won value"
-        value={figure(formatMoney({ amount_minor: sum((s) => s.won_value_minor), currency }))}
+        value={figure(formatMoneyCompact({ amount_minor: sum((s) => s.won_value_minor), currency }))}
         hint={hint}
         loading={stats.pending}
       />
