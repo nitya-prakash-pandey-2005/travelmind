@@ -15,8 +15,8 @@ const WIDE: Record<2 | 3 | 4 | 5 | 6 | 7 | 8, string> = {
   4: "lg:grid-cols-4",
   5: "lg:grid-cols-3 xl:grid-cols-5",
   6: "lg:grid-cols-3 xl:grid-cols-6",
-  7: "lg:grid-cols-4 min-[1600px]:grid-cols-7",
-  8: "lg:grid-cols-4 min-[1600px]:grid-cols-8",
+  7: "lg:max-[1599px]:grid-cols-4 min-[1600px]:grid-cols-7",
+  8: "lg:max-[1599px]:grid-cols-4 min-[1600px]:grid-cols-8",
 };
 
 /**
