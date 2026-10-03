@@ -4,13 +4,16 @@ Each client read carries its stats in the agency currency:
 - `won_value_minor`: the sum over the client's accepted quotes in that currency of the option the
   client accepted on the public page, from the version they were sent (`sent_version`); a quote
   the agent marked accepted (no option recorded) counts its sent version's cheapest option.
-- `last_trip`: the trip of the client's enquiry with the latest departure date among those that
-  have an origin, destination and departure date and aren't lost (so it may be upcoming).
+- `last_trip` / `next_trip`: among the client's enquiries that aren't lost and have an origin,
+  destination and departure date, the one with the latest departure on or before today (the
+  agency's local date), and the one with the earliest departure after today. Same-day ties go to
+  the most recently created enquiry, then the highest number.
 """
 
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query, Response, status
 from pydantic import (
@@ -36,6 +39,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import LateralFromClause
 
 from travelmind.db import DbSession, utcnow
 from travelmind.identity import service as identity_service
@@ -153,9 +157,17 @@ class ClientOut(BaseModel):
     won_value_minor: int
     currency: str
     last_trip: TripRef | None
+    next_trip: TripRef | None
 
 
-_STAT_FIELDS = ("enquiry_count", "quote_count", "won_value_minor", "currency", "last_trip")
+_STAT_FIELDS = (
+    "enquiry_count",
+    "quote_count",
+    "won_value_minor",
+    "currency",
+    "last_trip",
+    "next_trip",
+)
 _CLIENT_FIELDS = tuple(f for f in ClientOut.model_fields if f not in _STAT_FIELDS)
 
 
@@ -229,58 +241,86 @@ def _won_value(currency: str) -> ColumnElement[int]:
     )
 
 
-_LAST_TRIP = (
-    select(Enquiry.origin, Enquiry.destination, Enquiry.depart_date)
-    .where(
-        Enquiry.client_id == Client.id,
-        Enquiry.status != "lost",
-        Enquiry.origin.is_not(None),
-        Enquiry.destination.is_not(None),
-        Enquiry.depart_date.is_not(None),
+def _trip(today: date, *, upcoming: bool) -> LateralFromClause:
+    """The client's last trip (departing on or before `today`) or next one (after `today`)."""
+    when = Enquiry.depart_date > today if upcoming else Enquiry.depart_date <= today
+    return (
+        select(Enquiry.origin, Enquiry.destination, Enquiry.depart_date)
+        .where(
+            Enquiry.client_id == Client.id,
+            Enquiry.status != "lost",
+            Enquiry.origin.is_not(None),
+            Enquiry.destination.is_not(None),
+            Enquiry.depart_date.is_not(None),
+            when,
+        )
+        .order_by(
+            Enquiry.depart_date.asc() if upcoming else Enquiry.depart_date.desc(),
+            Enquiry.created_at.desc(),
+            Enquiry.number.desc(),
+        )
+        .limit(1)
+        .correlate(Client)
+        .lateral("next_trip" if upcoming else "last_trip")
     )
-    .order_by(Enquiry.depart_date.desc(), Enquiry.created_at.desc(), Enquiry.number.desc())
-    .limit(1)
-    .correlate(Client)
-    .lateral("last_trip")
-)
+
+
+_TripCols = tuple[str | None, str | None, date | None]
+_StatsRow = Row[
+    Client, int, int, int, str | None, str | None, date | None, str | None, str | None, date | None
+]
 
 
 def _with_stats(
-    currency: str,
-) -> Select[Client, int, int, int, str | None, str | None, date | None]:
-    return select(
-        Client,
-        _ENQUIRY_COUNT,
-        _QUOTE_COUNT,
-        _won_value(currency),
-        _LAST_TRIP.c.origin,
-        _LAST_TRIP.c.destination,
-        _LAST_TRIP.c.depart_date,
-    ).outerjoin(_LAST_TRIP, true())
-
-
-def _to_out(
-    row: Row[Client, int, int, int, str | None, str | None, date | None], currency: str
-) -> ClientOut:
-    client, enquiry_count, quote_count, won_value, origin, destination, depart_date = row
-    fields = {name: getattr(client, name) for name in _CLIENT_FIELDS}
-    last_trip = (
-        TripRef(origin=origin, destination=destination, depart_date=depart_date)
-        if origin is not None and destination is not None and depart_date is not None
-        else None
+    currency: str, today: date
+) -> Select[
+    Client, int, int, int, str | None, str | None, date | None, str | None, str | None, date | None
+]:
+    """Each client with its stats, in one statement (lateral trip lookups, no per-row queries)."""
+    last, upcoming = _trip(today, upcoming=False), _trip(today, upcoming=True)
+    return (
+        select(
+            Client,
+            _ENQUIRY_COUNT,
+            _QUOTE_COUNT,
+            _won_value(currency),
+            last.c.origin,
+            last.c.destination,
+            last.c.depart_date,
+            upcoming.c.origin,
+            upcoming.c.destination,
+            upcoming.c.depart_date,
+        )
+        .outerjoin_from(Client, last, true())
+        .outerjoin_from(Client, upcoming, true())
     )
+
+
+def _trip_ref(cols: _TripCols) -> TripRef | None:
+    origin, destination, depart_date = cols
+    if origin is None or destination is None or depart_date is None:
+        return None
+    return TripRef(origin=origin, destination=destination, depart_date=depart_date)
+
+
+def _to_out(row: _StatsRow, currency: str) -> ClientOut:
+    client, enquiry_count, quote_count, won_value = row[:4]
+    fields = {name: getattr(client, name) for name in _CLIENT_FIELDS}
     return ClientOut(
         **fields,
         enquiry_count=enquiry_count,
         quote_count=quote_count,
         won_value_minor=int(won_value),
         currency=currency,
-        last_trip=last_trip,
+        last_trip=_trip_ref((row[4], row[5], row[6])),
+        next_trip=_trip_ref((row[7], row[8], row[9])),
     )
 
 
-async def _currency(db: AsyncSession, agency_id: UUID) -> str:
-    return (await identity_service.get_agency_settings(db, agency_id)).currency
+async def _stats_context(db: AsyncSession, agency_id: UUID) -> tuple[str, date]:
+    """The agency's currency and today's date in its time zone."""
+    agency = await identity_service.get_agency_settings(db, agency_id)
+    return agency.currency, utcnow().astimezone(ZoneInfo(agency.timezone)).date()
 
 
 async def _check_email_free(db: AsyncSession, email: str | None, *, exclude: UUID | None) -> None:
@@ -370,9 +410,9 @@ async def list_clients(
 ) -> ClientList:
     conditions = _filters(q.strip() if q else None, tag.strip().lower() if tag else None)
     total = await db.scalar(select(func.count()).select_from(Client).where(*conditions))
-    currency = await _currency(db, agency_id)
+    currency, today = await _stats_context(db, agency_id)
     rows = await db.execute(
-        _with_stats(currency)
+        _with_stats(currency, today)
         .where(*conditions)
         .order_by(Client.updated_at.desc(), Client.id)
         .limit(limit)
@@ -383,8 +423,10 @@ async def list_clients(
 
 async def get_client(db: AsyncSession, client_id: UUID, *, agency_id: UUID) -> ClientOut:
     """The client with its counts and stats (see the module docstring), or ClientNotFound."""
-    currency = await _currency(db, agency_id)
-    row = (await db.execute(_with_stats(currency).where(Client.id == client_id))).one_or_none()
+    currency, today = await _stats_context(db, agency_id)
+    row = (
+        await db.execute(_with_stats(currency, today).where(Client.id == client_id))
+    ).one_or_none()
     if row is None:
         raise ClientNotFound
     return _to_out(row, currency)

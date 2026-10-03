@@ -65,3 +65,29 @@ async def test_source_results_are_indexed_by_search():
             )
         ).scalar_one()
     assert "search_source_results" in definition and "(search_id)" in definition
+
+
+async def test_hot_paths_are_indexed():
+    expected = {
+        "ix_activity_entity": (
+            "activity_events",
+            "(agency_id, entity_type, entity_id, occurred_at DESC)",
+        ),
+        "ix_enquiries_client_depart": ("enquiries", "(client_id, depart_date)"),
+        "ix_quotes_client_status": ("quotes", "(client_id, status)"),
+        "ix_quotes_enquiry": ("quotes", "(enquiry_id)"),
+    }
+    async with get_sessionmaker()() as db:
+        rows = (
+            await db.execute(
+                text(
+                    "SELECT indexname, tablename, indexdef FROM pg_indexes "
+                    "WHERE schemaname = 'public' AND indexname = ANY(:names)"
+                ),
+                {"names": list(expected)},
+            )
+        ).all()
+    found = {r.indexname: (r.tablename, r.indexdef) for r in rows}
+    assert set(found) == set(expected)
+    for name, (table, columns) in expected.items():
+        assert found[name][0] == table and found[name][1].endswith(f"USING btree {columns}")

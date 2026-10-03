@@ -185,3 +185,34 @@ async def test_quote_timeline_shows_lazy_expiry(client, airports):
         agency, "SELECT count(*) FROM activity_events WHERE kind = 'quote.expired'"
     )
     assert rows == [(1,)]
+
+
+async def test_client_timeline_keeps_quotes_filed_under_the_client(client, airports):
+    """A quote stays on its client's timeline after its enquiry moves to another client."""
+    await signup(client)
+    agency = await agency_of(client)
+    priya = await new_client(client, "Priya Sharma", "priya@example.com")
+    ravi = await new_client(client, "Ravi Kumar", "ravi@example.com")
+    enquiry = await new_enquiry(client, priya["id"])
+    await sent_quote(client, enquiry)
+    await exec_as_tenant(
+        agency,
+        "UPDATE enquiries SET client_id = :c WHERE id = :e",
+        {"c": ravi["id"], "e": enquiry["id"]},
+    )
+    quote_events = {
+        "New quote Q-0001 for E-0001",
+        "Q-0001 version 1 (1 options)",
+        "Q-0001 sent",
+    }
+    enquiry_events = {
+        "New enquiry E-0001 DEL → BOM",
+        "E-0001 moved to quoting",
+        "E-0001 moved to quoted",
+    }
+    assert summaries(await timeline(client, "clients", priya["id"])) == (
+        {"Added client Priya Sharma"} | quote_events
+    )
+    assert summaries(await timeline(client, "clients", ravi["id"])) == (
+        {"Added client Ravi Kumar"} | enquiry_events | quote_events
+    )

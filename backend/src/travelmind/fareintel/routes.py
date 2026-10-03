@@ -1,17 +1,20 @@
 """Route fare intelligence: what one route has cost lately, read from fare history.
 
 Fare history (`fare_snapshots`) is global market data, one traveller's one-way fare per row,
-each in the currency it was observed in. A route's figures use the agency's currency only, the
-given cabin, and the last `WINDOW_DAYS` local days (today included, in the agency's time zone).
-They come from one family of fares: "market" (live or cached) when the route has any, else
-"sandbox", else none (`family` null, every list empty).
+each in the currency it was observed in: a fare search shows (and records) prices in its origin's
+currency (`display_currency_for`), so a route's figures are in that route currency, whatever the
+agency's own currency is. They use that currency only, the given cabin, and the last
+`WINDOW_DAYS` local days (today included, in the agency's time zone). They come from one family
+of fares: "market" (live or cached) when the route has any, else "sandbox", else none (`family`
+null, every list empty). `updated_at` (the family's latest observation) is truncated to the
+agency's local hour, so other agencies' search times aren't visible to the second.
 
 Percentiles and medians are Postgres `percentile_cont` (linear interpolation between the closest
 ranks), rounded half-up to a whole minor unit: [1000, 2000, 3000, 4000] gives p25 1750, median
 2500, p75 3250; [1001, 1002] gives a median of 1001.5, shown as 1002.
 
 `your_searches` are the agency's own recent one-way, adults-only searches of the route in the
-agency currency (tenant data under RLS), each as one traveller's share of the cheapest offer.
+route currency (tenant data under RLS), each as one traveller's share of the cheapest offer.
 """
 
 from datetime import UTC, date, datetime, time, timedelta
@@ -29,6 +32,7 @@ from travelmind.db import DbSession, utcnow
 from travelmind.fareintel.service import PROVENANCES, Family
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
+from travelmind.offers.fx import display_currency_for
 from travelmind.offers.models import Cabin
 from travelmind.reference.service import get_airport_index
 
@@ -37,6 +41,7 @@ __all__ = [
     "SEARCHES_LIMIT",
     "WINDOW_DAYS",
     "RouteIntelOut",
+    "route_currency",
     "route_intel",
     "routes_router",
 ]
@@ -94,7 +99,7 @@ def _minor(value: Any) -> int:
     return int(Decimal(str(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
-# The route's fares in the agency currency and window; `:provenances` picks one family.
+# The route's fares in the route currency and window; `:provenances` picks one family.
 _ROUTE = """
     FROM fare_snapshots
     WHERE origin = :origin AND destination = :destination
@@ -156,6 +161,20 @@ _SEARCHES_SQL = text(
 )
 
 
+def _local_hour(at: datetime, timezone: str) -> datetime:
+    """`at` truncated to the start of its hour in the agency's time zone, in UTC."""
+    local = at.astimezone(ZoneInfo(timezone))
+    return local.replace(minute=0, second=0, microsecond=0).astimezone(UTC)
+
+
+async def route_currency(db: AsyncSession, origin: str) -> str:
+    """The currency a fare search from `origin` prices (and records) fares in."""
+    airport = (await get_airport_index(db)).get(origin)
+    if airport is None:
+        raise ValueError(f"Unknown airport code {origin}.")
+    return display_currency_for(airport.country_code)
+
+
 def _window_start(now: datetime, timezone: str) -> datetime:
     """Local midnight starting the agency's last `WINDOW_DAYS` days, today included."""
     zone = ZoneInfo(timezone)
@@ -183,13 +202,14 @@ async def route_intel(
     now: datetime | None = None,
 ) -> RouteIntelOut:
     """The route's fare figures for the agency (see the module docstring). The session must be
-    bound to the agency."""
+    bound to the agency; `origin` must be a known airport."""
     agency = await identity_service.get_agency_settings(db, agency_id)
+    currency = await route_currency(db, origin)
     params: dict[str, Any] = {
         "origin": origin,
         "destination": destination,
         "cabin": cabin,
-        "currency": agency.currency,
+        "currency": currency,
         "since": _window_start(now or utcnow(), agency.timezone),
         "tz": agency.timezone,
     }
@@ -204,14 +224,14 @@ async def route_intel(
     family: Family | None = None
     updated_at: datetime | None = None
     if found.market_at is not None:
-        family, updated_at = "market", found.market_at
+        family, updated_at = "market", _local_hour(found.market_at, agency.timezone)
     elif found.sandbox_at is not None:
-        family, updated_at = "sandbox", found.sandbox_at
+        family, updated_at = "sandbox", _local_hour(found.sandbox_at, agency.timezone)
     out = RouteIntelOut(
         origin=origin,
         destination=destination,
         cabin=cabin,
-        currency=agency.currency,
+        currency=currency,
         family=family,
         daily=[],
         by_days_out=[],
