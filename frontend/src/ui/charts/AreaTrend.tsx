@@ -4,16 +4,13 @@ import { useElementSize } from "../../lib/useElementSize";
 import { ChartTooltip } from "./ChartTooltip";
 import { areaPath, linearScale, niceMax, niceTicks, pathFromPoints, pickTickIndices, type Point } from "./scale";
 import {
-  AXIS,
   ChartDataTable,
   ChartEmpty,
   FALLBACK_WIDTH,
-  GRID,
-  SURFACE,
-  chartColor,
   formatValue,
   isValue,
   useChartAnimation,
+  useChartColors,
   type ChartColor,
 } from "./shared";
 
@@ -50,6 +47,7 @@ const GLYPH = 6.2;
 export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTrendProps) {
   const [ref, size] = useElementSize<HTMLDivElement>();
   const animate = useChartAnimation();
+  const colors = useChartColors();
   const [active, setActive] = useState<number | null>(null);
   const focused = useRef(false);
   const tooltipId = useId();
@@ -116,7 +114,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
   const tooltipRows =
     active === null
       ? []
-      : series.map((s, si) => ({ key: s.key, label: s.label, value: formatted(valueAt(si, active)), color: chartColor(s.color) }));
+      : series.map((s, si) => ({ key: s.key, label: s.label, value: formatted(valueAt(si, active)), color: colors.series(s.color) }));
   const readout =
     active === null ? "" : `${dayAt(active)}: ${tooltipRows.map((r) => `${r.label} ${r.value}`).join(", ")}`;
 
@@ -133,7 +131,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
         <ul aria-label={`${label} legend`} className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-dim">
           {series.map((s) => (
             <li key={s.key} className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className="h-2 w-2 rounded-[2px]" style={{ background: chartColor(s.color) }} />
+              <span aria-hidden="true" className="h-2 w-2 rounded-[2px]" style={{ background: colors.series(s.color) }} />
               {s.label}
             </li>
           ))}
@@ -177,7 +175,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
                     x2={right}
                     y1={ty}
                     y2={ty}
-                    stroke={tick === 0 ? AXIS : GRID}
+                    stroke={tick === 0 ? colors.axis : colors.grid}
                     strokeOpacity={tick === 0 ? 0.35 : 1}
                     strokeWidth={1}
                     shapeRendering="crispEdges"
@@ -187,7 +185,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
                     y={ty}
                     textAnchor="end"
                     dominantBaseline="middle"
-                    fill={AXIS}
+                    fill={colors.axis}
                     fontSize={AXIS_FONT}
                     className="font-mono tabular-nums"
                   >
@@ -203,7 +201,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
                 x={x(di)}
                 y={height - 6}
                 textAnchor={n === 1 ? "middle" : di === 0 ? "start" : di === n - 1 ? "end" : "middle"}
-                fill={AXIS}
+                fill={colors.axis}
                 fontSize={AXIS_FONT}
                 className="font-mono tabular-nums"
               >
@@ -215,7 +213,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
                 key={`area-${s.key}`}
                 data-area=""
                 d={areaPath(pointsOf(si), baseline)}
-                fill={chartColor(s.color)}
+                fill={colors.series(s.color)}
                 fillOpacity={0.15}
                 data-animate={animate ? "" : undefined}
                 className={animate ? "tm-fade-in" : undefined}
@@ -228,7 +226,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
                 data-line=""
                 d={pathFromPoints(pointsOf(si))}
                 fill="none"
-                stroke={chartColor(s.color)}
+                stroke={colors.series(s.color)}
                 strokeWidth={1.75}
                 strokeLinejoin="round"
                 strokeLinecap="round"
@@ -241,7 +239,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
             {n === 1 &&
               series.map((s, si) =>
                 pointsOf(si).map(([px, py]) => (
-                  <circle key={`dot-${s.key}`} cx={px} cy={py} r={3.5} fill={chartColor(s.color)} stroke={SURFACE} strokeWidth={2} />
+                  <circle key={`dot-${s.key}`} cx={px} cy={py} r={3.5} fill={colors.series(s.color)} stroke={colors.surface} strokeWidth={2} />
                 )),
               )}
             {active !== null && (
@@ -251,7 +249,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
                   x2={Math.round(x(active)) + 0.5}
                   y1={PAD_TOP}
                   y2={baseline}
-                  stroke={AXIS}
+                  stroke={colors.axis}
                   strokeOpacity={0.55}
                   strokeWidth={1}
                   shapeRendering="crispEdges"
@@ -259,7 +257,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
                 {series.map((s, si) => {
                   const v = valueAt(si, active);
                   if (!isValue(v)) return null;
-                  return <circle key={s.key} cx={x(active)} cy={y(Math.max(0, v))} r={4} fill={chartColor(s.color)} stroke={SURFACE} strokeWidth={2} />;
+                  return <circle key={s.key} cx={x(active)} cy={y(Math.max(0, v))} r={4} fill={colors.series(s.color)} stroke={colors.surface} strokeWidth={2} />;
                 })}
               </g>
             )}

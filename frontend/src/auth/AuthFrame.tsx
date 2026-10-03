@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { FareInsightCard, FareRowsCard, Illustration, SupplierStatusCard } from "../features/landing/ConsolePreview";
 import { DATA_SOURCES, SourceMark } from "../features/landing/IntegrationsStrip";
 import { Wordmark } from "../features/landing/Wordmark";
-import { ThemeToggle } from "../ui/ThemeToggle";
+import { ThemeSwitcher } from "../theme/ThemeSwitcher";
 
 const POINTS = [
   { icon: Tags, text: "Every price labelled Live, Cached or Sandbox" },
@@ -92,7 +92,7 @@ export function AuthFrame({
           <Link to="/" className="rounded-sm">
             <Wordmark />
           </Link>
-          <ThemeToggle />
+          <ThemeSwitcher hideNameBelow="sm" />
         </header>
         <main className="flex flex-1 items-center justify-center py-10">
           <div className="w-full max-w-sm">

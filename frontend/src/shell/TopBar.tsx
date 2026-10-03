@@ -3,6 +3,7 @@ import { Menu as MenuIcon } from "lucide-react";
 import type { Ref } from "react";
 import type { Me } from "../api/types";
 import { CommandPalette } from "../features/palette/CommandPalette";
+import { ThemeSwitcher } from "../theme/ThemeSwitcher";
 import { initials } from "../ui/Avatar";
 import { HelpMenu } from "./HelpMenu";
 import { NotificationsBell } from "./NotificationsBell";
@@ -59,6 +60,9 @@ export function TopBar({ me, sidebarId, navOpen, onOpenNav, navButtonRef }: TopB
         <CommandPalette />
       </div>
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+        <span className="max-sm:hidden">
+          <ThemeSwitcher hideNameBelow="lg" />
+        </span>
         <NotificationsBell />
         <span className="max-sm:hidden">
           <HelpMenu />

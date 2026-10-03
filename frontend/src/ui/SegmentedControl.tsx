@@ -9,6 +9,10 @@ type SegmentedControlProps<T extends string> = {
   onChange: (value: T) => void;
   /** Accessible name of the group, e.g. "Range". */
   label: string;
+  /** Show the current value but block changes (e.g. a setting another choice fixes). */
+  disabled?: boolean;
+  /** Id of text that explains the control, such as why it is disabled. */
+  describedBy?: string;
   className?: string;
 };
 
@@ -16,13 +20,27 @@ type SegmentedControlProps<T extends string> = {
  * A compact single-choice switch (e.g. 7d / 30d / 90d). Built on native radios, so the group is one
  * Tab stop and arrow keys move the selection exactly as the platform does.
  */
-export function SegmentedControl<T extends string>({ options, value, onChange, label, className }: SegmentedControlProps<T>) {
+export function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+  disabled = false,
+  describedBy,
+  className,
+}: SegmentedControlProps<T>) {
   const name = useId();
   return (
     <div
       role="radiogroup"
       aria-label={label}
-      className={cn("inline-flex h-8 max-w-full items-center rounded-md border border-line-strong bg-surface-2 p-0.5", className)}
+      aria-describedby={describedBy}
+      aria-disabled={disabled || undefined}
+      className={cn(
+        "inline-flex h-8 max-w-full items-center rounded-md border border-line-strong bg-surface-2 p-0.5",
+        disabled && "opacity-50",
+        className,
+      )}
     >
       {options.map((option) => {
         const checked = option.value === value;
@@ -30,12 +48,13 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
           <label
             key={option.value}
             className={cn(
-              "relative inline-flex h-full min-w-9 cursor-pointer items-center justify-center rounded-[4px] px-2.5",
+              "relative inline-flex h-full min-w-9 items-center justify-center rounded-[4px] px-2.5",
+              disabled ? "cursor-not-allowed" : "cursor-pointer",
               "text-xs font-medium tabular-nums transition-colors duration-150 ease-tm",
               "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-primary",
               checked
                 ? "border border-line-strong bg-surface text-ink shadow-raise"
-                : "border border-transparent text-dim hover:text-ink",
+                : cn("border border-transparent text-dim", !disabled && "hover:text-ink"),
             )}
           >
             <input
@@ -43,6 +62,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
               name={name}
               value={option.value}
               checked={checked}
+              disabled={disabled}
               onChange={() => onChange(option.value)}
               className="sr-only"
             />

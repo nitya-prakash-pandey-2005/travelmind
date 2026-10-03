@@ -308,6 +308,8 @@
 
 /* Ember: titles run saffron -> ink -> green, and the top bar picks up a faint warm tint. */
 :root[data-theme="ember"][data-contrast="normal"] :is(h1, .tm-page-title) {
+  /* Size the box to the text so the gradient spans the glyphs, not the empty width of the row. */
+  width: fit-content;
   background-image: linear-gradient(90deg, var(--tm-primary), var(--tm-text) 55%, var(--tm-accent-2));
   -webkit-background-clip: text;
   background-clip: text;

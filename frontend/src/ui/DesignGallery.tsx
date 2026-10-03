@@ -1,8 +1,10 @@
 import { Copy, Download, Inbox, Pencil, Plus, Send, Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
+import { resolvePalette, THEMES, TOKEN_VARS, useThemeChoice, type PaletteToken, type ThemeMeta } from "../theme";
+import { ThemeSwatch } from "../theme/ThemeSwitcher";
 import { Avatar, AvatarStack } from "./Avatar";
 import { Badge } from "./Badge";
-import { Button } from "./Button";
+import { Button, buttonClasses } from "./Button";
 import { AreaTrend, BarList, Donut, Funnel, KpiStrip, KpiTile, LatencyBand, type TrendSeries } from "./charts";
 import { DataTable, type DataTableColumn } from "./DataTable";
 import { Dialog } from "./Dialog";
@@ -152,6 +154,70 @@ function OverlayDemo() {
 }
 
 /** Living style guide for the operations-console design language (design direction v2). */
+/** Every token of a theme's default look as inline custom properties, so a card renders in that theme. */
+function themeScope(theme: ThemeMeta): CSSProperties {
+  const palette = resolvePalette({ theme: theme.id, mode: theme.modes === "fixed-light" ? "light" : "dark", contrast: false });
+  const scope: Record<string, string> = {};
+  for (const token of Object.keys(TOKEN_VARS) as PaletteToken[]) scope[TOKEN_VARS[token]] = palette[token];
+  return scope as CSSProperties;
+}
+
+const MODES_NOTE: Record<ThemeMeta["modes"], string> = {
+  toggle: "Dark, light and high contrast",
+  "fixed-light": "Light only",
+  "fixed-dark": "Dark only",
+};
+
+/** One card per theme, drawn in that theme's own tokens, with a button that applies it. */
+function ThemePreviews() {
+  const [choice, setChoice] = useThemeChoice();
+  return (
+    <ul aria-label="Theme previews" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {THEMES.map((theme) => {
+        const current = theme.id === choice.theme;
+        return (
+          <li key={theme.id} style={themeScope(theme)} className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-bg font-sans text-ink">
+            <div className="flex items-center gap-3 border-b border-line bg-surface px-3 py-2.5">
+              <ThemeSwatch theme={theme} />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-display text-sm font-semibold">{theme.name}</span>
+                <span className="truncate text-xs text-dim">{theme.tagline}</span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-3 p-3">
+              <div className="flex flex-col gap-1 rounded-lg border border-line bg-surface p-3">
+                <span className="tm-micro">Open quotes</span>
+                <span className="font-mono text-xl font-medium">₹6.2L</span>
+                <span className="text-xs text-dim">12 quotes · updated 5 min ago</span>
+                <div aria-hidden="true" className="mt-1 flex h-1.5 overflow-hidden rounded-full">
+                  <span className="w-[38%] bg-chart-1" />
+                  <span className="w-[22%] bg-chart-2" />
+                  <span className="w-[16%] bg-chart-3" />
+                  <span className="w-[14%] bg-chart-4" />
+                  <span className="w-[10%] bg-chart-5" />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="tm-tint inline-flex h-5 items-center rounded-full border px-2 font-mono text-[10px] font-medium uppercase tracking-[0.06em] text-ok">Live</span>
+                <span className="tm-tint inline-flex h-5 items-center rounded-full border px-2 font-mono text-[10px] font-medium uppercase tracking-[0.06em] text-warn">Cached</span>
+                <span className="text-xs text-faint">{current ? "Current theme" : MODES_NOTE[theme.modes]}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" aria-pressed={current} onClick={() => setChoice({ theme: theme.id })}>
+                  Use {theme.name}
+                </Button>
+                <span aria-hidden="true" className={buttonClasses({ variant: "secondary", size: "sm" })}>
+                  Secondary
+                </span>
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function DesignGallery() {
   const [tab, setTab] = useState("overview");
   const [range, setRange] = useState<(typeof RANGES)[number]["value"]>("30d");
@@ -185,6 +251,10 @@ export function DesignGallery() {
           />
         }
       />
+
+      <Section title="Themes" description="Six looks built from the same tokens. Each card is drawn in its own theme; choose one to apply it.">
+        <ThemePreviews />
+      </Section>
 
       <Section title="Colour tokens" description="Graphite surfaces, one cyan accent, status hues always paired with a label.">
         <Swatches tokens={SURFACE_TOKENS} />

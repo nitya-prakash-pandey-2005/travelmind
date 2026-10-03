@@ -8,4 +8,4 @@ export { KpiTile, type KpiDelta } from "./KpiTile";
 export { LatencyBand } from "./LatencyBand";
 export { Sparkline, type SparklineTone } from "./Sparkline";
 export { areaPath, linearScale, niceMax, niceTicks, pathFromPoints, pickTickIndices, type Point } from "./scale";
-export { chartColor, type ChartColor } from "./shared";
+export { chartColors, useChartColors, type ChartColor, type ChartColors, type ChartTone } from "./shared";

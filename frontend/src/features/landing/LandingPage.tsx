@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useDocumentTitle } from "../../lib/useDocumentTitle";
 import { cn } from "../../ui/cn";
-import { ThemeToggle } from "../../ui/ThemeToggle";
+import { ThemeSwitcher } from "../../theme/ThemeSwitcher";
 import { ClosingCall } from "./ClosingCall";
 import { CtaLink } from "./CtaLink";
 import { Faq } from "./Faq";
@@ -45,9 +45,7 @@ function TopNav() {
         <CtaLink to="/signup" size="sm" context=" for your agency">
           Create workspace
         </CtaLink>
-        <span className="hidden sm:inline-flex">
-          <ThemeToggle />
-        </span>
+        <ThemeSwitcher hideNameBelow="lg" />
       </nav>
     </header>
   );

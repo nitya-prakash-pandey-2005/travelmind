@@ -1,5 +1,5 @@
 import { formatNumber } from "../../lib/format";
-import { ChartDataTable, GRID, chartColor, isValue, percent, useChartAnimation } from "./shared";
+import { ChartDataTable, isValue, percent, useChartAnimation, useChartColors } from "./shared";
 
 const BAR = 10;
 
@@ -24,17 +24,18 @@ export function LatencyBand({
   label?: string;
 }) {
   const animate = useChartAnimation();
+  const colors = useChartColors();
   const scale = Math.max(0, ...[p50, p95, max].filter(isValue));
   const p50Pct = percent(p50, scale);
   const p95Pct = percent(p95, scale);
   const caption = `p50 ${ms(p50)} · p95 ${ms(p95)}`;
-  const color = chartColor(1);
+  const color = colors.series(1);
 
   return (
     <div className="min-w-0">
       <div role="img" aria-label={`${label}: p50 ${ms(p50)}, p95 ${ms(p95)}, max ${ms(max)}`} className="flex flex-col gap-1.5">
         <svg aria-hidden="true" width="100%" height={BAR} className="block overflow-visible">
-          <rect width="100%" height={BAR} rx={BAR / 2} fill={GRID} />
+          <rect width="100%" height={BAR} rx={BAR / 2} fill={colors.grid} />
           <g data-animate={animate ? "" : undefined} className={animate ? "tm-grow-x" : undefined}>
             <rect width={p95Pct} height={BAR} rx={BAR / 2} fill={color} fillOpacity={0.22} />
             <rect width={p50Pct} height={BAR} rx={BAR / 2} fill={color} fillOpacity={0.6} />

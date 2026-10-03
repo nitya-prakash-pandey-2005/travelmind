@@ -175,7 +175,7 @@ export function PreviewWindow({
       </div>
       <div className="flex">
         {sidebar && (
-          <div className={cn("hidden w-40 shrink-0 flex-col gap-3 border-r border-line bg-surface px-2 py-3", SIDEBAR_FROM[sidebar])}>
+          <div className={cn("hidden w-44 shrink-0 flex-col gap-3 border-r border-line bg-surface px-2 py-3", SIDEBAR_FROM[sidebar])}>
             {NAV.map(({ group, items }) => (
               <div key={group} className="flex flex-col gap-0.5">
                 <span className="tm-micro px-2 pb-1">{group}</span>
@@ -183,13 +183,13 @@ export function PreviewWindow({
                   <span
                     key={label}
                     className={cn(
-                      "relative flex h-7 items-center gap-2 rounded-md px-2 text-xs",
+                      "relative flex h-7 items-center gap-2 whitespace-nowrap rounded-md px-2 text-xs",
                       label === active ? "bg-surface-2 text-ink" : "text-dim",
                     )}
                   >
                     {label === active && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary" />}
-                    <Icon size={13} strokeWidth={1.75} className={label === active ? "text-primary" : "text-faint"} />
-                    {label}
+                    <Icon size={13} strokeWidth={1.75} className={cn("shrink-0", label === active ? "text-primary" : "text-faint")} />
+                    <span className="min-w-0 truncate">{label}</span>
                   </span>
                 ))}
               </div>

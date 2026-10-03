@@ -1,4 +1,4 @@
-import { ChartDataTable, ChartEmpty, GRID, chartColor, formatValue, isValue, percent, useChartAnimation } from "./shared";
+import { ChartDataTable, ChartEmpty, formatValue, isValue, percent, useChartAnimation, useChartColors } from "./shared";
 
 export type BarItem = { label: string; value: number; hint?: string };
 
@@ -22,6 +22,7 @@ export function BarList({
   max?: number;
 }) {
   const animate = useChartAnimation();
+  const colors = useChartColors();
   if (items.length === 0) return <ChartEmpty label={label} height={96} />;
 
   const top = max ?? Math.max(0, ...items.map((item) => item.value).filter(isValue));
@@ -40,7 +41,7 @@ export function BarList({
                 {item.hint && <span className="truncate text-[11px] text-dim">{item.hint}</span>}
               </div>
               <svg aria-hidden="true" width="100%" height={BAR} className="block overflow-visible">
-                <rect width="100%" height={BAR} rx={RADIUS} fill={GRID} />
+                <rect width="100%" height={BAR} rx={RADIUS} fill={colors.grid} />
                 {width !== "0%" && (
                   <g
                     data-animate={animate ? "" : undefined}
@@ -50,7 +51,7 @@ export function BarList({
                     {/* The bar's own viewport clips a longer rounded rect that starts off to the left:
                         the baseline end is square, the data end rounded, and nothing draws past the value. */}
                     <svg data-bar="" width={width} height={BAR} overflow="hidden">
-                      <rect x="-50%" width="150%" height={BAR} rx={RADIUS} fill={chartColor(1)} />
+                      <rect x="-50%" width="150%" height={BAR} rx={RADIUS} fill={colors.series(1)} />
                     </svg>
                   </g>
                 )}
