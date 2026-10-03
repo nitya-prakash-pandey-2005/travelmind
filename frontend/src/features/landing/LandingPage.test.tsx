@@ -187,6 +187,7 @@ test("top navigation, features, steps, security, FAQ and footer", async () => {
   expect(within(nav).getByRole("link", { name: "Security" })).toHaveAttribute("href", "#security");
   expect(within(nav).getByRole("link", { name: "FAQ" })).toHaveAttribute("href", "#faq");
   expect(within(nav).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+  // On small phones the visible label shortens to "Create"; the name stays whole.
   expect(within(nav).getByRole("link", { name: /^Create workspace/ })).toHaveAttribute("href", "/signup");
 
   const features = screen.getByRole("region", { name: /Features/ });

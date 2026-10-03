@@ -5,7 +5,10 @@ import type { Agency } from "./types";
 /** GET /api/v1/agency: the profile plus, for a demo workspace, when it is deleted. */
 export type AgencyProfile = Agency & { demo_expires_at: string | null };
 
-/** Known notification kinds; the feed may carry others, which render with a generic icon. */
+/**
+ * The notification kinds, exactly: the feed (backend dashboard/metrics.py, `_RELEVANT`) selects only these
+ * activity events, though its schema types `kind` as a plain string.
+ */
 export type NotificationKind =
   | "quote.viewed"
   | "quote.accepted"
@@ -15,7 +18,7 @@ export type NotificationKind =
 
 export type NotificationItem = {
   id: string;
-  kind: NotificationKind | (string & {});
+  kind: NotificationKind;
   summary: string;
   /** ISO 8601 UTC. */
   occurred_at: string;

@@ -30,10 +30,14 @@ const SECTIONS = [
   { href: "#faq", label: "FAQ" },
 ];
 
+/**
+ * Fits from 320 px: below 440 px the gaps tighten and the call to action reads "Create" (its name stays "Create
+ * workspace for your agency"); below 360 px it leaves the bar to the hero's, so the theme switcher stays on screen.
+ */
 function TopNav() {
   return (
     <header className="tm-topbar sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
-      <nav aria-label="Main" className={cn(CONTAINER, "flex h-14 items-center gap-3 sm:gap-6")}>
+      <nav aria-label="Main" className={cn(CONTAINER, "flex h-14 items-center gap-2 min-[440px]:gap-3 sm:gap-6")}>
         <Link to="/" className="mr-auto rounded-sm">
           <Wordmark />
         </Link>
@@ -43,11 +47,17 @@ function TopNav() {
           </a>
         ))}
         <span aria-hidden="true" className="hidden h-4 w-px bg-line lg:block" />
-        <Link to="/login" className="rounded-sm text-[13px] text-dim transition-colors duration-150 ease-tm hover:text-ink">
+        <Link
+          to="/login"
+          className="shrink-0 whitespace-nowrap rounded-sm text-[13px] text-dim transition-colors duration-150 ease-tm hover:text-ink"
+        >
           Sign in
         </Link>
-        <CtaLink to="/signup" size="sm" context=" for your agency">
-          Create workspace
+        <CtaLink to="/signup" size="sm" context=" for your agency" className="max-[360px]:hidden">
+          {/* One inline run, so the space survives in the label and in the accessible name. */}
+          <span>
+            Create <span className="max-[440px]:sr-only">workspace</span>
+          </span>
         </CtaLink>
         <ThemeSwitcher hideNameBelow="lg" />
       </nav>
