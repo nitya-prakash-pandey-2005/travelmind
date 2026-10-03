@@ -20,6 +20,7 @@ from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
 from travelmind.offers.models import MAX_PASSENGERS, Cabin
 from travelmind.offers.money import CurrencyCode, Money
+from travelmind.readcache import InvalidatesAgencyCache
 from travelmind.workspace._common import (
     NO_NUL,
     SINGLE_LINE,
@@ -570,7 +571,9 @@ async def get_enquiry(db: AsyncSession, agency_id: UUID, enquiry_id: UUID) -> En
     return _to_out(enquiry, client_name, quote_count, names)
 
 
-enquiries_router = APIRouter(prefix="/api/v1/enquiries", tags=["enquiries"])
+enquiries_router = APIRouter(
+    prefix="/api/v1/enquiries", tags=["enquiries"], dependencies=[InvalidatesAgencyCache]
+)
 
 
 @enquiries_router.get("")

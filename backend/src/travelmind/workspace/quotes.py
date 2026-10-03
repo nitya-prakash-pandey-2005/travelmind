@@ -37,6 +37,7 @@ from travelmind.offers.cache import recall_offer
 from travelmind.offers.money import CurrencyCode
 from travelmind.offers.schemas import OfferView
 from travelmind.offers.service import offer_view
+from travelmind.readcache import InvalidatesAgencyCache, mark_agency_changed
 from travelmind.workspace._common import NO_NUL, WorkspaceError, http_error
 from travelmind.workspace.activity import ActivityKind, ActivityValue, record_activity
 from travelmind.workspace.counters import format_number, next_number
@@ -534,6 +535,7 @@ async def expire_overdue_quotes(
         )
     if rows:
         await db.flush()
+        mark_agency_changed(db, agency_id)  # bumped after the request (readcache)
     return len(rows)
 
 
@@ -742,7 +744,9 @@ async def get_quote(
 
 # --- router -----------------------------------------------------------------------------------
 
-quotes_router = APIRouter(prefix="/api/v1/quotes", tags=["quotes"])
+quotes_router = APIRouter(
+    prefix="/api/v1/quotes", tags=["quotes"], dependencies=[InvalidatesAgencyCache]
+)
 
 
 @quotes_router.get("")

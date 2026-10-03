@@ -19,6 +19,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from travelmind.db import DbSession
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
+from travelmind.readcache import InvalidatesAgencyCache
 from travelmind.workspace._common import WorkspaceError, http_error
 from travelmind.workspace.clients import ClientNotFound
 from travelmind.workspace.enquiries import EnquiryNotFound
@@ -141,7 +142,10 @@ async def quote_timeline(
     return await _timeline(db, agency_id, _about("quote", ActivityEvent.entity_id == quote_id))
 
 
-timelines_router = APIRouter(prefix="/api/v1", tags=["timelines"])
+# Timelines run lazy quote expiry.
+timelines_router = APIRouter(
+    prefix="/api/v1", tags=["timelines"], dependencies=[InvalidatesAgencyCache]
+)
 
 
 @timelines_router.get("/enquiries/{enquiry_id}/activity")

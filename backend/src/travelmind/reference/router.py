@@ -1,15 +1,21 @@
+import hashlib
 from typing import Annotated
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from starlette.concurrency import run_in_threadpool
 
+from travelmind.cache import RedisClient
 from travelmind.db import DbSession
 from travelmind.identity.deps import AuthedUser
-from travelmind.reference.search import AirportRecord
+from travelmind.readcache import CACHE_PREFIX, cached_json
+from travelmind.reference.search import AirportRecord, fold
 from travelmind.reference.service import get_airport_index
 
 reference_router = APIRouter(prefix="/api/v1/reference", tags=["reference"])
+
+# Reference data changes only with an import; results up to an hour old are fine.
+AIRPORTS_TTL_SECONDS = 3600
 
 
 class AirportOut(BaseModel):
@@ -34,13 +40,30 @@ class AirportOut(BaseModel):
         )
 
 
+_AIRPORTS = TypeAdapter(list[AirportOut])
+
+
 @reference_router.get("/airports")
 async def search_airports_route(
     q: Annotated[str, Query(min_length=2, max_length=100)],
     _current: AuthedUser,
     db: DbSession,
+    redis: RedisClient,
     limit: Annotated[int, Query(ge=1, le=25)] = 8,
 ) -> list[AirportOut]:
-    index = await get_airport_index(db)
-    hits = await run_in_threadpool(index.search, q, limit)  # fuzzy scan is CPU-heavy
-    return [AirportOut.from_record(hit.airport) for hit in hits]
+    async def load() -> list[AirportOut]:
+        index = await get_airport_index(db)
+        hits = await run_in_threadpool(index.search, q, limit)  # fuzzy scan is CPU-heavy
+        return [AirportOut.from_record(hit.airport) for hit in hits]
+
+    # The search folds its query first, so equal folds give equal results; hashed for a short key.
+    digest = hashlib.sha256(fold(q).encode()).hexdigest()[:32]
+    return await cached_json(
+        redis,
+        f"{CACHE_PREFIX}airports:{limit}:{digest}",
+        AIRPORTS_TTL_SECONDS,
+        load,
+        encode=lambda airports: _AIRPORTS.dump_json(airports).decode(),
+        decode=_AIRPORTS.validate_json,
+        cache="airports",
+    )

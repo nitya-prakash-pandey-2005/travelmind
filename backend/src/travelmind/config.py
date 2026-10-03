@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     db_pgbouncer: bool = False  # transaction pooling: no prepared statements held across them
     redis_max_connections: int = 100
     redis_pool_timeout_s: float = 1.0  # how long a command waits for a free pooled connection
+    # Connect and command deadline: an unreachable Redis fails fast (callers fall through) and
+    # never hangs a request.
+    redis_socket_timeout_s: float = 2.0
     allowed_origins: list[str] = ["http://localhost:5173"]
     session_cookie_name: str = "tm_session"
     session_ttl_hours: int = 24 * 14

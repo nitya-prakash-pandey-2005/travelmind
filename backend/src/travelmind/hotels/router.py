@@ -8,8 +8,11 @@ from travelmind.hotels.models import HotelSearchRequest
 from travelmind.hotels.schemas import HotelSearchResponse
 from travelmind.identity.deps import AuthedUser
 from travelmind.identity.service import get_agency
+from travelmind.readcache import InvalidatesAgencyCache
 
-hotels_router = APIRouter(prefix="/api/v1/hotels", tags=["hotels"])
+hotels_router = APIRouter(
+    prefix="/api/v1/hotels", tags=["hotels"], dependencies=[InvalidatesAgencyCache]
+)
 
 
 @hotels_router.post("/search")

@@ -15,10 +15,11 @@ from travelmind.identity.deps import client_ip, session_context
 from travelmind.identity.ratelimit import LoginRateLimiter
 from travelmind.identity.router import logout_route, me_response
 from travelmind.identity.schemas import MeResponse
+from travelmind.readcache import InvalidatesAgencyCache
 
 RATE_LIMIT_MESSAGE = "Too many demo workspaces from your network. Please try again later."
 
-demo_router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
+demo_router = APIRouter(prefix="/api/v1/demo", tags=["demo"], dependencies=[InvalidatesAgencyCache])
 
 
 @demo_router.post("", status_code=status.HTTP_201_CREATED)

@@ -39,6 +39,7 @@ from travelmind.identity.tokens import hash_token
 from travelmind.offers.models import Cabin
 from travelmind.offers.money import Money, per_traveller_minor
 from travelmind.offers.schemas import OfferView
+from travelmind.readcache import InvalidatesAgencyCache, mark_agency_changed
 from travelmind.workspace._common import WorkspaceError, http_error
 from travelmind.workspace.activity import record_activity
 from travelmind.workspace.counters import format_number
@@ -309,6 +310,7 @@ async def view_public_quote(db: AsyncSession, link: ShareLink, *, now: datetime)
         quote.first_viewed_at = quote.first_viewed_at or now
         quote.updated_at = now
         await db.flush()
+        mark_agency_changed(db, quote.agency_id)
         await record_activity(
             db,
             agency_id=quote.agency_id,
@@ -382,7 +384,10 @@ class _PrivateRoute(APIRoute):
 
 
 public_quotes_router = APIRouter(
-    prefix="/api/v1/public/quotes", tags=["public"], route_class=_PrivateRoute
+    prefix="/api/v1/public/quotes",
+    tags=["public"],
+    route_class=_PrivateRoute,
+    dependencies=[InvalidatesAgencyCache],
 )
 
 

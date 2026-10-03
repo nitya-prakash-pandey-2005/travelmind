@@ -10,8 +10,12 @@ from travelmind.offers import service
 from travelmind.offers.models import FlightSearchRequest
 from travelmind.offers.registry import supplier_statuses
 from travelmind.offers.schemas import FlightSearchResponse, RepriceResponse, SupplierStatusOut
+from travelmind.readcache import InvalidatesAgencyCache
 
-flights_router = APIRouter(prefix="/api/v1/flights", tags=["flights"])
+# A search is tenant data too: it feeds the Command Center's searches KPI and activity.
+flights_router = APIRouter(
+    prefix="/api/v1/flights", tags=["flights"], dependencies=[InvalidatesAgencyCache]
+)
 suppliers_router = APIRouter(prefix="/api/v1/suppliers", tags=["suppliers"])
 
 _STATUS: dict[type[service.OfferServiceError], int] = {

@@ -363,7 +363,7 @@ def _kpi(
 async def summary(
     db: AsyncSession, agency: AgencySettings, range_: Range, *, now: datetime
 ) -> SummaryOut:
-    await expire_overdue_quotes(db, agency.id, now=now)  # the caller commits
+    """The KPI cards. The caller expires overdue quotes first (it caches the result)."""
     params = _range_params(agency, window(now, agency.timezone, RANGE_DAYS[range_]))
 
     async def one(query: TextClause) -> Any:
@@ -441,10 +441,8 @@ _PIPELINE_STAGES = text(
 )
 
 
-async def pipeline(
-    db: AsyncSession, agency: AgencySettings, *, now: datetime | None = None
-) -> PipelineOut:
-    await expire_overdue_quotes(db, agency.id, now=now)  # the caller commits
+async def pipeline(db: AsyncSession, agency: AgencySettings) -> PipelineOut:
+    """Enquiries by stage. The caller expires overdue quotes first (it caches the result)."""
     rows = await db.execute(_PIPELINE_STAGES, {"agency": agency.id, "currency": agency.currency})
     found = {row.status: (row.count, int(row.value)) for row in rows}
     return PipelineOut(

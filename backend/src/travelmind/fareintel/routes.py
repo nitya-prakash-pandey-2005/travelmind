@@ -15,8 +15,15 @@ ranks), rounded half-up to a whole minor unit: [1000, 2000, 3000, 4000] gives p2
 
 `your_searches` are the agency's own recent one-way, adults-only searches of the route in the
 route currency (tenant data under RLS), each as one traveller's share of the cheapest offer.
+
+Caching: the fare figures (`family`, `daily`, `by_days_out`, `carriers`, `updated_at`) are
+tenant-free market data, cached in Redis for `ROUTE_FARES_TTL_SECONDS` under a key of origin,
+destination, cabin, route currency, the agency's time zone and its local date (everything they
+depend on). A new fare snapshot does not invalidate them: market figures up to five minutes old
+are acceptable. `your_searches` is the agency's own data and is never cached.
 """
 
+from collections.abc import Awaitable
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Any, Literal
@@ -25,21 +32,26 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
+from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from travelmind.cache import RedisClient
 from travelmind.db import DbSession, utcnow
 from travelmind.fareintel.service import PROVENANCES, Family
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
 from travelmind.offers.fx import display_currency_for
 from travelmind.offers.models import Cabin
+from travelmind.readcache import CACHE_PREFIX, cached_json
 from travelmind.reference.service import get_airport_index
 
 __all__ = [
     "CARRIERS_LIMIT",
+    "ROUTE_FARES_TTL_SECONDS",
     "SEARCHES_LIMIT",
     "WINDOW_DAYS",
+    "RouteFares",
     "RouteIntelOut",
     "route_currency",
     "route_intel",
@@ -47,6 +59,7 @@ __all__ = [
 ]
 
 WINDOW_DAYS = 60
+ROUTE_FARES_TTL_SECONDS = 300
 CARRIERS_LIMIT = 8
 SEARCHES_LIMIT = 20
 SAME_AIRPORTS_MESSAGE = "Origin and destination must be different airports."
@@ -79,6 +92,16 @@ class RouteSearch(BaseModel):
     created_at: datetime
     cheapest_minor: int
     adults: int
+
+
+class RouteFares(BaseModel):
+    """The route's tenant-free fare figures (cached)."""
+
+    family: Family | None
+    daily: list[DailyFares]
+    by_days_out: list[DaysOutFares]
+    carriers: list[CarrierFares]
+    updated_at: datetime | None
 
 
 class RouteIntelOut(BaseModel):
@@ -192,28 +215,7 @@ async def _your_searches(
     ]
 
 
-async def route_intel(
-    db: AsyncSession,
-    agency_id: UUID,
-    *,
-    origin: str,
-    destination: str,
-    cabin: Cabin,
-    now: datetime | None = None,
-) -> RouteIntelOut:
-    """The route's fare figures for the agency (see the module docstring). The session must be
-    bound to the agency; `origin` must be a known airport."""
-    agency = await identity_service.get_agency_settings(db, agency_id)
-    currency = await route_currency(db, origin)
-    params: dict[str, Any] = {
-        "origin": origin,
-        "destination": destination,
-        "cabin": cabin,
-        "currency": currency,
-        "since": _window_start(now or utcnow(), agency.timezone),
-        "tz": agency.timezone,
-    }
-    searches = await _your_searches(db, agency_id, params)
+async def _route_fares(db: AsyncSession, params: dict[str, Any], timezone: str) -> RouteFares:
     found = (
         await db.execute(
             _FAMILY_SQL,
@@ -221,28 +223,15 @@ async def route_intel(
             | {"market": list(PROVENANCES["market"]), "sandbox": list(PROVENANCES["sandbox"])},
         )
     ).one()
-    family: Family | None = None
-    updated_at: datetime | None = None
+    fares = RouteFares(family=None, daily=[], by_days_out=[], carriers=[], updated_at=None)
     if found.market_at is not None:
-        family, updated_at = "market", _local_hour(found.market_at, agency.timezone)
+        fares.family, fares.updated_at = "market", _local_hour(found.market_at, timezone)
     elif found.sandbox_at is not None:
-        family, updated_at = "sandbox", _local_hour(found.sandbox_at, agency.timezone)
-    out = RouteIntelOut(
-        origin=origin,
-        destination=destination,
-        cabin=cabin,
-        currency=currency,
-        family=family,
-        daily=[],
-        by_days_out=[],
-        carriers=[],
-        your_searches=searches,
-        updated_at=updated_at,
-    )
-    if family is None:
-        return out
-    params["provenances"] = list(PROVENANCES[family])
-    out.daily = [
+        fares.family, fares.updated_at = "sandbox", _local_hour(found.sandbox_at, timezone)
+    if fares.family is None:
+        return fares
+    params = params | {"provenances": list(PROVENANCES[fares.family])}
+    fares.daily = [
         DailyFares(
             date=row.day,
             p25_minor=_minor(row.p25),
@@ -252,15 +241,72 @@ async def route_intel(
         )
         for row in await db.execute(_DAILY_SQL, params)
     ]
-    out.by_days_out = [
+    fares.by_days_out = [
         DaysOutFares(bucket=BUCKETS[row.bucket], median_minor=_minor(row.p50), samples=row.samples)
         for row in await db.execute(_DAYS_OUT_SQL, params)
     ]
-    out.carriers = [
+    fares.carriers = [
         CarrierFares(code=row.carrier, samples=row.samples, median_minor=_minor(row.p50))
         for row in await db.execute(_CARRIERS_SQL, params | {"limit": CARRIERS_LIMIT})
     ]
-    return out
+    return fares
+
+
+async def route_intel(
+    db: AsyncSession,
+    agency_id: UUID,
+    *,
+    origin: str,
+    destination: str,
+    cabin: Cabin,
+    now: datetime | None = None,
+    redis: Redis | None = None,
+) -> RouteIntelOut:
+    """The route's fare figures for the agency (see the module docstring). The session must be
+    bound to the agency; `origin` must be a known airport. With `redis`, the fare figures are
+    read through the cache."""
+    agency = await identity_service.get_agency_settings(db, agency_id)
+    currency = await route_currency(db, origin)
+    at = now or utcnow()
+    params: dict[str, Any] = {
+        "origin": origin,
+        "destination": destination,
+        "cabin": cabin,
+        "currency": currency,
+        "since": _window_start(at, agency.timezone),
+        "tz": agency.timezone,
+    }
+    searches = await _your_searches(db, agency_id, params)
+
+    def load() -> Awaitable[RouteFares]:
+        return _route_fares(db, params, agency.timezone)
+
+    if redis is None:
+        fares = await load()
+    else:
+        today = at.astimezone(ZoneInfo(agency.timezone)).date().isoformat()
+        parts = (origin, destination, cabin, currency, agency.timezone, today)
+        fares = await cached_json(
+            redis,
+            f"{CACHE_PREFIX}route:" + ":".join(parts),
+            ROUTE_FARES_TTL_SECONDS,
+            load,
+            encode=RouteFares.model_dump_json,
+            decode=RouteFares.model_validate_json,
+            cache="route_intel",
+        )
+    return RouteIntelOut(
+        origin=origin,
+        destination=destination,
+        cabin=cabin,
+        currency=currency,
+        family=fares.family,
+        daily=fares.daily,
+        by_days_out=fares.by_days_out,
+        carriers=fares.carriers,
+        your_searches=searches,
+        updated_at=fares.updated_at,
+    )
 
 
 async def _known_airport(db: AsyncSession, raw: str) -> str:
@@ -277,6 +323,7 @@ routes_router = APIRouter(prefix="/api/v1/routes", tags=["routes"])
 async def route_intel_route(
     current: AuthedUser,
     db: DbSession,
+    redis: RedisClient,
     origin: Annotated[str, Query(min_length=1, max_length=10)],
     destination: Annotated[str, Query(min_length=1, max_length=10)],
     cabin: Cabin = "economy",
@@ -286,5 +333,5 @@ async def route_intel_route(
     if from_code == to_code:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, SAME_AIRPORTS_MESSAGE)
     return await route_intel(
-        db, current.agency_id, origin=from_code, destination=to_code, cabin=cabin
+        db, current.agency_id, origin=from_code, destination=to_code, cabin=cabin, redis=redis
     )

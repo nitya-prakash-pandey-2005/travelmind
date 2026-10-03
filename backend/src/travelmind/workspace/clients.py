@@ -45,6 +45,7 @@ from travelmind.db import DbSession, utcnow
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
 from travelmind.identity.schemas import NormalizedEmail, PersonName
+from travelmind.readcache import InvalidatesAgencyCache
 from travelmind.workspace._common import (
     SINGLE_LINE,
     Notes,
@@ -480,7 +481,9 @@ async def delete_client(db: AsyncSession, client_id: UUID, actor_user_id: UUID |
     await db.flush()
 
 
-clients_router = APIRouter(prefix="/api/v1/clients", tags=["clients"])
+clients_router = APIRouter(
+    prefix="/api/v1/clients", tags=["clients"], dependencies=[InvalidatesAgencyCache]
+)
 
 
 @clients_router.get("")

@@ -7,10 +7,14 @@ All signed-in and bound to the caller's agency. The figures come from `metrics`,
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from travelmind.cache import RedisClient
 from travelmind.config import get_settings
 from travelmind.dashboard import metrics
 from travelmind.dashboard.schemas import (
@@ -30,6 +34,14 @@ from travelmind.dashboard.schemas import (
 from travelmind.db import DbSession, utcnow
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
+from travelmind.readcache import (
+    InvalidatesAgencyCache,
+    agency_key,
+    agency_version,
+    cached_json,
+    publish_agency_changes,
+)
+from travelmind.workspace.quotes import expire_overdue_quotes
 
 __all__ = [
     "dashboard_router",
@@ -40,31 +52,65 @@ __all__ = [
 
 SEARCH_MIN_LENGTH = 2
 SEARCH_TOO_SHORT_MESSAGE = f"Type at least {SEARCH_MIN_LENGTH} characters to search."
+# Summary and pipeline are read through the agency's Redis cache (readcache): any write to the
+# agency retires them at once, so the TTL only bounds what Redis keeps.
+DASHBOARD_TTL_SECONDS = 30
 
 dashboard_router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
-notifications_router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
+# Notifications and global search run lazy quote expiry.
+notifications_router = APIRouter(
+    prefix="/api/v1/notifications", tags=["notifications"], dependencies=[InvalidatesAgencyCache]
+)
 onboarding_router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
-search_router = APIRouter(prefix="/api/v1/search", tags=["search"])
+search_router = APIRouter(
+    prefix="/api/v1/search", tags=["search"], dependencies=[InvalidatesAgencyCache]
+)
 
 RangeQuery = Annotated[Range, Query(alias="range")]
 
 
+async def _cache_version(db: AsyncSession, redis: Redis, agency_id: UUID, now: datetime) -> int:
+    """Run lazy quote expiry before the cache read and keep it; if it changed any quote, the
+    agency's cached entries are retired first. Returns the agency's current cache version."""
+    await expire_overdue_quotes(db, agency_id, now=now)
+    await db.commit()
+    await publish_agency_changes(db, redis)
+    return await agency_version(redis, agency_id)
+
+
 @dashboard_router.get("/summary")
 async def summary_route(
-    current: AuthedUser, db: DbSession, range_: RangeQuery = "30d"
+    current: AuthedUser, db: DbSession, redis: RedisClient, range_: RangeQuery = "30d"
 ) -> SummaryOut:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    out = await metrics.summary(db, agency, range_, now=utcnow())
-    await db.commit()  # keep any lazy quote expiry
-    return out
+    now = utcnow()
+    version = await _cache_version(db, redis, agency.id, now)
+    # The windows are the agency's local days, so the local date is part of the key.
+    today = now.astimezone(ZoneInfo(agency.timezone)).date().isoformat()
+    return await cached_json(
+        redis,
+        agency_key(agency.id, version, "summary", range_, today),
+        DASHBOARD_TTL_SECONDS,
+        lambda: metrics.summary(db, agency, range_, now=now),
+        encode=SummaryOut.model_dump_json,
+        decode=SummaryOut.model_validate_json,
+        cache="summary",
+    )
 
 
 @dashboard_router.get("/pipeline")
-async def pipeline_route(current: AuthedUser, db: DbSession) -> PipelineOut:
+async def pipeline_route(current: AuthedUser, db: DbSession, redis: RedisClient) -> PipelineOut:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    out = await metrics.pipeline(db, agency, now=utcnow())
-    await db.commit()  # keep any lazy quote expiry
-    return out
+    version = await _cache_version(db, redis, agency.id, utcnow())
+    return await cached_json(
+        redis,
+        agency_key(agency.id, version, "pipeline"),
+        DASHBOARD_TTL_SECONDS,
+        lambda: metrics.pipeline(db, agency),
+        encode=PipelineOut.model_dump_json,
+        decode=PipelineOut.model_validate_json,
+        cache="pipeline",
+    )
 
 
 @dashboard_router.get("/activity")

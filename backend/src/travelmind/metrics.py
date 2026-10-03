@@ -63,6 +63,13 @@ SUPPLIER_DURATION = Histogram(
     ["supplier", "outcome"],
     buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8, 15, 30),
 )
+# `cache` is one of the read-through caches' fixed names (readcache.CacheName); `result` is
+# `hit`, `miss` or `error` (Redis unreachable: the read fell through to the database).
+CACHE_REQUESTS = Counter(
+    "cache_requests_total",
+    "Read-through cache lookups by cache and result.",
+    ["cache", "result"],
+)
 # Each process reports its own pool; across workers the live values add up.
 DB_POOL_CHECKED_OUT = Gauge(
     "db_pool_checked_out",
