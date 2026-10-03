@@ -5,7 +5,8 @@
  * fallback when scripts are off. This file only maps those properties onto the Tailwind names components use.
  *
  * Contrast: every look is checked by src/theme/__tests__/contrast.test.ts (text >= 4.5:1 on bg, surface and
- * surface-2, chart hues >= 3:1, status text >= 4.5:1 on its own tint, primary-ink on primary >= 4.5:1).
+ * surface-2 and on hover/selected fills over them, chart hues and line-strong control borders >= 3:1, status
+ * text >= 4.5:1 on its own tint, primary-ink on primary and its hover/pressed fills >= 4.5:1).
  */
 @import "./themes.generated.css";
 
@@ -36,6 +37,8 @@
   --color-faint: var(--tm-text-3);
   --color-primary: var(--tm-primary);
   --color-primary-ink: var(--tm-primary-ink);
+  --color-primary-hover: var(--tm-primary-hover);
+  --color-primary-active: var(--tm-primary-active);
   --color-accent-2: var(--tm-accent-2);
   --color-ok: var(--tm-ok);
   --color-warn: var(--tm-warn);
@@ -67,6 +70,11 @@
   --radius-md: var(--tm-radius-control);
   --radius-lg: var(--tm-radius-panel);
   --radius-xl: calc(var(--tm-radius-panel) * 1.5);
+
+  /* Elevation: none in Contrast and high-contrast looks (the tokens become a zero shadow there). */
+  --shadow-pop: var(--tm-shadow-pop);
+  --shadow-frame: var(--tm-shadow-frame);
+  --shadow-raise: var(--tm-shadow-raise);
 
   --ease-tm: cubic-bezier(0.2, 0.8, 0.2, 1);
   --font-sans: var(--tm-font-sans);

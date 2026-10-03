@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import { Color, MeshPhongMaterial } from "three";
 import type { Airport } from "../../api/types";
-import { useThemePalette } from "../../theme";
+import { CLEAR_CANVAS, useThemePalette } from "../../theme";
 import { useReducedMotion } from "../../ui/useReducedMotion";
 import { COUNTRIES } from "./countries";
 import { useElementSize } from "../../lib/useElementSize";
@@ -58,6 +58,8 @@ export default function RouteGlobe({ arcs, showcase = false }: RouteGlobeProps) 
   const palette = useThemePalette();
   const reducedMotion = useReducedMotion();
   const material = useMemo(() => new MeshPhongMaterial({ color: new Color(palette.globeOcean), shininess: 6 }), [palette.globeOcean]);
+  // A theme switch builds a new material; free the old one's GPU resources.
+  useEffect(() => () => material.dispose(), [material]);
   const labels = useMemo(() => uniqueAirports(arcs), [arcs]);
   const active = useMemo(() => (showcase ? undefined : arcs.find((arc) => arc.active)), [arcs, showcase]);
   const ready = size.width > 0 && size.height > 0;
@@ -83,7 +85,7 @@ export default function RouteGlobe({ arcs, showcase = false }: RouteGlobeProps) 
           ref={globeRef}
           width={size.width}
           height={size.height}
-          backgroundColor="rgba(0,0,0,0)"
+          backgroundColor={CLEAR_CANVAS}
           globeMaterial={material}
           showAtmosphere
           atmosphereColor={palette.lineStrong}

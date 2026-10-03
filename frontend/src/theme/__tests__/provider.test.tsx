@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { ThemeToggle } from "../../ui/ThemeToggle";
 import { resolvePalette } from "../palettes";
 import { STORAGE_KEY } from "../storage";
@@ -41,16 +41,39 @@ function PaletteProbe() {
   return <output aria-label="primary">{palette.primary}</output>;
 }
 
-test("the provider puts the saved choice on <html> when it mounts", () => {
+test("initTheme (run once by main.tsx) puts the saved choice and colour scheme on <html>", () => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "ember", mode: "light", contrast: true }));
   document.documentElement.removeAttribute("data-theme");
+  initTheme();
   render(
     <ThemeProvider>
       <ChoiceProbe />
     </ThemeProvider>,
   );
   expect(attributes()).toEqual({ theme: "ember", mode: "light", contrast: "high" });
+  expect(document.documentElement.style.colorScheme).toBe("light");
   expect(screen.getByRole("status", { name: "choice" })).toHaveTextContent("ember light high");
+});
+
+test("mounting the provider again does not reset a choice made since (even when storage is blocked)", () => {
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("QuotaExceededError");
+  });
+  act(() => setThemeChoice({ theme: "nebula", mode: "light" }));
+  const { unmount } = render(
+    <ThemeProvider>
+      <ChoiceProbe />
+    </ThemeProvider>,
+  );
+  unmount();
+  render(
+    <ThemeProvider>
+      <ChoiceProbe />
+    </ThemeProvider>,
+  );
+  expect(screen.getByRole("status", { name: "choice" })).toHaveTextContent("nebula light normal");
+  expect(attributes()).toMatchObject({ theme: "nebula", mode: "light" });
+  vi.restoreAllMocks();
 });
 
 test("setChoice applies instantly, re-renders consumers and persists", async () => {

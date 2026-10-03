@@ -367,7 +367,7 @@ export function TeamScreen() {
           <p className="mt-1 font-mono text-[10px] text-faint">Sent today · expires in 7 days</p>
         </div>
       </PreviewWindow>
-      <div className="absolute bottom-0 right-4 z-10 w-72 rounded-lg border border-line-strong bg-surface p-4 shadow-[var(--tm-shadow-pop)] max-sm:hidden">
+      <div className="absolute bottom-0 right-4 z-10 w-72 rounded-lg border border-line-strong bg-surface p-4 shadow-pop max-sm:hidden">
         <p className="text-sm font-semibold text-ink">Invite teammate</p>
         <p className="mt-0.5 text-[11px] text-dim">They get a one-time link to join Example Travels.</p>
         <p className="mt-3 text-[11px] font-medium text-ink">Email</p>

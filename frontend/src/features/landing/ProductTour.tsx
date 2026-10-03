@@ -123,7 +123,7 @@ export function ProductTour() {
     >
       <div
         aria-hidden="true"
-        className="tm-dot-grid absolute inset-x-0 top-0 -z-10 h-80 [mask-image:linear-gradient(to_bottom,#000,transparent)]"
+        className="tm-dot-grid absolute inset-x-0 top-0 -z-10 h-80 [mask-image:linear-gradient(to_bottom,black,transparent)]"
       />
       <div className={cn(CONTAINER, SECTION_Y)}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">

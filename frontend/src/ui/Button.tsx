@@ -19,8 +19,8 @@ type ButtonProps = ComponentProps<"button"> & {
 };
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-primary text-primary-ink hover:bg-primary/90 active:bg-primary/85",
-  secondary: "border border-line-strong bg-surface-2 text-ink hover:border-dim/40 hover:bg-hover",
+  primary: "bg-primary text-primary-ink hover:bg-primary-hover active:bg-primary-active",
+  secondary: "border border-line-strong bg-surface-2 text-ink hover:border-faint hover:bg-hover",
   ghost: "text-dim hover:bg-hover hover:text-ink",
   danger: "border border-danger/40 bg-surface-2 text-danger hover:border-danger/70 hover:bg-danger/10",
 };

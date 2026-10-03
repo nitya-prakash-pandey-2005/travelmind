@@ -30,7 +30,7 @@ const GLOW: CSSProperties = {
 };
 
 /** Floating cards sit above the window like popovers: the one elevation the design system allows. */
-const FLOAT = "absolute z-10 w-64 shadow-[var(--tm-shadow-pop)]";
+const FLOAT = "absolute z-10 w-64 shadow-pop";
 
 /**
  * The product as the hero's picture: a Command Center screen with the fare insight and supplier
@@ -39,10 +39,10 @@ const FLOAT = "absolute z-10 w-64 shadow-[var(--tm-shadow-pop)]";
 function HeroComposition() {
   return (
     <div className="tm-rise relative min-w-0 lg:mr-[calc(-1_*_clamp(0px,_(100vw_-_1240px)_/_2_-_24px,_280px))]" style={enter(2)}>
-      <div aria-hidden="true" className="pointer-events-none absolute -inset-x-16 -inset-y-20 -z-10" style={GLOW} />
+      <div aria-hidden="true" className="decor-gradient pointer-events-none absolute -inset-x-16 -inset-y-20 -z-10" style={GLOW} />
       <Illustration caption="Illustration with sample data: names, fares, latencies and figures are examples, not live results.">
         <div className="relative sm:pb-8 sm:pl-6 xl:pr-8">
-          <PreviewWindow active="Command Center" sidebar="xl" className="shadow-[0_32px_64px_-32px_rgb(0_0_0/0.55)]">
+          <PreviewWindow active="Command Center" sidebar="xl" className="shadow-frame">
             <ScreenHeader
               crumb="Operate / Command Center"
               title="Command Center"

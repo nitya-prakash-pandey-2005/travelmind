@@ -8,4 +8,6 @@ export function applyTheme(choice: ThemeChoice, root: HTMLElement = document.doc
   root.setAttribute("data-theme", choice.theme);
   root.setAttribute("data-mode", choice.mode);
   root.setAttribute("data-contrast", choice.contrast ? "high" : "normal");
+  // Matches the pre-paint script, so native controls and scrollbars follow the mode from the first frame.
+  root.style.colorScheme = choice.mode;
 }

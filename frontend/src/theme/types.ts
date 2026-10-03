@@ -12,7 +12,7 @@ export type ThemeMeta = {
   id: ThemeId;
   name: string;
   tagline: string;
-  /** Four colours for the switcher's preview chip: background, surface, primary, second accent. */
+  /** Four colours for the switcher's preview chip, from the theme's default look: bg, surface, primary, accent-2. */
   swatch: readonly [string, string, string, string];
   modes: ThemeModes;
 };
@@ -32,6 +32,9 @@ export type Palette = {
   faint: string;
   primary: string;
   primaryInk: string;
+  /** Primary fills on hover and while pressed (opaque, so primary-ink contrast is exact). */
+  primaryHover: string;
+  primaryActive: string;
   accent2: string;
   ok: string;
   warn: string;
@@ -49,7 +52,12 @@ export type Palette = {
   globeLand: string;
   globeOcean: string;
   glow: string;
+  /** Popovers and dialogs. */
   shadow: string;
+  /** Large framed previews on the landing and sign-in pages. */
+  shadowFrame: string;
+  /** The raised thumb of a segmented control. */
+  shadowRaise: string;
   backdrop: string;
   hover: string;
   selected: string;
@@ -57,6 +65,9 @@ export type Palette = {
   dot: string;
   tintFill: string;
   tintEdge: string;
+  /** Terminal's CRT overlays (transparent elsewhere). */
+  scanline: string;
+  vignette: string;
   radiusControl: string;
   radiusPanel: string;
   fontSans: string;

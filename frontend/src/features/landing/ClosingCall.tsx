@@ -15,7 +15,7 @@ export function ClosingCall() {
       <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-20" />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-40 top-1/2 -z-10 h-[36rem] w-[48rem] -translate-y-1/2"
+        className="decor-gradient pointer-events-none absolute -right-40 top-1/2 -z-10 h-[36rem] w-[48rem] -translate-y-1/2"
         style={GLOW}
       />
       <div className={cn(CONTAINER, "grid items-center gap-12 py-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:py-20")}>
@@ -38,8 +38,8 @@ export function ClosingCall() {
         </div>
         <Illustration caption="Illustration with sample data, not live fares.">
           <div className="relative sm:pb-24 sm:pl-10">
-            <FareRowsCard className="shadow-[0_32px_64px_-32px_rgb(0_0_0/0.55)]" />
-            <FareInsightCard className="absolute bottom-0 left-0 z-10 w-64 shadow-[var(--tm-shadow-pop)] max-sm:hidden" />
+            <FareRowsCard className="shadow-frame" />
+            <FareInsightCard className="absolute bottom-0 left-0 z-10 w-64 shadow-pop max-sm:hidden" />
           </div>
         </Illustration>
       </div>

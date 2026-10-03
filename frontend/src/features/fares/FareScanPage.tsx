@@ -85,7 +85,7 @@ function SortTabs({ value, onChange, data }: { value: SortMode; onChange: (mode:
             className={cn(
               "flex min-w-0 flex-1 flex-col items-start rounded-[4px] border px-3 py-1 text-left transition-colors duration-150 ease-tm sm:min-w-28",
               selected
-                ? "border-line-strong bg-surface text-ink shadow-[0_1px_2px_rgb(0_0_0/0.2)]"
+                ? "border-line-strong bg-surface text-ink shadow-raise"
                 : "border-transparent text-dim hover:text-ink",
             )}
           >

@@ -34,7 +34,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
               "text-xs font-medium tabular-nums transition-colors duration-150 ease-tm",
               "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-primary",
               checked
-                ? "border border-line-strong bg-surface text-ink shadow-[0_1px_2px_rgb(0_0_0/0.2)]"
+                ? "border border-line-strong bg-surface text-ink shadow-raise"
                 : "border border-transparent text-dim hover:text-ink",
             )}
           >

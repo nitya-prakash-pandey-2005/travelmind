@@ -26,7 +26,7 @@ function ProductPanel() {
       <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-20" />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[40rem] w-[40rem] -translate-x-1/2 -translate-y-1/2"
+        className="decor-gradient pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[40rem] w-[40rem] -translate-x-1/2 -translate-y-1/2"
         style={GLOW}
       />
       <div className="mx-auto flex w-full max-w-[36rem] flex-col gap-9">
@@ -50,9 +50,9 @@ function ProductPanel() {
         </div>
         <Illustration caption="Illustration with sample data, not live fares.">
           <div className="relative pb-28 pl-8">
-            <FareRowsCard rows={3} className="shadow-[0_32px_64px_-32px_rgb(0_0_0/0.55)]" />
-            <FareInsightCard className="absolute bottom-0 left-0 z-10 w-60 shadow-[var(--tm-shadow-pop)]" />
-            <SupplierStatusCard className="absolute bottom-3 right-6 z-10 w-60 shadow-[var(--tm-shadow-pop)] max-xl:hidden" />
+            <FareRowsCard rows={3} className="shadow-frame" />
+            <FareInsightCard className="absolute bottom-0 left-0 z-10 w-60 shadow-pop" />
+            <SupplierStatusCard className="absolute bottom-3 right-6 z-10 w-60 shadow-pop max-xl:hidden" />
           </div>
         </Illustration>
         <div className="border-t border-line pt-6">

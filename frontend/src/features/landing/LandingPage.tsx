@@ -28,7 +28,7 @@ const SECTIONS = [
 
 function TopNav() {
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
+    <header className="tm-topbar sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
       <nav aria-label="Main" className={cn(CONTAINER, "flex h-14 items-center gap-3 sm:gap-6")}>
         <Link to="/" className="mr-auto rounded-sm">
           <Wordmark />

@@ -19,7 +19,7 @@ export const CABINS: { value: Cabin; label: string }[] = [
 /** A 32px field for the toolbar above the route (the form's full-size fields are 36px). */
 const COMPACT_CONTROL = cn(
   "h-8 min-w-0 rounded-md border border-line-strong bg-surface-2 px-2.5 text-sm text-ink",
-  "transition-colors duration-150 ease-tm hover:border-dim/40 focus:border-primary",
+  "transition-colors duration-150 ease-tm hover:border-faint focus:border-primary",
 );
 
 /** Travellers per search (the field's max). */

@@ -180,8 +180,8 @@
 
 /* Texture that fades out towards the edges (the landing hero and closing band). */
 @utility tm-grid-fade {
-  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 100%);
 }
 
 /* Loading spinner (buttons, inline waits). Stops under reduced motion. */
@@ -313,11 +313,14 @@
   background-clip: text;
   color: transparent;
 }
-:root[data-theme="ember"][data-contrast="normal"] header[role="banner"] {
+:root[data-theme="ember"][data-contrast="normal"] .tm-topbar {
   background-image: linear-gradient(90deg, color-mix(in oklab, var(--tm-primary) 7%, transparent), transparent 60%);
 }
 
-/* Terminal: static scanlines and a light vignette over everything, with a slow faint flicker. */
+/*
+ * Terminal: static scanlines and a light vignette over everything, with a slow faint flicker. Their strengths are
+ * the --tm-scanline / --tm-vignette tokens; contrast.test.ts checks text darkened by both at the darkest corner.
+ */
 :root[data-theme="terminal"] body::before,
 :root[data-theme="terminal"] body::after {
   content: "";
@@ -327,24 +330,30 @@
   pointer-events: none;
 }
 :root[data-theme="terminal"] body::before {
-  background: repeating-linear-gradient(to bottom, transparent 0 2px, color-mix(in srgb, var(--tm-bg) 24%, transparent) 2px 3px);
+  background: repeating-linear-gradient(to bottom, transparent 0 2px, var(--tm-scanline) 2px 3px);
   animation: tm-flicker 5s steps(1, end) infinite;
 }
 :root[data-theme="terminal"] body::after {
-  background: radial-gradient(ellipse farthest-corner at 50% 50%, transparent 62%, color-mix(in srgb, var(--tm-bg) 26%, transparent));
+  background: radial-gradient(ellipse farthest-corner at 50% 50%, transparent 62%, var(--tm-vignette));
 }
 :root[data-theme="terminal"] :is(h1, .tm-page-title) {
   text-shadow: 0 0 8px color-mix(in srgb, var(--tm-text) 35%, transparent);
 }
 
-/* Contrast theme and any high-contrast look: thicker focus ring, no decorative gradients, glow or blur. */
+/*
+ * Contrast theme and any high-contrast look: thicker focus ring, no decorative gradients, glow or blur.
+ * Decorative gradients opt in with .decor-gradient so they can be dropped here. Shadows are already zero through
+ * the tokens. Opacity-modifier fills (bg-danger/10, bg-surface-2/50 ...) stay: they are flat tints on opaque panels,
+ * nothing shows through them. See-through layers are handled: blurred sticky headers turn solid and the dialog
+ * backdrop token is near-opaque (88%).
+ */
 :root:is([data-theme="contrast"], [data-contrast="high"]) {
   --tm-focus-width: 3px;
 }
 :root:is([data-theme="contrast"], [data-contrast="high"]) :is(h1, .tm-page-title) {
   text-shadow: none;
 }
-:root:is([data-theme="contrast"], [data-contrast="high"]) [style*="gradient"] {
+:root:is([data-theme="contrast"], [data-contrast="high"]) .decor-gradient {
   background: none !important;
 }
 :root:is([data-theme="contrast"], [data-contrast="high"]) [class*="backdrop-blur"] {

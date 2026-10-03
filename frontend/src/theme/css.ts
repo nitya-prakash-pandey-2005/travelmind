@@ -38,8 +38,8 @@ const fixedModes = Object.fromEntries(
 
 /**
  * Inline <head> script (copied verbatim into index.html; a test keeps them in step). It runs before the first
- * paint: reads the saved choice (or the v2 "daylight" value), coerces fixed themes and sets the three data
- * attributes. Anything unexpected, including blocked storage, leaves the Orbital dark default in place.
+ * paint: reads the saved choice (or the v2 "daylight" value), coerces fixed themes, sets the three data
+ * attributes and the colour scheme. Anything unexpected, including blocked storage, leaves the Orbital dark default in place.
  */
 export const PREPAINT_SCRIPT =
   "(function(){var d=document.documentElement,t=" +
@@ -53,4 +53,4 @@ export const PREPAINT_SCRIPT =
   ')==="daylight")c.mode="light";var v=JSON.parse(s.getItem(' +
   JSON.stringify(STORAGE_KEY) +
   ')||"null");if(v&&t.indexOf(v.theme)>=0)c={theme:v.theme,mode:v.mode==="light"?"light":"dark",contrast:v.contrast===true}}catch(e){}' +
-  'if(f[c.theme]){c.mode=f[c.theme];c.contrast=false}d.setAttribute("data-theme",c.theme);d.setAttribute("data-mode",c.mode);d.setAttribute("data-contrast",c.contrast?"high":"normal")})()';
+  'if(f[c.theme]){c.mode=f[c.theme];c.contrast=false}d.setAttribute("data-theme",c.theme);d.setAttribute("data-mode",c.mode);d.setAttribute("data-contrast",c.contrast?"high":"normal");d.style.colorScheme=c.mode})()';

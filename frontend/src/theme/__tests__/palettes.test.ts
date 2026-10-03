@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { ALL_CHOICES, coerceChoice, resolvePalette, THEMES, TOKEN_VARS } from "../palettes";
+import { ALL_CHOICES, coerceChoice, NO_SHADOW, resolvePalette, THEMES, TOKEN_VARS } from "../palettes";
 import type { PaletteToken, ThemeChoice } from "../types";
 
 const HEX = /^#[0-9A-F]{6}$/;
 /** Tokens that hold a plain colour (the rest are mixes, shadows, sizes or font stacks). */
 const HEX_TOKENS: PaletteToken[] = [
-  "bg", "surface", "surface2", "line", "lineStrong", "ink", "dim", "faint", "primary", "primaryInk", "accent2",
+  "bg", "surface", "surface2", "line", "lineStrong", "ink", "dim", "faint", "primary", "primaryInk", "primaryHover", "primaryActive", "accent2",
   "ok", "warn", "danger", "info", "ai", "chart1", "chart2", "chart3", "chart4", "chart5", "chart6", "chartAxis",
   "globeLand", "globeOcean",
 ];
@@ -28,6 +28,13 @@ test("six themes in switcher order, each with a name, tagline, four-colour swatc
     terminal: "fixed-dark",
     contrast: "fixed-dark",
   });
+});
+
+test("swatches come from each theme's default look: bg, surface, primary, accent-2", () => {
+  for (const theme of THEMES) {
+    const palette = resolvePalette({ theme: theme.id, mode: "dark", contrast: false });
+    expect(theme.swatch, theme.id).toEqual([palette.bg, palette.surface, palette.primary, palette.accent2]);
+  }
 });
 
 test("every theme x mode x contrast resolves to a distinct, already-coerced choice", () => {
@@ -85,11 +92,12 @@ test("fixed themes coerce mode and contrast; toggle themes keep them", () => {
 
 test("palettes carry the spec's anchor colours", () => {
   expect(resolvePalette({ theme: "orbital", mode: "dark", contrast: false })).toMatchObject({ bg: "#0A0C10", primary: "#3CC6F0", accent2: "#F0B429" });
-  expect(resolvePalette({ theme: "orbital", mode: "light", contrast: false })).toMatchObject({ bg: "#F6F7F9", ink: "#0E131B", primary: "#0875AF" });
+  // Light primaries sit a step darker than the spec's values so primary text clears 4.5:1 on hover and selected fills.
+  expect(resolvePalette({ theme: "orbital", mode: "light", contrast: false })).toMatchObject({ bg: "#F6F7F9", ink: "#0E131B", primary: "#076CA1" });
   expect(resolvePalette({ theme: "nebula", mode: "dark", contrast: false })).toMatchObject({ bg: "#070619", primary: "#8EF3FF", accent2: "#C9A7FF" });
-  expect(resolvePalette({ theme: "nebula", mode: "light", contrast: false })).toMatchObject({ primary: "#0B6F84", accent2: "#6B3FC9" });
+  expect(resolvePalette({ theme: "nebula", mode: "light", contrast: false })).toMatchObject({ primary: "#0A6A7E", accent2: "#6B3FC9" });
   expect(resolvePalette({ theme: "ember", mode: "dark", contrast: false })).toMatchObject({ bg: "#080B1C", primary: "#FF9933", accent2: "#3FB950" });
-  expect(resolvePalette({ theme: "ember", mode: "light", contrast: false })).toMatchObject({ ink: "#14213D", primary: "#A65200" });
+  expect(resolvePalette({ theme: "ember", mode: "light", contrast: false })).toMatchObject({ ink: "#14213D", primary: "#9F4F00" });
   expect(resolvePalette({ theme: "clearsky", mode: "light", contrast: false })).toMatchObject({ bg: "#FFFFFF", primary: "#0B57D0" });
   expect(resolvePalette({ theme: "terminal", mode: "dark", contrast: false })).toMatchObject({ ink: "#FFB000", primary: "#FFD27A" });
   expect(resolvePalette({ theme: "contrast", mode: "dark", contrast: false })).toMatchObject({ bg: "#000000", ink: "#FFFFFF", primary: "#FFE600" });
@@ -119,7 +127,9 @@ test("theme fonts: Terminal is monospace throughout, Ember titles use Fraunces, 
 test("Contrast and high-contrast looks drop shadows, glow and translucent tints", () => {
   for (const choice of ALL_CHOICES.filter((c) => c.contrast || c.theme === "contrast")) {
     const palette = resolvePalette(choice);
-    expect(palette.shadow, label(choice)).toBe("none");
+    expect(palette.shadow, label(choice)).toBe(NO_SHADOW);
+    expect(palette.shadowFrame, label(choice)).toBe(NO_SHADOW);
+    expect(palette.shadowRaise, label(choice)).toBe(NO_SHADOW);
     expect(palette.glow, label(choice)).toBe("transparent");
     expect(palette.tintFill, label(choice)).toBe("0%");
   }

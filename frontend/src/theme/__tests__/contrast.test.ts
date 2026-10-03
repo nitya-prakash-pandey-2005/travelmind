@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { compositeOver, contrastRatio } from "../contrast";
-import { ALL_CHOICES, resolvePalette } from "../palettes";
+import { ALL_CHOICES, CRT, resolvePalette } from "../palettes";
 import type { Palette, PaletteToken, ThemeChoice } from "../types";
 
 test("contrastRatio matches WCAG reference values", () => {
@@ -25,6 +25,18 @@ const TEXT: PaletteToken[] = ["ink", "dim", "faint", "primary", "accent2", "ok",
 const STATUS: PaletteToken[] = ["ok", "warn", "danger", "info", "ai"];
 const CHARTS: PaletteToken[] = ["chart1", "chart2", "chart3", "chart4", "chart5", "chart6"];
 
+/** Text that sits on hover rows, highlighted options and selected chips. */
+const INTERACTIVE_TEXT: PaletteToken[] = ["ink", "dim", "faint", "primary"];
+
+/** `rgb(r g b / a)` (how palettes write translucent tokens) as an opaque hex plus its alpha; null for `transparent`. */
+function translucent(value: string): { hex: string; alpha: number } | null {
+  if (value === "transparent") return null;
+  const match = /^rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)$/.exec(value);
+  if (!match) throw new Error(`Unexpected translucent token: ${value}`);
+  const hex = `#${[match[1], match[2], match[3]].map((channel) => Number(channel).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+  return { hex, alpha: Number(match[4]) };
+}
+
 function failures(palette: Palette): string[] {
   const found: string[] = [];
   const check = (fg: string, bg: string, min: number, what: string) => {
@@ -39,6 +51,36 @@ function failures(palette: Palette): string[] {
     for (const tone of STATUS) check(palette[tone], compositeOver(palette[tone], palette[bg], fill), BODY, `${tone} pill on ${bg}`);
   }
   check(palette.primaryInk, palette.primary, BODY, "primary-ink on primary");
+  // Primary buttons on hover and while pressed (Button uses these opaque tokens, not alpha modifiers).
+  check(palette.primaryInk, palette.primaryHover, BODY, "primary-ink on primary-hover");
+  check(palette.primaryInk, palette.primaryActive, BODY, "primary-ink on primary-active");
+
+  for (const bg of BACKGROUNDS) {
+    // Hover and selected fills are translucent: check text over each fill composited on every background.
+    for (const state of ["hover", "selected"] as const) {
+      const fill = translucent(palette[state]);
+      if (!fill) continue;
+      const surface = compositeOver(fill.hex, palette[bg], fill.alpha);
+      for (const text of INTERACTIVE_TEXT) check(palette[text], surface, BODY, `${text} on ${state} over ${bg}`);
+    }
+    // Control boundaries (inputs, selects, secondary buttons, popovers): WCAG 1.4.11 non-text contrast.
+    check(palette.lineStrong, palette[bg], GRAPHIC, `line-strong on ${bg}`);
+  }
+
+  // CRT overlays (Terminal): text darkened by a scanline row and the vignette's darkest corner, against the
+  // plain background (the strictest pairing).
+  const scanline = translucent(palette.scanline);
+  const vignette = translucent(palette.vignette);
+  if (scanline || vignette) {
+    for (const bg of BACKGROUNDS) {
+      for (const text of TEXT) {
+        let seen = palette[text];
+        if (scanline) seen = compositeOver(scanline.hex, seen, scanline.alpha);
+        if (vignette) seen = compositeOver(vignette.hex, seen, vignette.alpha);
+        check(seen, palette[bg], BODY, `${text} under CRT overlays on ${bg}`);
+      }
+    }
+  }
   return found;
 }
 
@@ -57,5 +99,16 @@ test("high-contrast looks clear 7:1 (AAA) for body and secondary text", () => {
       expect(contrastRatio(palette.ink, palette[bg]), label(choice)).toBeGreaterThanOrEqual(7);
       expect(contrastRatio(palette.dim, palette[bg]), label(choice)).toBeGreaterThanOrEqual(7);
     }
+  }
+});
+
+test("Terminal's CRT overlays stay light and exist only in Terminal", () => {
+  expect(CRT.scanline).toBeLessThanOrEqual(0.12);
+  expect(CRT.vignette).toBeLessThanOrEqual(0.15);
+  const terminal = resolvePalette({ theme: "terminal", mode: "dark", contrast: false });
+  expect(translucent(terminal.scanline)?.alpha).toBe(CRT.scanline);
+  for (const choice of ALL_CHOICES.filter((c) => c.theme !== "terminal")) {
+    expect(resolvePalette(choice).scanline, label(choice)).toBe("transparent");
+    expect(resolvePalette(choice).vignette, label(choice)).toBe("transparent");
   }
 });

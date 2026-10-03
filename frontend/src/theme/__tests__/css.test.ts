@@ -67,9 +67,10 @@ describe("pre-paint script", () => {
     expect(PREPAINT_SCRIPT.length).toBeLessThan(700);
   });
 
-  test("applies a saved choice", () => {
+  test("applies a saved choice, including the colour scheme", () => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "nebula", mode: "light", contrast: true }));
     expect(runPrepaint()).toEqual({ theme: "nebula", mode: "light", contrast: "high" });
+    expect(html.style.colorScheme).toBe("light");
   });
 
   test("coerces fixed themes", () => {
