@@ -844,8 +844,9 @@ _UNREAD = text(
 
 
 async def notifications(
-    db: AsyncSession, agency: AgencySettings, user_id: UUID
+    db: AsyncSession, agency: AgencySettings, user_id: UUID, *, now: datetime | None = None
 ) -> NotificationsOut:
+    await expire_overdue_quotes(db, agency.id, now=now)  # the caller commits
     seen = await identity_service.get_notifications_read_until(db, user_id)
     params = {
         "agency": agency.id,
@@ -919,9 +920,13 @@ def _numbered(query: str, prefix: str) -> int | None:
     return None
 
 
-async def global_search(db: AsyncSession, agency: AgencySettings, query: str) -> SearchOut:
+async def global_search(
+    db: AsyncSession, agency: AgencySettings, query: str, *, now: datetime | None = None
+) -> SearchOut:
     """Clients (name, email, company), enquiries (route codes, client name) and quotes (client
-    name), up to 5 each. 'E-0002' / 'Q-0001' match that number exactly and nothing else."""
+    name), up to 5 each. 'E-0002' / 'Q-0001' match that number exactly and nothing else.
+    Overdue quotes are expired first, so hits show their current status; the caller commits."""
+    await expire_overdue_quotes(db, agency.id, now=now)
     base = {"agency": agency.id, "limit": SEARCH_LIMIT}
     enquiry_number, quote_number = _numbered(query, "E"), _numbered(query, "Q")
 

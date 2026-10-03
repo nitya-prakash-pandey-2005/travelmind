@@ -119,7 +119,9 @@ async def onboarding_route(current: AuthedUser, db: DbSession) -> OnboardingOut:
 @notifications_router.get("")
 async def notifications_route(current: AuthedUser, db: DbSession) -> NotificationsOut:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    return await metrics.notifications(db, agency, current.id)
+    out = await metrics.notifications(db, agency, current.id, now=utcnow())
+    await db.commit()  # keep any lazy quote expiry
+    return out
 
 
 class NotificationsSeen(BaseModel):
@@ -147,4 +149,6 @@ async def search_route(
     if len(query) < SEARCH_MIN_LENGTH:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, SEARCH_TOO_SHORT_MESSAGE)
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    return await metrics.global_search(db, agency, query)
+    out = await metrics.global_search(db, agency, query, now=utcnow())
+    await db.commit()  # keep any lazy quote expiry
+    return out

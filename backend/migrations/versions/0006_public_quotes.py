@@ -30,27 +30,38 @@ _UPGRADE = [
     """,
     "REVOKE ALL ON quote_share_tokens FROM travelmind_app",
     # Public read: exact hash match only; returns the agency so the app can bind the tenant.
+    # Definer functions pin search_path (pg_catalog first, pg_temp last) and qualify every table.
     """
     CREATE FUNCTION public_quote_agency(p_token_hash text) RETURNS uuid
-      LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
-      $$ SELECT agency_id FROM quote_share_tokens WHERE token_hash = p_token_hash $$
+      LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS
+      $$ SELECT agency_id FROM public.quote_share_tokens WHERE token_hash = p_token_hash $$
     """,
-    # Called by send_quote inside the tenant-bound transaction. The quote must be visible under
-    # the caller's RLS context (quotes policy uses app.agency_id), so one agency can't register a
-    # token for another agency's quote.
+    # Called by send_quote inside the tenant-bound transaction, after the quote's new
+    # share_token_hash is flushed. The quote must be visible under the caller's RLS context
+    # (quotes policy uses app.agency_id), so one agency can't register a token for another
+    # agency's quote; and the hash must be the quote's own current one, so no caller can register
+    # a token of its choosing.
     """
     CREATE FUNCTION set_quote_share_token(p_quote_id uuid, p_token_hash text) RETURNS void
-      LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-      DECLARE v_agency uuid := NULLIF(current_setting('app.agency_id', true), '')::uuid;
+      LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+      DECLARE
+        v_agency uuid := NULLIF(current_setting('app.agency_id', true), '')::uuid;
+        v_hash text;
       BEGIN
-        IF v_agency IS NULL OR NOT EXISTS (
-          SELECT 1 FROM quotes WHERE id = p_quote_id AND agency_id = v_agency
-        ) THEN
+        IF v_agency IS NULL THEN
           RAISE EXCEPTION 'quote not found' USING ERRCODE = 'P0002';
         END IF;
-        DELETE FROM quote_share_tokens WHERE quote_id = p_quote_id;
-        INSERT INTO quote_share_tokens (token_hash, quote_id, agency_id)
-          VALUES (p_token_hash, p_quote_id, v_agency);
+        SELECT q.share_token_hash INTO v_hash FROM public.quotes q
+          WHERE q.id = p_quote_id AND q.agency_id = v_agency;
+        IF NOT FOUND THEN
+          RAISE EXCEPTION 'quote not found' USING ERRCODE = 'P0002';
+        END IF;
+        IF v_hash IS NULL OR p_token_hash IS NULL OR v_hash <> p_token_hash THEN
+          RAISE EXCEPTION 'share token does not match the quote' USING ERRCODE = '22023';
+        END IF;
+        DELETE FROM public.quote_share_tokens WHERE quote_id = p_quote_id;
+        INSERT INTO public.quote_share_tokens (token_hash, quote_id, agency_id)
+          VALUES (v_hash, p_quote_id, v_agency);
       END $$
     """,
     "REVOKE ALL ON FUNCTION public_quote_agency(text), set_quote_share_token(uuid, text) "

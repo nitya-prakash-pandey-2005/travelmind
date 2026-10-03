@@ -8,19 +8,26 @@ Only the version the client was sent (`sent_version`) is shown, and only what a 
 see: carriers, times, baggage, conditions, CO2 and the sell price. Never supplier references,
 costs, markups, agent details, other versions, activity or internal ids. Every request counts
 against a per-network and a per-link budget; the limiter keys hold only a prefix of the token's
-hash, and the token itself is never logged or stored.
+hash, and the token itself is never logged or stored. Every response, errors included, is sent
+with `Cache-Control: no-store` and `Referrer-Policy: no-referrer`: the page is never cached and
+its URL (which is the token) never leaks to another site in a Referer.
 """
 
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, Strict
 from redis.asyncio import Redis
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from travelmind.cache import RedisClient
 from travelmind.config import get_settings
@@ -29,6 +36,7 @@ from travelmind.identity import service as identity_service
 from travelmind.identity.deps import client_ip
 from travelmind.identity.ratelimit import LoginRateLimiter
 from travelmind.identity.tokens import hash_token
+from travelmind.offers.models import Cabin
 from travelmind.offers.money import Money, per_traveller_minor
 from travelmind.offers.schemas import OfferView
 from travelmind.workspace._common import WorkspaceError, http_error
@@ -102,7 +110,7 @@ class PublicOption(BaseModel):
     index: int
     carrier_code: str
     carrier_name: str | None
-    cabin: str | None
+    cabin: Cabin | None
     slices: list[PublicSlice]
     baggage: PublicBaggage
     refundable: bool | None
@@ -345,7 +353,37 @@ async def decide_public_quote(
 
 # --- router -----------------------------------------------------------------------------------
 
-public_quotes_router = APIRouter(prefix="/api/v1/public/quotes", tags=["public"])
+PRIVATE_HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+
+
+class _PrivateRoute(APIRoute):
+    """Adds PRIVATE_HEADERS to every response of the route: success, HTTP errors (404, 409, 410,
+    422, 429) and request-validation 422s alike."""
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def private(request: Request) -> Response:
+            try:
+                response = await handler(request)
+            except StarletteHTTPException as exc:
+                exc.headers = {**(exc.headers or {}), **PRIVATE_HEADERS}
+                raise
+            except RequestValidationError as exc:
+                # Answer it here, with the app's own handler, so the headers can be added.
+                on_invalid = request.app.exception_handlers.get(
+                    RequestValidationError, request_validation_exception_handler
+                )
+                response = await on_invalid(request, exc)
+            response.headers.update(PRIVATE_HEADERS)
+            return response
+
+        return private
+
+
+public_quotes_router = APIRouter(
+    prefix="/api/v1/public/quotes", tags=["public"], route_class=_PrivateRoute
+)
 
 
 async def _check_budget(redis: Redis, request: Request, token: str) -> None:

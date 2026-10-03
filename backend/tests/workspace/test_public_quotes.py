@@ -416,6 +416,23 @@ async def test_overdue_quotes_expire_lazily(client, app, airports):
     assert len(await events(agency, "quote.expired")) == 4
 
 
+async def test_global_search_and_notifications_expire_overdue_quotes(client, app, airports):
+    enquiry, offers = await setup(client)
+    a, _ = await sent_quote(client, enquiry, offers)
+    agency = await agency_of(client)
+    await overdue(agency, a["id"])
+    hits = (await client.get("/api/v1/search", params={"q": "Q-0001"})).json()["quotes"]
+    assert [(h["number"], h["status"]) for h in hits] == [("Q-0001", "expired")]
+    # The expiry is kept, and logged once.
+    assert await exec_as_tenant(agency, "SELECT status FROM quotes") == [("expired",)]
+    assert len(await events(agency, "quote.expired")) == 1
+    b, _ = await sent_quote(client, enquiry, offers)
+    await overdue(agency, b["id"])
+    assert (await client.get("/api/v1/notifications")).status_code == 200
+    rows = await exec_as_tenant(agency, "SELECT status FROM quotes WHERE id = :id", {"id": b["id"]})
+    assert rows == [("expired",)]
+
+
 async def test_expired_quote_cannot_be_accepted(client, app, airports):
     enquiry, offers = await setup(client)
     quote, token = await sent_quote(client, enquiry, offers)
@@ -587,6 +604,70 @@ async def test_app_role_cannot_read_token_table(client, airports):
         (UUID(agency),)
     ]
     assert await as_app(None, "SELECT public_quote_agency(:h)", {"h": sha(token)[:-1]}) == [(None,)]
+
+
+async def test_share_token_function_only_registers_the_quotes_own_hash(client, app, airports):
+    enquiry, offers = await setup(client)
+    quote, token = await sent_quote(client, enquiry, offers)
+    agency = await agency_of(client)
+    # Even inside its own tenant, a caller can't register a token of its choosing.
+    with pytest.raises(DBAPIError, match="share token does not match the quote"):
+        await as_app(
+            agency,
+            "SELECT set_quote_share_token(:quote, :hash)",
+            {"quote": quote["id"], "hash": sha("chosen-token")},
+        )
+    rows = await as_owner("SELECT token_hash, quote_id::text FROM quote_share_tokens")
+    assert rows == [(sha(token), quote["id"])]
+    # A quote that was never sent has no hash to register.
+    draft = (
+        await client.post(
+            "/api/v1/quotes",
+            json={"enquiry_id": enquiry["id"], "markup_kind": "percent", "markup_value": 0},
+        )
+    ).json()
+    with pytest.raises(DBAPIError, match="share token does not match the quote"):
+        await as_app(
+            agency,
+            "SELECT set_quote_share_token(:quote, :hash)",
+            {"quote": draft["id"], "hash": sha("chosen-token")},
+        )
+    # The quote's own hash is accepted (re-registering it changes nothing).
+    await as_app(
+        agency,
+        "SELECT set_quote_share_token(:quote, :hash)",
+        {"quote": quote["id"], "hash": sha(token)},
+    )
+    rows = await as_owner("SELECT token_hash, quote_id::text FROM quote_share_tokens")
+    assert rows == [(sha(token), quote["id"])]
+    async with public(app) as anon:
+        assert (await anon.get(f"{URL}/chosen-token")).status_code == 404
+        assert (await anon.get(f"{URL}/{token}")).status_code == 200
+
+
+async def test_public_responses_are_never_cached_or_referred(client, app, airports, monkeypatch):
+    enquiry, offers = await setup(client)
+    _, token = await sent_quote(client, enquiry, offers)
+    expired, other = await sent_quote(client, enquiry, offers)
+
+    def private(r: httpx.Response, code: int) -> None:
+        assert r.status_code == code, r.text
+        assert r.headers["cache-control"] == "no-store"
+        assert r.headers["referrer-policy"] == "no-referrer"
+
+    decision = f"{URL}/{token}/decision"
+    async with public(app) as anon:
+        private(await anon.get(f"{URL}/{token}"), 200)
+        private(await anon.get(f"{URL}/not-a-link"), 404)
+        private(await anon.post(f"{URL}/not-a-link/decision", json={"decision": "decline"}), 404)
+        private(await anon.post(decision, json={"decision": "maybe"}), 422)
+        private(await anon.post(decision, json={"decision": "accept"}), 422)
+        private(await anon.post(decision, json={"decision": "decline"}), 200)
+        private(await anon.post(decision, json={"decision": "decline"}), 409)
+        await client.post(f"/api/v1/quotes/{expired['id']}/status", json={"status": "expired"})
+        private(await anon.post(f"{URL}/{other}/decision", json={"decision": "decline"}), 410)
+        monkeypatch.setattr(get_settings(), "public_quote_max_per_minute", 0)
+        private(await anon.get(f"{URL}/{token}"), 429)
 
 
 # --- beyond the brief -------------------------------------------------------------------------
