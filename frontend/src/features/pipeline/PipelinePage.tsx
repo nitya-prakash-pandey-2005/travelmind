@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Plus, Search, SearchX, X } from "lucide-react";
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { enquiriesQueryOptions, type EnquiryOut, type EnquiryStatus } from "../../api/enquiries";
 import { teamQueryOptions } from "../../api/queries";
 import { quotesQueryOptions, type QuoteSummary } from "../../api/quotes";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { formatNumber } from "../../lib/format";
-import { formatMoney, formatMoneyCompact } from "../../lib/money";
+import { formatMoneyCompact } from "../../lib/money";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useClock } from "../../shell/useClock";
 import { Avatar } from "../../ui/Avatar";
@@ -109,7 +109,7 @@ function PipelineKpis({ figures, currency, loading, now }: { figures: Figures; c
     <>
       {/* Phones: the headline figures on one line, so the board starts above the fold. */}
       <dl
-        aria-label="Pipeline totals"
+        aria-label="Pipeline summary"
         aria-busy={loading || undefined}
         className="mb-3 grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-surface sm:hidden"
       >
@@ -124,28 +124,28 @@ function PipelineKpis({ figures, currency, loading, now }: { figures: Figures; c
           </div>
         ))}
       </dl>
-    <KpiStrip label="Pipeline totals" columns={5} busy={loading} className="mb-4 max-sm:hidden">
-      <KpiTile
-        label="Open enquiries"
-        value={formatNumber(open.length)}
-        hint={`${byStage.new.length} new · ${byStage.quoting.length} quoting · ${byStage.quoted.length} quoted`}
-        loading={loading}
-      />
-      <KpiTile label="Open value" value={money(openValue)} hint="Latest quote of each open enquiry" loading={loading} />
-      <KpiTile label="Won value" value={money(value.won)} hint={`${formatNumber(won)} enquir${won === 1 ? "y" : "ies"} won`} loading={loading} />
-      <KpiTile
-        label="Win rate"
-        value={winRate}
-        hint={closed > 0 ? `${won} won · ${lost} lost` : "No closed enquiries yet"}
-        loading={loading}
-      />
-      <KpiTile
-        label="Oldest open"
-        value={oldest ? ageLabel(oldest.created_at, now) : "—"}
-        hint={oldest ? `${oldest.number} · ${routeLabel(oldest)}` : "Nothing waiting"}
-        loading={loading}
-      />
-    </KpiStrip>
+      <KpiStrip label="Pipeline totals" columns={5} busy={loading} className="mb-4 max-sm:hidden">
+        <KpiTile
+          label="Open enquiries"
+          value={formatNumber(open.length)}
+          hint={`${byStage.new.length} new · ${byStage.quoting.length} quoting · ${byStage.quoted.length} quoted`}
+          loading={loading}
+        />
+        <KpiTile label="Open value" value={money(openValue)} hint="Latest quote of each open enquiry" loading={loading} />
+        <KpiTile label="Won value" value={money(value.won)} hint={`${formatNumber(won)} enquir${won === 1 ? "y" : "ies"} won`} loading={loading} />
+        <KpiTile
+          label="Win rate"
+          value={winRate}
+          hint={closed > 0 ? `${won} won · ${lost} lost` : "No closed enquiries yet"}
+          loading={loading}
+        />
+        <KpiTile
+          label="Oldest open"
+          value={oldest ? ageLabel(oldest.created_at, now) : "—"}
+          hint={oldest ? `${oldest.number} · ${routeLabel(oldest)}` : "Nothing waiting"}
+          loading={loading}
+        />
+      </KpiStrip>
     </>
   );
 }
@@ -179,6 +179,30 @@ function StagePicker({ value, onChange, counts }: { value: EnquiryStatus; onChan
   );
 }
 
+/** Where a move just landed an enquiry; keyboard focus follows it there. */
+type Placed = { id: string; status: EnquiryStatus };
+
+/**
+ * The list view's Enquiry cell. After a move lands this row's enquiry in its new stage, it puts focus
+ * on the row if the move took it away: the row's Move menu keeps focus, unless the enquiry now has no
+ * moves (won) and the menu is gone.
+ */
+function RowNumber({ enquiry, placed, onSettled }: { enquiry: EnquiryOut; placed: Placed | null; onSettled: () => void }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const due = placed?.id === enquiry.id && placed.status === enquiry.status;
+  useEffect(() => {
+    if (!due) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) ref.current?.closest("tr")?.focus();
+    onSettled();
+  }, [due, onSettled]);
+  return (
+    <span ref={ref} className="font-mono text-[13px] text-ink">
+      {enquiry.number}
+    </span>
+  );
+}
+
 export function PipelinePage() {
   const me = useCurrentUser();
   const currency = me?.agency.currency ?? "INR";
@@ -192,7 +216,15 @@ export function PipelinePage() {
   const [dragging, setDragging] = useState<EnquiryOut | null>(null);
   const [creating, setCreating] = useState(false);
   const q = useDebouncedValue(term.trim(), 250);
-  const { move, dialog } = useEnquiryMove();
+  const [placed, setPlaced] = useState<Placed | null>(null);
+  const { move, dialog } = useEnquiryMove({
+    onPlaced: (id, status) => {
+      // On phones the board shows one stage: follow the card there.
+      setStage(status);
+      setPlaced({ id, status });
+    },
+  });
+  const settlePlaced = () => setPlaced(null);
 
   const enquiries = useQuery(enquiriesQueryOptions({ limit: BOARD_LIMIT, assignee: assignee || undefined, q: q || undefined }));
   const quotes = useQuery(quotesQueryOptions({ limit: BOARD_LIMIT }));
@@ -233,7 +265,7 @@ export function PipelinePage() {
     {
       key: "number",
       header: "Enquiry",
-      cell: (row) => <span className="font-mono text-[13px] text-ink">{row.number}</span>,
+      cell: (row) => <RowNumber enquiry={row} placed={placed} onSettled={settlePlaced} />,
       sortValue: (row) => row.number,
     },
     {
@@ -281,7 +313,7 @@ export function PipelinePage() {
       align: "right",
       cell: (row) => {
         const quote = latest.get(row.id);
-        return quote && quote.min_sell_minor !== null ? formatMoney({ amount_minor: quote.min_sell_minor, currency: quote.currency }) : "—";
+        return quote && quote.min_sell_minor !== null ? formatWholeMoney(quote.min_sell_minor, quote.currency) : "—";
       },
       sortValue: (row) => latest.get(row.id)?.min_sell_minor ?? -1,
     },
@@ -396,13 +428,17 @@ export function PipelinePage() {
         </div>
       ) : (
         <>
-          <StagePicker value={stage} onChange={setStage} counts={{
-            new: figures.byStage.new.length,
-            quoting: figures.byStage.quoting.length,
-            quoted: figures.byStage.quoted.length,
-            won: figures.byStage.won.length,
-            lost: figures.byStage.lost.length,
-          }} />
+          <StagePicker
+            value={stage}
+            onChange={setStage}
+            counts={{
+              new: figures.byStage.new.length,
+              quoting: figures.byStage.quoting.length,
+              quoted: figures.byStage.quoted.length,
+              won: figures.byStage.won.length,
+              lost: figures.byStage.lost.length,
+            }}
+          />
           <div
             aria-busy={loading || undefined}
             className="grid grid-cols-1 gap-3 lg:grid-cols-[repeat(5,minmax(13.5rem,1fr))] lg:overflow-x-auto lg:pb-2"
@@ -439,6 +475,8 @@ export function PipelinePage() {
                             dragging={dragging?.id === enquiry.id}
                             onDragStart={() => setDragging(enquiry)}
                             onDragEnd={() => setDragging(null)}
+                            focusRequested={placed?.id === enquiry.id && placed.status === enquiry.status}
+                            onFocused={settlePlaced}
                           />
                         </li>
                       ))}

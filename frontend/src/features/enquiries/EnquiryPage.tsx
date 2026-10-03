@@ -7,7 +7,6 @@ import { enquiryQueryOptions, type EnquiryOut } from "../../api/enquiries";
 import { quotesQueryOptions, useCreateQuote, type QuoteSummary } from "../../api/quotes";
 import { isoDateFromNow } from "../../lib/dates";
 import { formatDate, formatNumber, formatRelativeTime } from "../../lib/format";
-import { formatMoney } from "../../lib/money";
 import { useClock } from "../../shell/useClock";
 import { Avatar } from "../../ui/Avatar";
 import { Button, buttonClasses } from "../../ui/Button";
@@ -84,7 +83,11 @@ function TripPanel({ enquiry }: { enquiry: EnquiryOut }) {
         </Fact>
         <Fact label="Cabin">{cabinLabel(enquiry.cabin)}</Fact>
         <Fact label="Budget" muted={!enquiry.budget}>
-          {enquiry.budget ? <span className="tm-num">{formatMoney(enquiry.budget)}</span> : "No budget given"}
+          {enquiry.budget ? (
+            <span className="tm-num">{formatWholeMoney(enquiry.budget.amount_minor, enquiry.budget.currency)}</span>
+          ) : (
+            "No budget given"
+          )}
         </Fact>
         <Fact label="Source">{SOURCE_LABEL[enquiry.source] ?? enquiry.source}</Fact>
         <Fact label="Notes" muted={!enquiry.notes} wide>
@@ -116,7 +119,7 @@ function QuotesPanel({ enquiry, onCreate, creating }: { enquiry: EnquiryOut; onC
       key: "value",
       header: "From",
       align: "right",
-      cell: (q) => (q.min_sell_minor !== null ? formatMoney({ amount_minor: q.min_sell_minor, currency: q.currency }) : "—"),
+      cell: (q) => (q.min_sell_minor !== null ? formatWholeMoney(q.min_sell_minor, q.currency) : "—"),
       sortValue: (q) => q.min_sell_minor ?? -1,
     },
     {
@@ -345,7 +348,7 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
             </Button>
             <Link to="/app/fares" search={fareSearch(enquiry)} className={buttonClasses({ variant: "secondary", size: "sm" })}>
               <Plane size={14} aria-hidden="true" />
-              Search fares
+              Scan fares
             </Link>
             <Button size="sm" onClick={startQuote} loading={createQuote.isPending}>
               {!createQuote.isPending && <FilePlus2 size={14} aria-hidden="true" />}

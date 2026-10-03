@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { CalendarDays, FileText, MessageSquareOff, UsersRound } from "lucide-react";
-import type { DragEvent } from "react";
+import { useEffect, useRef, type DragEvent } from "react";
 import type { EnquiryOut, EnquiryStatus } from "../../api/enquiries";
 import type { QuoteSummary } from "../../api/quotes";
 import { Avatar } from "../../ui/Avatar";
@@ -38,6 +38,9 @@ type EnquiryCardProps = {
   dragging?: boolean;
   onDragStart?: () => void;
   onDragEnd?: () => void;
+  /** Set after a keyboard move lands this card in its new stage: the card takes focus, then calls onFocused. */
+  focusRequested?: boolean;
+  onFocused?: () => void;
 };
 
 /** The quote line at the foot of a card: number, state and value, or what the enquiry has instead. */
@@ -67,7 +70,18 @@ function QuoteLine({ enquiry, latest }: { enquiry: EnquiryOut; latest?: QuoteSum
  * One enquiry on the board: number and age, route (the link to the enquiry), client, dates and party,
  * then the assignee and the latest quote. Draggable to another stage; the Move menu does the same by keyboard.
  */
-export function EnquiryCard({ enquiry, latest, now, onMove, dragging = false, onDragStart, onDragEnd }: EnquiryCardProps) {
+export function EnquiryCard({
+  enquiry,
+  latest,
+  now,
+  onMove,
+  dragging = false,
+  onDragStart,
+  onDragEnd,
+  focusRequested = false,
+  onFocused,
+}: EnquiryCardProps) {
+  const ref = useRef<HTMLElement>(null);
   const movable = enquiry.status !== "won";
   const dates = tripDates(enquiry);
   const premium = enquiry.cabin !== "economy";
@@ -79,8 +93,17 @@ export function EnquiryCard({ enquiry, latest, now, onMove, dragging = false, on
     onDragStart?.();
   }
 
+  // A moved card mounts afresh in its new column, so the focus its Move menu or the Lost dialog held is gone.
+  useEffect(() => {
+    if (!focusRequested) return;
+    ref.current?.focus();
+    onFocused?.();
+  }, [focusRequested, onFocused]);
+
   return (
     <article
+      ref={ref}
+      tabIndex={-1}
       aria-label={enquiryName(enquiry)}
       draggable={movable}
       onDragStart={movable ? startDrag : undefined}

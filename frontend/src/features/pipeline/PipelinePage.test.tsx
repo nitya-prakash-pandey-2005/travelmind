@@ -46,6 +46,18 @@ function board(extra: Record<string, MockHandler> = {}) {
   return { ...api, ...renderApp("/app/pipeline") };
 }
 
+/** The server's enquiry list, which reflects each move recorded in `moved` (as the refetch after a move would). */
+function serverList() {
+  const moved = new Map<string, string>();
+  const list = commandCenterMocks({ populated: true })["GET /api/v1/enquiries"];
+  const get: MockHandler = async (call) => {
+    const result = typeof list === "function" ? await list(call) : list!;
+    const body = result.body as { items: { id: string; status: string }[] };
+    return { ...result, body: { ...body, items: body.items.map((e) => ({ ...e, status: moved.get(e.id) ?? e.status })) } };
+  };
+  return { get, moved };
+}
+
 const column = (name: string) => screen.findByRole("list", { name: `${name} enquiries` });
 const statusPosts = (calls: MockCall[]) => calls.filter((c) => c.method === "POST" && c.path.endsWith("/status"));
 
@@ -74,18 +86,11 @@ test("the board shows each stage with its count, value and cards", async () => {
 });
 
 test("a card moves to Quoting from its Move menu by keyboard", async () => {
-  // The server's list follows the move, as it would after the refetch.
-  const items = commandCenterMocks({ populated: true });
-  let moved = false;
-  const list = items["GET /api/v1/enquiries"];
+  const server = serverList();
   const { calls, user } = board({
-    "GET /api/v1/enquiries": async (call) => {
-      const result = typeof list === "function" ? await list(call) : list!;
-      const body = result.body as { items: { id: string; status: string }[] };
-      return moved ? { ...result, body: { ...body, items: body.items.map((e) => (e.id === "e-6" ? { ...e, status: "quoting" } : e)) } } : result;
-    },
+    "GET /api/v1/enquiries": server.get,
     "POST /api/v1/enquiries/e-6/status": () => {
-      moved = true;
+      server.moved.set("e-6", "quoting");
       return {
         status: 200,
         body: enquiryOut({ id: "e-6", number: "E-0006", origin: "BOM", destination: "GOI", status: "quoting", client: null }),
@@ -107,14 +112,23 @@ test("a card moves to Quoting from its Move menu by keyboard", async () => {
 
   await waitFor(() => expect(statusPosts(calls)).toHaveLength(1));
   expect(statusPosts(calls)[0]?.body).toEqual({ status: "quoting" });
-  expect(await within(await column("Quoting")).findByRole("article", { name: "E-0006 BOM → GOI" })).toBeInTheDocument();
+  const placed = await within(await column("Quoting")).findByRole("article", { name: "E-0006 BOM → GOI" });
+  // Focus follows the card to its new stage, and the move is announced politely.
+  await waitFor(() => expect(placed).toHaveFocus());
+  const note = await screen.findByText("E-0006 moved to Quoting");
+  expect(note.closest('[aria-live="polite"]')).not.toBeNull();
 });
 
 test("moving to Lost asks for a reason first", async () => {
+  const server = serverList();
   const { calls, user } = board({
-    "POST /api/v1/enquiries/e-6/status": {
-      status: 200,
-      body: enquiryOut({ id: "e-6", number: "E-0006", origin: "BOM", destination: "GOI", status: "lost", client: null }),
+    "GET /api/v1/enquiries": server.get,
+    "POST /api/v1/enquiries/e-6/status": () => {
+      server.moved.set("e-6", "lost");
+      return {
+        status: 200,
+        body: enquiryOut({ id: "e-6", number: "E-0006", origin: "BOM", destination: "GOI", status: "lost", client: null }),
+      };
     },
   });
   const card = await within(await column("New")).findByRole("article", { name: "E-0006 BOM → GOI" });
@@ -131,6 +145,8 @@ test("moving to Lost asks for a reason first", async () => {
   await waitFor(() => expect(statusPosts(calls)).toHaveLength(1));
   expect(statusPosts(calls)[0]?.body).toEqual({ status: "lost", lost_reason: "Booked directly with the airline" });
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  const lost = await within(await column("Lost")).findByRole("article", { name: "E-0006 BOM → GOI" });
+  await waitFor(() => expect(lost).toHaveFocus());
 });
 
 test("a refused move shows the server's message and puts the card back", async () => {
@@ -145,6 +161,48 @@ test("a refused move shows the server's message and puts the card back", async (
     expect(within(await column("New")).getByRole("article", { name: "E-0006 BOM → GOI" })).toBeInTheDocument(),
   );
   expect(within(await column("Quoting")).queryByRole("article", { name: "E-0006 BOM → GOI" })).not.toBeInTheDocument();
+});
+
+test("a refused move puts back only that card, not one moved meanwhile", async () => {
+  // E-0006's move is held, then refused; E-0002's move lands on the server while E-0006's is in flight.
+  let refuse: (() => void) | undefined;
+  let finishSecond: (() => void) | undefined;
+  const server = serverList();
+  const { user } = board({
+    "GET /api/v1/enquiries": server.get,
+    "POST /api/v1/enquiries/e-6/status": () =>
+      new Promise((resolve) => {
+        refuse = () => resolve({ status: 409, body: { detail: "Can't move an enquiry from new to quoting." } });
+      }),
+    "POST /api/v1/enquiries/e-2/status": () => {
+      server.moved.set("e-2", "quoting");
+      return new Promise((resolve) => {
+        finishSecond = () =>
+          resolve({
+            status: 200,
+            body: enquiryOut({ id: "e-2", number: "E-0002", origin: "DEL", destination: null, status: "quoting", client: null }),
+          });
+      });
+    },
+  });
+  const first = await within(await column("New")).findByRole("article", { name: "E-0006 BOM → GOI" });
+  await user.click(within(first).getByRole("button", { name: "Move E-0006" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Move to Quoting" }));
+  await waitFor(() => expect(refuse).toBeDefined());
+
+  const second = await within(await column("New")).findByRole("article", { name: "E-0002 DEL → —" });
+  await user.click(within(second).getByRole("button", { name: "Move E-0002" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Move to Quoting" }));
+  await waitFor(() => expect(finishSecond).toBeDefined());
+
+  refuse!();
+  expect(await screen.findByText("Can't move an enquiry from new to quoting.")).toBeInTheDocument();
+  await waitFor(async () =>
+    expect(within(await column("New")).getByRole("article", { name: "E-0006 BOM → GOI" })).toBeInTheDocument(),
+  );
+  expect(within(await column("Quoting")).getByRole("article", { name: "E-0002 DEL → —" })).toBeInTheDocument();
+  expect(within(await column("New")).queryByRole("article", { name: "E-0002 DEL → —" })).not.toBeInTheDocument();
+  finishSecond!();
 });
 
 test("dropping on a stage the enquiry can't move to does nothing; an allowed drop moves it", async () => {
@@ -187,6 +245,57 @@ test("the list view is a table whose rows open the enquiry", async () => {
   expect(within(table).getAllByRole("row")).toHaveLength(6);
   await user.click(within(table).getByText("E-0003"));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/enquiries/e-3"));
+});
+
+test("the list view values quotes in whole units", async () => {
+  const { user } = board({
+    "GET /api/v1/quotes": { status: 200, body: { items: [quote("q-5", "e-5", "Q-0005", "sent", 2_577_225, 60)], total: 1 } },
+  });
+  await within(await column("New")).findAllByRole("article");
+  await user.click(screen.getByRole("radio", { name: "List" }));
+  const table = await screen.findByRole("table", { name: "Enquiries" });
+  expect(await within(table).findByText("₹25,772")).toBeInTheDocument();
+  expect(within(table).queryByText("₹25,772.25")).not.toBeInTheDocument();
+});
+
+test("a list row's Move menu moves the enquiry without opening it", async () => {
+  const { calls, user, router } = board({
+    "POST /api/v1/enquiries/e-3/status": {
+      status: 200,
+      body: enquiryOut({ id: "e-3", number: "E-0003", origin: "LHR", destination: "JFK", status: "quoted", client: null }),
+    },
+  });
+  await within(await column("New")).findAllByRole("article");
+  await user.click(screen.getByRole("radio", { name: "List" }));
+  const table = await screen.findByRole("table", { name: "Enquiries" });
+  await user.click(within(table).getByRole("button", { name: "Move E-0003" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Move to Quoted" }));
+  await waitFor(() => expect(statusPosts(calls)).toHaveLength(1));
+  expect(router.state.location.pathname).toBe("/app/pipeline");
+});
+
+test("in the list view, a move that removes the Move menu leaves focus on the row", async () => {
+  const server = serverList();
+  const { user } = board({
+    "GET /api/v1/enquiries": server.get,
+    "POST /api/v1/enquiries/e-5/status": () => {
+      server.moved.set("e-5", "won");
+      return {
+        status: 200,
+        body: enquiryOut({ id: "e-5", number: "E-0005", origin: "DEL", destination: "BOM", status: "won", client: null }),
+      };
+    },
+  });
+  await within(await column("New")).findAllByRole("article");
+  await user.click(screen.getByRole("radio", { name: "List" }));
+  const table = await screen.findByRole("table", { name: "Enquiries" });
+  const trigger = within(table).getByRole("button", { name: "Move E-0005" });
+  const row = trigger.closest("tr")!;
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  await user.click(await screen.findByRole("menuitem", { name: "Move to Won" }));
+  await waitFor(() => expect(within(row).queryByRole("button", { name: "Move E-0005" })).not.toBeInTheDocument());
+  await waitFor(() => expect(row).toHaveFocus());
 });
 
 test("filters ask the server by assignee and search, and narrow by route", async () => {

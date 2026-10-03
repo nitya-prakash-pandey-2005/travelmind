@@ -97,9 +97,9 @@ test("the header, trip, quotes and timeline describe the enquiry", async () => {
   expect(within(timeline).getByText("New enquiry E-0005 · DEL → BOM")).toBeInTheDocument();
 });
 
-test("Search fares opens Fare search with the trip filled in", async () => {
+test("Scan fares opens Fare search with the trip filled in", async () => {
   const { user, router } = enquiryPage();
-  const link = await screen.findByRole("link", { name: "Search fares" });
+  const link = await screen.findByRole("link", { name: "Scan fares" });
   const href = new URL(link.getAttribute("href") ?? "", "http://localhost");
   expect(href.pathname).toBe("/app/fares");
   expect(Object.fromEntries(href.searchParams)).toEqual({
@@ -111,6 +111,20 @@ test("Search fares opens Fare search with the trip filled in", async () => {
   });
   await user.click(link);
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/fares"));
+});
+
+test("quote values and the budget show in whole units", async () => {
+  enquiryPage({
+    "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, budget: { amount_minor: 6_000_049, currency: "INR" } } },
+    "GET /api/v1/quotes": { status: 200, body: { items: [{ ...QUOTE, min_sell_minor: 2_577_225 }], total: 1 } },
+  });
+  const quotes = await screen.findByRole("table", { name: "Quotes for E-0005" });
+  expect(await within(quotes).findByText("₹25,772")).toBeInTheDocument();
+  expect(screen.queryByText(/₹25,772\.25/)).not.toBeInTheDocument();
+  const trip = screen.getByRole("region", { name: "Trip" });
+  expect(within(trip).getByText("₹60,000")).toBeInTheDocument();
+  expect(trip).not.toHaveTextContent("₹60,000.49");
+  expect(screen.getByRole("region", { name: "Enquiry figures" })).toHaveTextContent("₹25,772");
 });
 
 test("Create quote starts a quote and opens it", async () => {
