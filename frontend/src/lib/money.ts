@@ -40,6 +40,11 @@ function exponent(currency: string): number {
   return EXPONENTS[currency.toUpperCase()] ?? 2;
 }
 
+/** Digits after the decimal point in `currency`'s minor unit (2 for INR, 0 for JPY, 3 for KWD). */
+export function currencyExponent(currency: string): number {
+  return exponent(currency);
+}
+
 /** Integer minor units → "₹5,234", "£45.50". Whole amounts drop the decimals. */
 export function formatMoney(money: Money): string {
   const digits = exponent(money.currency);

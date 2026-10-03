@@ -3,8 +3,7 @@ import { PlannedPage, type RelatedPage } from "./PlannedPage";
 
 /**
  * This release's new pages while their screens are finished. Each is swapped for its real screen in
- * the router (pipeline, enquiry, quotes, quote editor, clients, client, route intel, settings, and the
- * client's quote page).
+ * the router (quotes, quote editor, clients, client, route intel, settings, and the client's quote page).
  */
 
 const COMMAND_CENTER: RelatedPage = {
@@ -32,39 +31,6 @@ const CLIENTS: RelatedPage = {
   hint: "Travellers and companies you quote for",
   icon: UserRound,
 };
-
-export function PipelinePlaceholder() {
-  return (
-    <PlannedPage
-      title="Pipeline"
-      description="Every enquiry by stage, from new to won or lost."
-      coming={[
-        "A board with New, Quoting, Quoted, Won and Lost columns, each with its count and value",
-        "Moves by drag and drop, or from the keyboard with each card's Move menu",
-        "Filters by assignee, client or route, and a list view",
-        "A recorded reason for every lost enquiry",
-      ]}
-      related={[COMMAND_CENTER, FARE_SEARCH]}
-    />
-  );
-}
-
-export function EnquiryPlaceholder() {
-  return (
-    <PlannedPage
-      title="Enquiry"
-      breadcrumb={[{ label: "Pipeline", to: "/app/pipeline" }, { label: "Enquiry" }]}
-      description="One enquiry's trip, quotes and history."
-      coming={[
-        "Trip details — route, dates, travellers, cabin and budget — editable in place",
-        "Fare search prefilled with the trip, and a new quote in one click",
-        "Every quote for the enquiry with its status, value and versions",
-        "A timeline of status changes, quotes and client views",
-      ]}
-      related={[PIPELINE, FARE_SEARCH]}
-    />
-  );
-}
 
 export function QuotesPlaceholder() {
   return (

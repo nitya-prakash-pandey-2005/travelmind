@@ -1,0 +1,204 @@
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
+import { ME_OWNER } from "../../test/fixtures";
+import { mockApi, type MockHandler } from "../../test/mockApi";
+import { renderApp, withSession } from "../../test/renderApp";
+import { commandCenterMocks, enquiryOut } from "../../test/workspaceFixtures";
+
+vi.mock("../globe/webgl", () => ({ hasWebGL: () => false }));
+
+const TEAM = [
+  { id: "u-owner", email: "asha@alphatravels.in", full_name: "Asha Rao", role: "owner" },
+  { id: "u-agent", email: "ravi@alphatravels.in", full_name: "Ravi Kumar", role: "agent" },
+];
+
+const ENQUIRY = {
+  ...enquiryOut({
+    id: "e-5",
+    number: "E-0005",
+    origin: "DEL",
+    destination: "BOM",
+    status: "quoted",
+    client: { id: "c-priya", name: "Priya Sharma" },
+  }),
+  depart_date: "2026-11-20",
+  return_date: "2026-11-27",
+  cabin: "business",
+  notes: "Prefers aisle seats",
+};
+
+const QUOTE = {
+  id: "q-5",
+  number: "Q-0005",
+  status: "viewed",
+  currency: "INR",
+  client: { id: "c-priya", name: "Priya Sharma" },
+  enquiry: { id: "e-5", number: "E-0005", origin: "DEL", destination: "BOM", depart_date: "2026-11-20" },
+  current_version: 3,
+  sent_version: 3,
+  min_sell_minor: 4_520_000,
+  sent_at: "2026-10-01T09:00:00Z",
+  created_at: "2026-09-30T09:00:00Z",
+};
+
+const TIMELINE = {
+  items: [
+    {
+      id: "a1",
+      kind: "quote.viewed",
+      summary: "Client opened Q-0005",
+      occurred_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+      actor: null,
+    },
+    {
+      id: "a2",
+      kind: "enquiry.created",
+      summary: "New enquiry E-0005 · DEL → BOM",
+      occurred_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+      actor: { id: "u-owner", full_name: "Asha Rao" },
+    },
+  ],
+};
+
+function enquiryPage(extra: Record<string, MockHandler> = {}) {
+  const api = mockApi(
+    withSession(ME_OWNER, {
+      ...commandCenterMocks({ populated: true }),
+      "GET /api/v1/team": { status: 200, body: TEAM },
+      "GET /api/v1/enquiries/e-5": { status: 200, body: ENQUIRY },
+      "GET /api/v1/enquiries/e-5/activity": { status: 200, body: TIMELINE },
+      "GET /api/v1/quotes": { status: 200, body: { items: [QUOTE], total: 1 } },
+      ...extra,
+    }),
+  );
+  return { ...api, ...renderApp("/app/enquiries/e-5") };
+}
+
+test("the header, trip, quotes and timeline describe the enquiry", async () => {
+  const { calls } = enquiryPage();
+  expect(await screen.findByRole("heading", { level: 1, name: "E-0005" })).toBeInTheDocument();
+  const main = screen.getByRole("main");
+  expect(within(main).getAllByText("Quoted").length).toBeGreaterThan(0);
+  expect(within(main).getAllByRole("link", { name: "Priya Sharma" })[0]).toHaveAttribute("href", "/app/clients/c-priya");
+  expect(within(main).getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("Pipeline");
+
+  const trip = screen.getByRole("region", { name: "Trip" });
+  expect(trip).toHaveTextContent("Business");
+  expect(trip).toHaveTextContent("Prefers aisle seats");
+  expect(trip).toHaveTextContent("20 Nov 2026");
+
+  const quotes = await screen.findByRole("table", { name: "Quotes for E-0005" });
+  expect(within(quotes).getByText("Q-0005")).toBeInTheDocument();
+  expect(within(quotes).getByText("₹45,200")).toBeInTheDocument();
+  expect(calls.some((c) => c.path === "/api/v1/quotes" && c.search.get("enquiry_id") === "e-5")).toBe(true);
+
+  const timeline = screen.getByRole("region", { name: "Timeline" });
+  expect(await within(timeline).findByText("Client opened Q-0005")).toBeInTheDocument();
+  expect(within(timeline).getByText("New enquiry E-0005 · DEL → BOM")).toBeInTheDocument();
+});
+
+test("Search fares opens Fare search with the trip filled in", async () => {
+  const { user, router } = enquiryPage();
+  const link = await screen.findByRole("link", { name: "Search fares" });
+  const href = new URL(link.getAttribute("href") ?? "", "http://localhost");
+  expect(href.pathname).toBe("/app/fares");
+  expect(Object.fromEntries(href.searchParams)).toEqual({
+    origin: "DEL",
+    destination: "BOM",
+    depart: "2026-11-20",
+    adults: "2",
+    cabin: "business",
+  });
+  await user.click(link);
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/fares"));
+});
+
+test("Create quote starts a quote and opens it", async () => {
+  const { calls, user, router } = enquiryPage({
+    "POST /api/v1/quotes": {
+      status: 201,
+      body: {
+        ...QUOTE,
+        id: "q-new",
+        number: "Q-0009",
+        status: "draft",
+        current_version: 0,
+        sent_version: null,
+        min_sell_minor: null,
+        markup_kind: "percent",
+        markup_value: 0,
+        share_expires_at: null,
+        first_viewed_at: null,
+        decided_at: null,
+        accepted_option: null,
+        versions: [],
+      },
+    },
+    "GET /api/v1/quotes/q-new": { status: 404, body: { detail: "Quote not found." } },
+  });
+  await user.click(await screen.findByRole("button", { name: "Create quote" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/quotes/q-new"));
+  expect(calls.find((c) => c.method === "POST" && c.path === "/api/v1/quotes")?.body).toEqual({ enquiry_id: "e-5" });
+});
+
+test("Edit saves only the changed fields", async () => {
+  const { calls, user } = enquiryPage({
+    "PATCH /api/v1/enquiries/e-5": (call) => ({ status: 200, body: { ...ENQUIRY, ...(call.body as object) } }),
+  });
+  await user.click(await screen.findByRole("button", { name: "Edit" }));
+  const drawer = await screen.findByRole("dialog", { name: "Edit E-0005" });
+  const adults = within(drawer).getByLabelText("Adults");
+  await user.clear(adults);
+  await user.type(adults, "3");
+  await user.selectOptions(within(drawer).getByLabelText("Assignee"), "u-agent");
+  await user.click(within(drawer).getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+  expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ adults: 3, assignee_user_id: "u-agent" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+});
+
+test("the status menu offers only allowed moves", async () => {
+  const { user } = enquiryPage();
+  await user.click(await screen.findByRole("button", { name: "Move E-0005" }));
+  const menu = await screen.findByRole("menu");
+  expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Move to Won",
+    "Move to Lost",
+    "Move to Quoting",
+  ]);
+});
+
+test("an enquiry with no activity says so", async () => {
+  enquiryPage({ "GET /api/v1/enquiries/e-5/activity": { status: 200, body: { items: [] } } });
+  const timeline = await screen.findByRole("region", { name: "Timeline" });
+  expect(await within(timeline).findByText("No activity yet")).toBeInTheDocument();
+});
+
+test("a timeline that fails to load offers a retry", async () => {
+  enquiryPage({
+    "GET /api/v1/enquiries/e-5/activity": { status: 500, body: { detail: "Something went wrong on our side. Please try again." } },
+  });
+  const timeline = await screen.findByRole("region", { name: "Timeline" });
+  expect(await within(timeline).findByRole("alert")).toHaveTextContent("Something went wrong on our side");
+  expect(within(timeline).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+});
+
+test("an unknown enquiry says it can't be found", async () => {
+  mockApi(
+    withSession(ME_OWNER, {
+      ...commandCenterMocks(),
+      "GET /api/v1/enquiries/nope": { status: 404, body: { detail: "Enquiry not found." } },
+    }),
+  );
+  renderApp("/app/enquiries/nope");
+  expect(await screen.findByText("Enquiry not found")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Back to pipeline" })).toHaveAttribute("href", "/app/pipeline");
+});
+
+test("the Pipeline item stays highlighted on an enquiry page", async () => {
+  enquiryPage();
+  await screen.findByRole("heading", { level: 1, name: "E-0005" });
+  const nav = screen.getByRole("navigation", { name: "Primary" });
+  expect(within(nav).getByRole("link", { name: "Pipeline" })).toHaveAttribute("aria-current", "page");
+  expect(within(nav).getByRole("link", { name: "Command Center" })).not.toHaveAttribute("aria-current");
+});

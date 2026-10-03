@@ -436,3 +436,42 @@ test("flight details open every flight, the connection and the fare conditions",
   expect(card).toHaveTextContent("Refunds: allowed, fee ₹1,500");
   expect(card).toHaveTextContent("off_77");
 });
+
+test("an enquiry's trip in the address fills the search form", async () => {
+  routeStore.reset();
+  const depart = isoDateFromNow(30);
+  const { calls } = mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/reference/airports": (call) => {
+        const code = (call.search.get("q") ?? "").toUpperCase();
+        const match = Object.values(AIRPORTS).filter((a) => a.iata_code === code);
+        return { status: 200, body: match };
+      },
+      [SEARCH]: { status: 200, body: searchResponse({ offers: [indigo] }) },
+    }),
+  );
+  const { user } = renderApp(`/app/fares?origin=DEL&destination=BOM&depart=${depart}&adults=2&cabin=business`);
+  expect(await screen.findByRole("button", { name: "Change From" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Change To" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Adults")).toHaveValue(2);
+  expect(screen.getByLabelText("Cabin")).toHaveValue("business");
+  expect(screen.getByLabelText("Depart")).toHaveValue(depart);
+  await user.click(screen.getByRole("button", { name: "Scan fares" }));
+  await screen.findByRole("list", { name: "Flight offers" });
+  expect(calls.find((c) => c.path === "/api/v1/flights/search")?.body).toMatchObject({
+    origin: "DEL",
+    destination: "BOM",
+    departure_date: depart,
+    adults: 2,
+    cabin: "business",
+  });
+});
+
+test("a malformed trip in the address is ignored", async () => {
+  routeStore.reset();
+  mockApi(withSession(ME_OWNER, { "GET /api/v1/reference/airports": { status: 200, body: [] } }));
+  renderApp("/app/fares?origin=../x&adults=99&cabin=luxury&depart=soon");
+  expect(await screen.findByLabelText("Adults")).toHaveValue(1);
+  expect(screen.getByLabelText("Cabin")).toHaveValue("economy");
+  expect(screen.getByLabelText("Depart")).toHaveValue(isoDateFromNow(14));
+});

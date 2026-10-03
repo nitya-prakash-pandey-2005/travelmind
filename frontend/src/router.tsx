@@ -21,19 +21,20 @@ import { SignupPage } from "./auth/SignupPage";
 import { CommandCenterPage } from "./features/command/CommandCenterPage";
 import { DemoLaunchPage } from "./features/demo/DemoLaunchPage";
 import { FareScanPage } from "./features/fares/FareScanPage";
+import { validateFareSearch } from "./features/fares/fareSearchParams";
+import { EnquiryPage } from "./features/enquiries/EnquiryPage";
 import { HotelScanPage } from "./features/hotels/HotelScanPage";
 import { LandingPage } from "./features/landing/LandingPage";
 import {
   ClientPlaceholder,
   ClientsPlaceholder,
-  EnquiryPlaceholder,
-  PipelinePlaceholder,
   PublicQuotePlaceholder,
   QuotePlaceholder,
   QuotesPlaceholder,
   RouteIntelPlaceholder,
   SettingsPlaceholder,
 } from "./features/planned/pages";
+import { PipelinePage } from "./features/pipeline/PipelinePage";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
 import { TeamPage } from "./features/team/TeamPage";
 import { AppShell } from "./shell/AppShell";
@@ -159,14 +160,19 @@ const commandRoute = createRoute({
 });
 const teamRoute = createRoute({ getParentRoute: () => appRoute, path: "/team", component: TeamPage });
 const designRoute = createRoute({ getParentRoute: () => appRoute, path: "/design", component: DesignGallery });
-const faresRoute = createRoute({ getParentRoute: () => appRoute, path: "/fares", component: FareScanPage });
+const faresRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/fares",
+  validateSearch: validateFareSearch,
+  component: FareScanPage,
+});
 const hotelsRoute = createRoute({ getParentRoute: () => appRoute, path: "/hotels", component: HotelScanPage });
 const suppliersRoute = createRoute({ getParentRoute: () => appRoute, path: "/suppliers", component: SuppliersPage });
-const pipelineRoute = createRoute({ getParentRoute: () => appRoute, path: "/pipeline", component: PipelinePlaceholder });
+const pipelineRoute = createRoute({ getParentRoute: () => appRoute, path: "/pipeline", component: PipelinePage });
 const enquiryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/enquiries/$enquiryId",
-  component: EnquiryPlaceholder,
+  component: EnquiryPage,
 });
 const quotesRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes", component: QuotesPlaceholder });
 const quoteRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes/$quoteId", component: QuotePlaceholder });

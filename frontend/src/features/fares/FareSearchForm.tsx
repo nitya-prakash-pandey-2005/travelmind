@@ -29,14 +29,23 @@ const MAX_ADULTS = 9;
  * The fare search bar: adults and cabin on a toolbar, then route, dates and the scan button in one row on
  * laptops. The route takes the spare width; the dates wrap under it on tablets and everything stacks on phones.
  */
-export function FareSearchForm({ busy, onSearch }: { busy: boolean; onSearch: (request: FlightSearchRequest) => void }) {
+export function FareSearchForm({
+  busy,
+  onSearch,
+  initial = {},
+}: {
+  busy: boolean;
+  onSearch: (request: FlightSearchRequest) => void;
+  /** Starting values, e.g. an enquiry's trip; read when the form mounts. */
+  initial?: { depart?: string; adults?: number; cabin?: Cabin };
+}) {
   const id = useId();
   const { origin, destination } = useRouteSelection();
-  const [departure, setDeparture] = useState(() => isoDateFromNow(14));
+  const [departure, setDeparture] = useState(() => initial.depart ?? isoDateFromNow(14));
   const [returning, setReturning] = useState("");
   // A draft string so the field can be cleared and retyped; it is clamped on blur and on submit.
-  const [adults, setAdults] = useState("1");
-  const [cabin, setCabin] = useState<Cabin>("economy");
+  const [adults, setAdults] = useState(() => String(initial.adults ?? 1));
+  const [cabin, setCabin] = useState<Cabin>(() => initial.cabin ?? "economy");
 
   const sameAirport = origin !== null && destination !== null && origin.iata_code === destination.iata_code;
   const departsInPast = departure !== "" && departure < isoDateFromNow(0);

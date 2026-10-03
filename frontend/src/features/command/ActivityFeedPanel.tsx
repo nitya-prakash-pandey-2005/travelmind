@@ -36,7 +36,7 @@ const TITLE = "Live activity";
 const DESCRIPTION = "What your team did, newest first";
 
 /** Kind icons are neutral; only outcomes a person should notice carry a status colour. */
-type KindStyle = { icon: LucideIcon; tone?: string };
+export type KindStyle = { icon: LucideIcon; tone?: string };
 
 const KINDS: Record<string, KindStyle> = {
   "search.flights": { icon: Plane },
@@ -59,6 +59,11 @@ const KINDS: Record<string, KindStyle> = {
   "agency.updated": { icon: Building2 },
 };
 const GENERIC: KindStyle = { icon: Activity };
+
+/** The icon (and outcome colour, if any) for an activity kind; unknown kinds get a generic icon. */
+export function activityKindStyle(kind: string): KindStyle {
+  return KINDS[kind] ?? GENERIC;
+}
 
 const ROW = "grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-start gap-x-3";
 

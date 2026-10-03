@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import { CircleAlert, Plane } from "lucide-react";
 import { useId, useState } from "react";
 import { asApiError } from "../../api/client";
@@ -18,6 +18,7 @@ import { CABINS, FareSearchForm } from "./FareSearchForm";
 import { OfferCard } from "./OfferCard";
 import { QuickRoutes } from "./QuickRoutes";
 import { FARE_GUIDE, FARE_NOTE } from "./guides";
+import { usePrefilledRoute } from "./usePrefilledRoute";
 import { ReadingGuide } from "./ReadingGuide";
 import { SourceStrip } from "./SourceStrip";
 import { sortOffers, type SortMode } from "./sortOffers";
@@ -125,6 +126,9 @@ function Searching() {
 
 export function FareScanPage() {
   const me = useCurrentUser();
+  // An enquiry's trip, when Fare search was opened from one.
+  const prefill = useSearch({ from: "/app/fares" });
+  usePrefilledRoute(prefill.origin, prefill.destination);
   const recent = useRecentRoutes(me?.user.id ?? "anonymous");
   const [request, setRequest] = useState<FlightSearchRequest | null>(null);
   const [sort, setSort] = useState<SortMode>("price");
@@ -156,7 +160,12 @@ export function FareScanPage() {
         }
       />
       <div className="flex flex-col gap-4">
-        <FareSearchForm busy={search.isFetching} onSearch={submit} />
+        <FareSearchForm
+          key={`${prefill.depart ?? ""}|${prefill.adults ?? ""}|${prefill.cabin ?? ""}`}
+          busy={search.isFetching}
+          onSearch={submit}
+          initial={{ depart: prefill.depart, adults: prefill.adults, cabin: prefill.cabin }}
+        />
 
         {data?.baseline && !search.isError && (
           <FareInsight baseline={data.baseline} price={compared?.per_traveller ?? null} insight={compared?.insight ?? null} />

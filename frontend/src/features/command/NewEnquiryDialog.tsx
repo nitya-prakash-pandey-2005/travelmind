@@ -49,8 +49,19 @@ function FieldError({ id, message }: { id: string; message?: string }) {
   );
 }
 
+/** A picked client: a suggestion, or the client an existing record already links to. */
+export type ClientChoice = Pick<Client, "id" | "name"> & Partial<Pick<Client, "email" | "company_name">>;
+
 /** Search-as-you-type picker over the agency's clients (GET /api/v1/clients?q=). */
-function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (client: Client | null) => void }) {
+export function ClientCombobox({
+  value,
+  onChange,
+  label = "Client",
+}: {
+  value: ClientChoice | null;
+  onChange: (client: ClientChoice | null) => void;
+  label?: string;
+}) {
   const id = useId();
   const listId = `${id}-list`;
   const [term, setTerm] = useState("");
@@ -100,7 +111,7 @@ function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (
   return (
     <div className="relative flex flex-col gap-1.5">
       <label htmlFor={id} className={FIELD_LABEL}>
-        Client
+        {label}
       </label>
       <input
         ref={inputRef}
@@ -199,7 +210,7 @@ function NewEnquiryForm({ onClose }: { onClose: () => void }) {
   const [adults, setAdults] = useState("1");
   const [cabin, setCabin] = useState<Cabin>("economy");
   const [clientMode, setClientMode] = useState<ClientMode>("existing");
-  const [client, setClient] = useState<Client | null>(null);
+  const [client, setClient] = useState<ClientChoice | null>(null);
   const [clientName, setClientName] = useState("");
   const [notes, setNotes] = useState("");
   const [nameError, setNameError] = useState<string | undefined>();

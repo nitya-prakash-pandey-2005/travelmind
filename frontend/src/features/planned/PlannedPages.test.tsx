@@ -7,12 +7,10 @@ import { renderApp, withSession } from "../../test/renderApp";
 vi.mock("../globe/webgl", () => ({ hasWebGL: () => false }));
 
 test.each([
-  ["/app/pipeline", "Pipeline", [], [["Command Center", "/app"], ["Fare search", "/app/fares"]]],
   ["/app/quotes", "Quotes", [], [["Pipeline", "/app/pipeline"], ["Fare search", "/app/fares"]]],
   ["/app/clients", "Clients", [], [["Pipeline", "/app/pipeline"], ["Quotes", "/app/quotes"]]],
   ["/app/routes", "Route intel", [], [["Fare search", "/app/fares"], ["Command Center", "/app"]]],
   ["/app/settings", "Settings", [], [["Team", "/app/team"], ["Suppliers", "/app/suppliers"]]],
-  ["/app/enquiries/e-5", "Enquiry", ["Pipeline"], [["Pipeline", "/app/pipeline"], ["Fare search", "/app/fares"]]],
   ["/app/quotes/q-4", "Quote", ["Quotes"], [["Quotes", "/app/quotes"], ["Pipeline", "/app/pipeline"]]],
   ["/app/clients/c-1", "Client", ["Clients"], [["Clients", "/app/clients"], ["Pipeline", "/app/pipeline"]]],
 ] as const)("%s shows a titled page that says what is coming", async (path, title, crumbs, links) => {

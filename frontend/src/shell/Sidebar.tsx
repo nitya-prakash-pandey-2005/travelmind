@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   BedDouble,
   ChartLine,
@@ -31,7 +31,13 @@ export type NavPath =
   | "/app/suppliers"
   | "/app/settings"
   | "/app/design";
-type NavItem = { to: NavPath; label: string; icon: LucideIcon };
+type NavItem = {
+  to: NavPath;
+  label: string;
+  icon: LucideIcon;
+  /** Other path prefixes that belong to this item (an enquiry page sits under Pipeline). */
+  also?: string[];
+};
 type NavGroup = { label: string; items: NavItem[] };
 
 /** The sidebar's sections. The command palette offers the same destinations. */
@@ -40,7 +46,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Operate",
     items: [
       { to: "/app", label: "Command Center", icon: LayoutDashboard },
-      { to: "/app/pipeline", label: "Pipeline", icon: SquareKanban },
+      { to: "/app/pipeline", label: "Pipeline", icon: SquareKanban, also: ["/app/enquiries/"] },
       { to: "/app/quotes", label: "Quotes", icon: FileText },
       { to: "/app/clients", label: "Clients", icon: UserRound },
     ],
@@ -103,6 +109,7 @@ export function Sidebar({ id, mobileOpen, onCloseMobile }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const headingPrefix = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   useEffect(() => {
     if (mobileOpen) closeRef.current?.focus();
@@ -182,11 +189,15 @@ export function Sidebar({ id, mobileOpen, onCloseMobile }: SidebarProps) {
                 </h2>
                 {collapsed && <span aria-hidden="true" className="mx-2 mb-1 hidden h-px bg-line lg:block" />}
                 <ul aria-labelledby={headingId} className="flex flex-col gap-0.5">
-                  {group.items.map(({ to, label, icon: Icon }) => (
+                  {group.items.map(({ to, label, icon: Icon, also }) => (
                     <li key={to}>
                       <Link
                         to={to}
                         activeOptions={{ exact: to === "/app" }}
+                        // The router marks only its own path active; a related page is marked here the same way.
+                        {...(also?.some((prefix) => pathname.startsWith(prefix))
+                          ? { "data-status": "active", "aria-current": "page" as const }
+                          : {})}
                         onClick={() => onCloseMobile(false)}
                         className={cn(
                           "group relative flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium text-dim",
