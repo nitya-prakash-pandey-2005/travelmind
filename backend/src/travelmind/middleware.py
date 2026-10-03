@@ -3,10 +3,10 @@ import uuid
 
 import structlog
 from fastapi.exceptions import RequestValidationError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from starlette.datastructures import Headers, MutableHeaders
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -49,8 +49,23 @@ class RequestIdMiddleware:
             structlog.contextvars.clear_contextvars()
 
 
+BUSY_MESSAGE = "The service is busy. Please try again in a moment."
+BUSY_RETRY_AFTER_SECONDS = 2
+
+
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     request_id = getattr(request.state, "request_id", None) or uuid.uuid4().hex
+    if isinstance(exc, PoolTimeoutError):
+        # Every pooled DB connection stayed busy for the whole pool timeout: overload, not a bug.
+        log.warning("db_pool_exhausted", request_id=request_id)
+        return JSONResponse(
+            {"detail": BUSY_MESSAGE, "trace_id": request_id},
+            status_code=503,
+            headers={
+                REQUEST_ID_HEADER: request_id,
+                "Retry-After": str(BUSY_RETRY_AFTER_SECONDS),
+            },
+        )
     log.error("unhandled_error", request_id=request_id, exc_info=exc)
     return JSONResponse(
         {
@@ -120,15 +135,21 @@ async def validation_exception_handler(request: Request, exc: Exception) -> JSON
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
-class OriginCheckMiddleware(BaseHTTPMiddleware):
-    """Blocks state-changing browser requests from origins we don't serve (CSRF defence)."""
+class OriginCheckMiddleware:
+    """Blocks state-changing browser requests from origins we don't serve (CSRF defence).
+
+    Pure ASGI, like RequestIdMiddleware: no per-request task or body-stream copy.
+    """
 
     def __init__(self, app: ASGIApp, allowed_origins: list[str]) -> None:
-        super().__init__(app)
+        self.app = app
         self._allowed = frozenset(allowed_origins)
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        origin = request.headers.get("origin")
-        if request.method in UNSAFE_METHODS and origin is not None and origin not in self._allowed:
-            return JSONResponse({"detail": "Cross-site request blocked."}, status_code=403)
-        return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["method"] in UNSAFE_METHODS:
+            origin = Headers(scope=scope).get("origin")
+            if origin is not None and origin not in self._allowed:
+                response = JSONResponse({"detail": "Cross-site request blocked."}, status_code=403)
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)

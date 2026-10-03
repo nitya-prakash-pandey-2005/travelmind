@@ -57,9 +57,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             cleanup.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await cleanup
-        await close_http_clients()
-        await close_redis()
-        await get_engine().dispose()
+        # Each close runs even if an earlier one fails.
+        try:
+            await close_http_clients()
+        finally:
+            try:
+                await close_redis()
+            finally:
+                await get_engine().dispose()
 
 
 def create_app() -> FastAPI:

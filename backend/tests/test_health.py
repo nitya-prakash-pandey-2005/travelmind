@@ -186,3 +186,34 @@ async def test_request_id_is_bound_for_logs_and_request_state():
     assert r.json() == {"state": "req-42", "log": "req-42"}
     assert r.headers["X-Request-ID"] == "req-42"
     assert "request_id" not in structlog.contextvars.get_contextvars()
+
+
+def test_origin_check_middleware_is_pure_asgi():
+    from travelmind.middleware import OriginCheckMiddleware
+
+    assert not issubclass(OriginCheckMiddleware, BaseHTTPMiddleware)
+
+
+async def test_db_pool_exhaustion_is_a_busy_503_with_retry_after():
+    from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+
+    app = create_app()
+
+    @app.get("/busy")
+    async def busy() -> None:
+        raise PoolTimeoutError("QueuePool limit of size 10 overflow 5 reached")
+
+    async with make_client(app, raise_app_exceptions=False) as c:
+        r = await c.get(
+            "/busy", headers={"Origin": "http://localhost:5173", "X-Request-ID": "req-busy"}
+        )
+
+    assert r.status_code == 503
+    assert r.json() == {
+        "detail": "The service is busy. Please try again in a moment.",
+        "trace_id": "req-busy",
+    }
+    assert r.headers["Retry-After"] == "2"
+    assert r.headers["X-Request-ID"] == "req-busy"
+    assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "QueuePool" not in r.text

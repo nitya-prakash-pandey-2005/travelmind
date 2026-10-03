@@ -19,12 +19,15 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6380/0"
     # Per-process pools. Size them so (API workers x (pool + overflow)) fits PgBouncer's limits.
+    # Without PgBouncer, several workers need smaller pools: workers x (pool + overflow) must stay
+    # within Postgres max_connections minus headroom (migrations, admin, the worker process).
     db_pool_size: int = 10
     db_max_overflow: int = 5
     db_pool_timeout_s: float = 5.0
     db_statement_timeout_ms: int = 5000
     db_pgbouncer: bool = False  # transaction pooling: no prepared statements held across them
     redis_max_connections: int = 100
+    redis_pool_timeout_s: float = 1.0  # how long a command waits for a free pooled connection
     allowed_origins: list[str] = ["http://localhost:5173"]
     session_cookie_name: str = "tm_session"
     session_ttl_hours: int = 24 * 14

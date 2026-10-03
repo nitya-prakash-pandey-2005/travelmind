@@ -5,10 +5,12 @@ from typing import Any
 
 import httpx
 import pytest
+from structlog.testing import capture_logs
 
+from travelmind import cache as cache_module
 from travelmind import db as db_module
 from travelmind.cache import close_redis, get_redis, get_shared_redis
-from travelmind.config import Settings
+from travelmind.config import Settings, get_settings
 from travelmind.http import close_http_clients, get_http_client
 
 
@@ -19,6 +21,22 @@ async def test_get_redis_reuses_one_pool():
     assert get_shared_redis().connection_pool is first.connection_pool
     assert first.connection_pool.max_connections == 100
     assert await first.ping()
+
+
+async def test_redis_pool_waits_for_a_free_connection_instead_of_failing(monkeypatch):
+    settings = get_settings().model_copy(
+        update={"redis_max_connections": 1, "redis_pool_timeout_s": 2.0}
+    )
+    monkeypatch.setattr(cache_module, "get_settings", lambda: settings)
+    await close_redis()
+    redis = get_shared_redis()
+    assert redis.connection_pool.max_connections == 1
+    # The first command holds the only connection for ~0.2 s; the second must wait for it.
+    popped, pushed = await asyncio.gather(
+        redis.blpop(["pool-wait"], timeout=0.2), redis.rpush("pool-other", "x")
+    )
+    assert popped is None
+    assert pushed == 1
 
 
 async def test_close_redis_starts_a_fresh_pool():
@@ -102,6 +120,7 @@ def test_scale_settings_defaults():
     assert settings.db_statement_timeout_ms == 5000
     assert settings.db_pgbouncer is False
     assert settings.redis_max_connections == 100
+    assert settings.redis_pool_timeout_s == 1.0
     assert settings.run_scheduler is True
 
 
@@ -143,3 +162,51 @@ async def test_shared_http_client_keeps_no_cookies(respx_mock):
     await client.get("https://supplier.example.test/b")
     assert "cookie" not in second.calls.last.request.headers
     assert not client.cookies
+
+
+async def test_close_http_clients_closes_every_client_even_if_one_fails():
+    timeout = httpx.Timeout(1.0)
+    broken = get_http_client("broken", timeout=timeout)
+    healthy = get_http_client("healthy", timeout=timeout)
+
+    async def failing_close() -> None:
+        raise RuntimeError("socket already gone")
+
+    broken.aclose = failing_close  # type: ignore[method-assign]
+    with capture_logs() as logs:
+        await close_http_clients()
+    assert healthy.is_closed
+    assert get_http_client("broken", timeout=timeout) is not broken
+    assert [entry["event"] for entry in logs] == ["http_client_close_failed"]
+
+
+async def test_http_client_warns_when_an_existing_name_gets_another_base_url():
+    timeout = httpx.Timeout(1.0)
+    first = get_http_client("named", timeout=timeout, base_url="https://a.example.test")
+    with capture_logs() as logs:
+        again = get_http_client("named", timeout=timeout, base_url="https://b.example.test")
+        get_http_client("named", timeout=timeout, base_url="https://a.example.test")
+    assert again is first
+    assert [entry["event"] for entry in logs] == ["http_client_base_url_mismatch"]
+
+
+async def test_lifespan_closes_redis_and_engine_even_if_http_close_fails(monkeypatch):
+    from travelmind import main
+
+    disposed: list[bool] = []
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            disposed.append(True)
+
+    async def failing_http_close() -> None:
+        raise RuntimeError("boom")
+
+    pool = get_shared_redis().connection_pool
+    monkeypatch.setattr(main, "close_http_clients", failing_http_close)
+    monkeypatch.setattr(main, "get_engine", lambda: FakeEngine())
+    with pytest.raises(RuntimeError):
+        async with main.lifespan(main.create_app()):
+            pass
+    assert get_shared_redis().connection_pool is not pool
+    assert disposed == [True]
