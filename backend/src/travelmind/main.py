@@ -15,6 +15,7 @@ from travelmind.dashboard.router import (
 )
 from travelmind.demo.cleanup import demo_cleanup_loop
 from travelmind.demo.router import demo_router
+from travelmind.fareintel.routes import routes_router
 from travelmind.health import router as health_router
 from travelmind.hotels.router import hotels_router
 from travelmind.identity.router import auth_router, invitations_router, team_router
@@ -35,6 +36,7 @@ from travelmind.workspace.clients import clients_router
 from travelmind.workspace.enquiries import enquiries_router
 from travelmind.workspace.public_quotes import public_quotes_router
 from travelmind.workspace.quotes import quotes_router
+from travelmind.workspace.timelines import timelines_router
 
 
 @contextlib.asynccontextmanager
@@ -86,6 +88,8 @@ def create_app() -> FastAPI:
     app.include_router(enquiries_router)
     app.include_router(quotes_router)
     app.include_router(public_quotes_router)
+    app.include_router(timelines_router)
+    app.include_router(routes_router)
     app.include_router(dashboard_router)
     app.include_router(notifications_router)
     app.include_router(onboarding_router)

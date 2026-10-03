@@ -1,6 +1,14 @@
-"""Agency clients (travellers and companies): schemas, service and /api/v1/clients router."""
+"""Agency clients (travellers and companies): schemas, service and /api/v1/clients router.
 
-from datetime import datetime
+Each client read carries its stats in the agency currency:
+- `won_value_minor`: the sum over the client's accepted quotes in that currency of the option the
+  client accepted on the public page, from the version they were sent (`sent_version`); a quote
+  the agent marked accepted (no option recorded) counts its sent version's cheapest option.
+- `last_trip`: the trip of the client's enquiry with the latest departure date among those that
+  have an origin, destination and departure date and aren't lost (so it may be upcoming).
+"""
+
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -13,11 +21,24 @@ from pydantic import (
     StringConstraints,
     model_validator,
 )
-from sqlalchemy import ColumnElement, Select, exists, func, or_, select
+from sqlalchemy import (
+    BigInteger,
+    ColumnElement,
+    Row,
+    Select,
+    String,
+    cast,
+    exists,
+    func,
+    or_,
+    select,
+    true,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.db import DbSession, utcnow
+from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
 from travelmind.identity.schemas import NormalizedEmail, PersonName
 from travelmind.workspace._common import (
@@ -32,14 +53,16 @@ from travelmind.workspace._common import (
     strip_lower,
 )
 from travelmind.workspace.activity import record_activity
-from travelmind.workspace.models import Client, Enquiry, Quote
+from travelmind.workspace.models import Client, Enquiry, Quote, QuoteVersion
 
 __all__ = [
     "ClientCreate",
     "ClientError",
     "ClientList",
+    "ClientNotFound",
     "ClientOut",
     "ClientUpdate",
+    "TripRef",
     "clients_router",
     "create_client",
     "delete_client",
@@ -107,6 +130,12 @@ class ClientUpdate(BaseModel):
         return self
 
 
+class TripRef(BaseModel):
+    origin: str
+    destination: str
+    depart_date: date
+
+
 class ClientOut(BaseModel):
     id: UUID
     kind: str
@@ -121,11 +150,13 @@ class ClientOut(BaseModel):
     updated_at: datetime
     enquiry_count: int
     quote_count: int
+    won_value_minor: int
+    currency: str
+    last_trip: TripRef | None
 
 
-_CLIENT_FIELDS = tuple(
-    f for f in ClientOut.model_fields if f not in ("enquiry_count", "quote_count")
-)
+_STAT_FIELDS = ("enquiry_count", "quote_count", "won_value_minor", "currency", "last_trip")
+_CLIENT_FIELDS = tuple(f for f in ClientOut.model_fields if f not in _STAT_FIELDS)
 
 
 class ClientList(BaseModel):
@@ -172,13 +203,84 @@ _QUOTE_COUNT = (
 )
 
 
-def _with_counts() -> Select[Client, int, int]:
-    return select(Client, _ENQUIRY_COUNT, _QUOTE_COUNT)
+# The accepted option's sell price in the sent version, else (agent-marked) its cheapest option.
+_ACCEPTED_SELL = func.coalesce(
+    cast(
+        func.jsonb_extract_path_text(
+            QuoteVersion.options, cast(Quote.accepted_option, String), "sell", "amount_minor"
+        ),
+        BigInteger,
+    ),
+    QuoteVersion.totals["min_sell_minor"].as_integer(),
+)
 
 
-def _to_out(client: Client, enquiry_count: int, quote_count: int) -> ClientOut:
+def _won_value(currency: str) -> ColumnElement[int]:
+    return (
+        select(cast(func.coalesce(func.sum(_ACCEPTED_SELL), 0), BigInteger))
+        .select_from(Quote)
+        .join(
+            QuoteVersion,
+            (QuoteVersion.quote_id == Quote.id) & (QuoteVersion.version == Quote.sent_version),
+        )
+        .where(Quote.client_id == Client.id, Quote.status == "accepted", Quote.currency == currency)
+        .correlate(Client)
+        .scalar_subquery()
+    )
+
+
+_LAST_TRIP = (
+    select(Enquiry.origin, Enquiry.destination, Enquiry.depart_date)
+    .where(
+        Enquiry.client_id == Client.id,
+        Enquiry.status != "lost",
+        Enquiry.origin.is_not(None),
+        Enquiry.destination.is_not(None),
+        Enquiry.depart_date.is_not(None),
+    )
+    .order_by(Enquiry.depart_date.desc(), Enquiry.created_at.desc(), Enquiry.number.desc())
+    .limit(1)
+    .correlate(Client)
+    .lateral("last_trip")
+)
+
+
+def _with_stats(
+    currency: str,
+) -> Select[Client, int, int, int, str | None, str | None, date | None]:
+    return select(
+        Client,
+        _ENQUIRY_COUNT,
+        _QUOTE_COUNT,
+        _won_value(currency),
+        _LAST_TRIP.c.origin,
+        _LAST_TRIP.c.destination,
+        _LAST_TRIP.c.depart_date,
+    ).outerjoin(_LAST_TRIP, true())
+
+
+def _to_out(
+    row: Row[Client, int, int, int, str | None, str | None, date | None], currency: str
+) -> ClientOut:
+    client, enquiry_count, quote_count, won_value, origin, destination, depart_date = row
     fields = {name: getattr(client, name) for name in _CLIENT_FIELDS}
-    return ClientOut(**fields, enquiry_count=enquiry_count, quote_count=quote_count)
+    last_trip = (
+        TripRef(origin=origin, destination=destination, depart_date=depart_date)
+        if origin is not None and destination is not None and depart_date is not None
+        else None
+    )
+    return ClientOut(
+        **fields,
+        enquiry_count=enquiry_count,
+        quote_count=quote_count,
+        won_value_minor=int(won_value),
+        currency=currency,
+        last_trip=last_trip,
+    )
+
+
+async def _currency(db: AsyncSession, agency_id: UUID) -> str:
+    return (await identity_service.get_agency_settings(db, agency_id)).currency
 
 
 async def _check_email_free(db: AsyncSession, email: str | None, *, exclude: UUID | None) -> None:
@@ -200,12 +302,11 @@ async def _flush_client(db: AsyncSession, client: Client) -> None:
         raise DuplicateEmail from exc
 
 
-async def _load(db: AsyncSession, client_id: UUID) -> tuple[Client, int, int]:
-    row = (await db.execute(_with_counts().where(Client.id == client_id))).one_or_none()
-    if row is None:
+async def _load(db: AsyncSession, client_id: UUID) -> Client:
+    client = await db.scalar(select(Client).where(Client.id == client_id))
+    if client is None:
         raise ClientNotFound
-    client, enquiry_count, quote_count = row
-    return client, enquiry_count, quote_count
+    return client
 
 
 async def create_client(
@@ -261,6 +362,7 @@ def _filters(q: str | None, tag: str | None) -> list[ColumnElement[bool]]:
 async def list_clients(
     db: AsyncSession,
     *,
+    agency_id: UUID,
     q: str | None = None,
     tag: str | None = None,
     limit: int = 50,
@@ -268,27 +370,30 @@ async def list_clients(
 ) -> ClientList:
     conditions = _filters(q.strip() if q else None, tag.strip().lower() if tag else None)
     total = await db.scalar(select(func.count()).select_from(Client).where(*conditions))
+    currency = await _currency(db, agency_id)
     rows = await db.execute(
-        _with_counts()
+        _with_stats(currency)
         .where(*conditions)
         .order_by(Client.updated_at.desc(), Client.id)
         .limit(limit)
         .offset(offset)
     )
-    return ClientList(
-        items=[_to_out(client, enquiries, quotes) for client, enquiries, quotes in rows],
-        total=total or 0,
-    )
+    return ClientList(items=[_to_out(row, currency) for row in rows], total=total or 0)
 
 
-async def get_client(db: AsyncSession, client_id: UUID) -> ClientOut:
-    return _to_out(*await _load(db, client_id))
+async def get_client(db: AsyncSession, client_id: UUID, *, agency_id: UUID) -> ClientOut:
+    """The client with its counts and stats (see the module docstring), or ClientNotFound."""
+    currency = await _currency(db, agency_id)
+    row = (await db.execute(_with_stats(currency).where(Client.id == client_id))).one_or_none()
+    if row is None:
+        raise ClientNotFound
+    return _to_out(row, currency)
 
 
 async def update_client(
     db: AsyncSession, client_id: UUID, actor_user_id: UUID | None, data: ClientUpdate
 ) -> ClientOut:
-    client, _, _ = await _load(db, client_id)
+    client = await _load(db, client_id)
     changes: dict[str, Any] = {
         field: value
         for field, value in data.model_dump(exclude_unset=True).items()
@@ -313,11 +418,11 @@ async def update_client(
             entity_id=client.id,
             data={"fields": sorted(changes)},
         )
-    return await get_client(db, client_id)
+    return await get_client(db, client_id, agency_id=client.agency_id)
 
 
 async def delete_client(db: AsyncSession, client_id: UUID, actor_user_id: UUID | None) -> None:
-    client, _, _ = await _load(db, client_id)
+    client = await _load(db, client_id)
     if await db.scalar(select(exists().where(Quote.client_id == client.id))):
         raise ClientHasQuotes
     await db.delete(client)
@@ -345,7 +450,9 @@ async def list_clients_route(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ClientList:
-    return await list_clients(db, q=q, tag=tag, limit=limit, offset=offset)
+    return await list_clients(
+        db, agency_id=current.agency_id, q=q, tag=tag, limit=limit, offset=offset
+    )
 
 
 @clients_router.post("", status_code=status.HTTP_201_CREATED)
@@ -355,13 +462,13 @@ async def create_client_route(body: ClientCreate, current: AuthedUser, db: DbSes
     except WorkspaceError as exc:
         raise http_error(exc) from None
     await db.commit()
-    return await get_client(db, client.id)
+    return await get_client(db, client.id, agency_id=current.agency_id)
 
 
 @clients_router.get("/{client_id}")
 async def get_client_route(client_id: UUID, current: AuthedUser, db: DbSession) -> ClientOut:
     try:
-        return await get_client(db, client_id)
+        return await get_client(db, client_id, agency_id=current.agency_id)
     except WorkspaceError as exc:
         raise http_error(exc) from None
 
