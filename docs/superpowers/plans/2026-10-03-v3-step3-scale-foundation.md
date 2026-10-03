@@ -213,6 +213,7 @@ def agency_key(agency_id: UUID, version: int, name: str, *parts: str) -> str:
   - `dashboard/router.py`: summary (per range) and pipeline, 30 s, key `agency_key(agency, ver, "summary", range)`. Lazy expiry still runs before the cache read. `expire_overdue_quotes` returning >0 bumps the version.
   - `offers/router.py` suppliers list: 30 s, global key `tm:rc:suppliers`.
   - `reference/router.py` airport search: 1 h, key on the normalised query + limit.
+  - `fareintel/routes.py` route intel: fare aggregates (tenant-independent) 5 min, key on route, cabin, currency, agency time zone and local date; `your_searches` stays uncached.
   - `platform.py` facts: already Redis-cached. Leave it, but route it through `cached_json` if that makes it simpler.
 - Invalidation: every workspace write calls `bump_agency_version` after commit. A single helper `await invalidate_agency(redis, agency_id)` is called from the route layer after successful mutations.
   - enquiries, quotes (create/version/send/decide/expire), clients, public quote decision and first view, agency profile, demo generation
@@ -251,7 +252,7 @@ def agency_key(agency_id: UUID, version: int, name: str, *parts: str) -> str:
   - `async def enqueue(name: str, *args, job_id: str | None = None) -> str` using an arq pool created lazily on the shared Redis URL.
   - `async def job_status(job_id) -> Literal["queued","running","done","failed","unknown"]`.
 - Demo generation stays synchronous in this step: its HTTP contract is used by the landing page. Add a global Redis semaphore of 4 concurrent generations (`tm:sem:demo`, with TTL safety) so a burst can't exhaust the DB pool. A blocked request waits ≤ 10 s, then gets 503 "Demo workspaces are busy. Try again in a moment.". `generate_demo_job` is registered for Step 5 (the traveller app) to reuse.
-- Create migration `backend/migrations/versions/0007_hot_path_indexes.py`. First `EXPLAIN` the hot queries in a scratch session, and only add indexes that are missing:
+- Create migration `backend/migrations/versions/0008_hot_path_indexes.py` (0007 already added workspace FK and activity-entity indexes in Plan 5). First `EXPLAIN` the hot queries in a scratch session, and only add indexes that are missing:
   - `activity_events (agency_id, entity_type, entity_id, occurred_at DESC)`
   - `activity_events (agency_id, occurred_at DESC)`
   - `fare_snapshots (origin, destination, cabin, currency, observed_at DESC)`
@@ -265,7 +266,7 @@ def agency_key(agency_id: UUID, version: int, name: str, *parts: str) -> str:
 
 **Interfaces:**
 - Consumes: Task 1 clients, `demo/cleanup.py`, `workspace/quotes.expire_overdue_quotes(db, agency_id=..., now=...)`.
-- Produces: `travelmind.jobs.enqueue`, `travelmind.jobs.job_status`, `travelmind.worker.WorkerSettings`, migration `0007_hot_path_indexes`.
+- Produces: `travelmind.jobs.enqueue`, `travelmind.jobs.job_status`, `travelmind.worker.WorkerSettings`, migration `0008_hot_path_indexes`.
 
 - [ ] **Step 1: Failing tests.**
   - `test_expire_sweep_expires_all_agencies`: two agencies, each with an overdue sent quote. Calling the cron function directly with `ctx={}` makes both expired, and each gets one `quote.expired` event.
