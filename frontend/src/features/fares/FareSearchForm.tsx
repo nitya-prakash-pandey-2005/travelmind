@@ -37,12 +37,12 @@ export function FareSearchForm({
   busy: boolean;
   onSearch: (request: FlightSearchRequest) => void;
   /** Starting values, e.g. an enquiry's trip; read when the form mounts. */
-  initial?: { depart?: string; adults?: number; cabin?: Cabin };
+  initial?: { depart?: string; returning?: string; adults?: number; cabin?: Cabin };
 }) {
   const id = useId();
   const { origin, destination } = useRouteSelection();
   const [departure, setDeparture] = useState(() => initial.depart ?? isoDateFromNow(14));
-  const [returning, setReturning] = useState("");
+  const [returning, setReturning] = useState(() => initial.returning ?? "");
   // A draft string so the field can be cleared and retyped; it is clamped on blur and on submit.
   const [adults, setAdults] = useState(() => String(initial.adults ?? 1));
   const [cabin, setCabin] = useState<Cabin>(() => initial.cabin ?? "economy");

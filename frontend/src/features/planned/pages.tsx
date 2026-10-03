@@ -1,9 +1,9 @@
-import { FileText, LayoutDashboard, Plane, PlugZap, ReceiptText, SquareKanban, UserRound, Users } from "lucide-react";
+import { FileText, LayoutDashboard, Plane, PlugZap, SquareKanban, UserRound, Users } from "lucide-react";
 import { PlannedPage, type RelatedPage } from "./PlannedPage";
 
 /**
  * This release's new pages while their screens are finished. Each is swapped for its real screen in
- * the router (quotes, quote editor, clients, client, route intel, settings, and the client's quote page).
+ * the router (clients, client, route intel and settings).
  */
 
 const COMMAND_CENTER: RelatedPage = {
@@ -31,39 +31,6 @@ const CLIENTS: RelatedPage = {
   hint: "Travellers and companies you quote for",
   icon: UserRound,
 };
-
-export function QuotesPlaceholder() {
-  return (
-    <PlannedPage
-      title="Quotes"
-      description="Every quote you've built or sent, with its status and value."
-      coming={[
-        "Each quote with its client, route, status, value and versions",
-        "Filters for draft, sent, viewed, accepted, declined and expired quotes",
-        "A builder that adds up to three live fares, applies your markup and saves priced versions",
-        "A share link your client can open on any device to accept or decline",
-      ]}
-      related={[PIPELINE, FARE_SEARCH]}
-    />
-  );
-}
-
-export function QuotePlaceholder() {
-  return (
-    <PlannedPage
-      title="Quote"
-      breadcrumb={[{ label: "Quotes", to: "/app/quotes" }, { label: "Quote" }]}
-      description="Build, price and send one quote."
-      coming={[
-        "Up to three live fares, with your markup for the whole quote or per option",
-        "Versions priced by TravelMind, with the change from the previous version",
-        "A share link and a ready-to-paste WhatsApp message for your client",
-        "Accepted, declined or expired, set by hand when the client answers another way",
-      ]}
-      related={[QUOTES, PIPELINE]}
-    />
-  );
-}
 
 export function ClientsPlaceholder() {
   return (
@@ -132,26 +99,5 @@ export function SettingsPlaceholder() {
         { to: "/app/suppliers", label: "Suppliers", hint: "Airline and hotel supplier connections", icon: PlugZap },
       ]}
     />
-  );
-}
-
-/** The client's page for a quote link: standalone, outside the app, with no session. */
-export function PublicQuotePlaceholder() {
-  return (
-    <main className="grid min-h-dvh place-items-center bg-bg p-4">
-      <div className="flex w-full max-w-sm flex-col items-center text-center">
-        <span
-          aria-hidden="true"
-          className="mb-5 grid h-10 w-10 place-items-center rounded-lg border border-line bg-surface text-dim"
-        >
-          <ReceiptText size={18} strokeWidth={1.75} />
-        </span>
-        <h1 className="tm-page-title text-ink">Your travel quote</h1>
-        <p className="mt-2 text-[13px] leading-5 text-dim">
-          This link opens a quote from your travel agent. The quote page isn't available yet — please check back
-          shortly, or ask your travel agent for the details.
-        </p>
-      </div>
-    </main>
   );
 }

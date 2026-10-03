@@ -168,14 +168,59 @@ function SliceDetails({ slice, label }: { slice: Slice; label: string }) {
   );
 }
 
-export type OfferCardProps = { offer: FlightOffer };
+/** Selectable mode (the quote builder): an "Add to quote" checkbox under "Verify price". */
+export type OfferSelection = {
+  selected: boolean;
+  onChange: (selected: boolean) => void;
+  /** Why the offer can't be added (another currency, the option limit); the checkbox is then disabled. */
+  disabledReason?: string | null;
+};
+
+export type OfferCardProps = { offer: FlightOffer; selectable?: OfferSelection };
+
+/** The "Add to quote" checkbox, with the reason when it can't be ticked. */
+function AddToQuote({ selection }: { selection: OfferSelection }) {
+  const id = useId();
+  const blocked = Boolean(selection.disabledReason) && !selection.selected;
+  return (
+    <div className="mt-2 flex max-w-44 flex-col items-end gap-1">
+      <label
+        className={cn(
+          "inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-[13px] font-medium transition-colors duration-150 ease-tm",
+          "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary",
+          selection.selected
+            ? "border-primary/60 bg-primary/10 text-ink"
+            : blocked
+              ? "cursor-not-allowed border-line text-faint"
+              : "cursor-pointer border-line-strong bg-surface-2 text-ink hover:border-faint hover:bg-hover",
+        )}
+      >
+        <input
+          type="checkbox"
+          checked={selection.selected}
+          disabled={blocked}
+          aria-describedby={blocked ? id : undefined}
+          onChange={(event) => selection.onChange(event.target.checked)}
+          className="h-3.5 w-3.5 accent-primary"
+        />
+        Add to quote
+      </label>
+      {blocked && (
+        <p id={id} className="text-right text-[11px] leading-4 text-dim">
+          {selection.disabledReason}
+        </p>
+      )}
+    </div>
+  );
+}
 
 /**
  * A flight offer as a result card: carrier, each journey as a timeline, price (≈ when converted, with the
  * billed original), provenance, fare insight and the facts agents check (bags, refunds, CO₂). "Verify price"
- * asks the supplier again; "Flight details" opens every flight, connection and fare condition.
+ * asks the supplier again; "Flight details" opens every flight, connection and fare condition. With
+ * `selectable` (the quote builder) it also offers "Add to quote".
  */
-export function OfferCard({ offer }: OfferCardProps) {
+export function OfferCard({ offer, selectable }: OfferCardProps) {
   const reprice = useMutation({ mutationFn: () => offersApi.reprice(offer.id) });
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
@@ -191,7 +236,10 @@ export function OfferCard({ offer }: OfferCardProps) {
   return (
     <article
       aria-label={converted ? `${carrier} about ${price}` : `${carrier} ${price}`}
-      className="rounded-lg border border-line bg-surface transition-colors duration-150 ease-tm hover:border-line-strong"
+      className={cn(
+        "rounded-lg border bg-surface transition-colors duration-150 ease-tm",
+        selectable?.selected ? "border-primary/70" : "border-line hover:border-line-strong",
+      )}
     >
       <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-4 p-4 md:grid-cols-[11rem_minmax(0,1fr)_auto]">
         <div className="col-start-1 row-start-1 flex min-w-0 items-start gap-3">
@@ -236,6 +284,7 @@ export function OfferCard({ offer }: OfferCardProps) {
           >
             Verify price
           </Button>
+          {selectable && <AddToQuote selection={selectable} />}
         </div>
       </div>
 

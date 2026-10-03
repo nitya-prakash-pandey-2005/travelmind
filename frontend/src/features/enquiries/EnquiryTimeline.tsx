@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { History } from "lucide-react";
 import { enquiryActivityQueryOptions } from "../../api/enquiries";
+import type { Timeline } from "../../api/timeline";
 import { formatRelativeTime } from "../../lib/format";
 import { useClock } from "../../shell/useClock";
 import { cn } from "../../ui/cn";
@@ -18,13 +19,36 @@ const STAMP = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short",
 /** Everything that happened to the enquiry and its quotes, newest first (the last 50 events). */
 export function EnquiryTimeline({ enquiryId, className }: { enquiryId: string; className?: string }) {
   const timeline = useQuery(enquiryActivityQueryOptions(enquiryId));
+  return (
+    <TimelinePanel
+      timeline={timeline}
+      className={className}
+      intro="Status changes, quotes and client views"
+      emptyDescription="Moves, quotes and client views will be listed here as they happen."
+    />
+  );
+}
+
+/** A record's activity timeline (enquiry, quote or client), newest first. */
+export function TimelinePanel({
+  timeline,
+  intro,
+  emptyDescription,
+  className,
+}: {
+  timeline: UseQueryResult<Timeline>;
+  /** The description while the timeline loads. */
+  intro: string;
+  emptyDescription: string;
+  className?: string;
+}) {
   const now = useClock(30_000);
   const count = timeline.data?.items.length ?? 0;
 
   return (
     <Panel
       title={TITLE}
-      description={timeline.data ? `${count} event${count === 1 ? "" : "s"} · newest first` : "Status changes, quotes and client views"}
+      description={timeline.data ? `${count} event${count === 1 ? "" : "s"} · newest first` : intro}
       busy={timeline.isPending}
       className={className}
     >
@@ -47,7 +71,7 @@ export function EnquiryTimeline({ enquiryId, className }: { enquiryId: string; c
         <EmptyState
           icon={History}
           title="No activity yet"
-          description="Moves, quotes and client views will be listed here as they happen."
+          description={emptyDescription}
           className="py-6"
         />
       ) : (

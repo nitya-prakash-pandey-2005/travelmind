@@ -28,13 +28,13 @@ import { LandingPage } from "./features/landing/LandingPage";
 import {
   ClientPlaceholder,
   ClientsPlaceholder,
-  PublicQuotePlaceholder,
-  QuotePlaceholder,
-  QuotesPlaceholder,
   RouteIntelPlaceholder,
   SettingsPlaceholder,
 } from "./features/planned/pages";
 import { PipelinePage } from "./features/pipeline/PipelinePage";
+import { PublicQuotePage } from "./features/publicQuote/PublicQuotePage";
+import { QuoteEditorPage } from "./features/quotes/QuoteEditorPage";
+import { QuotesPage } from "./features/quotes/QuotesPage";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
 import { TeamPage } from "./features/team/TeamPage";
 import { AppShell } from "./shell/AppShell";
@@ -136,7 +136,7 @@ const inviteRoute = createRoute({
 const publicQuoteRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/q/$token",
-  component: PublicQuotePlaceholder,
+  component: PublicQuotePage,
 });
 
 const appRoute = createRoute({
@@ -174,8 +174,8 @@ const enquiryRoute = createRoute({
   path: "/enquiries/$enquiryId",
   component: EnquiryPage,
 });
-const quotesRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes", component: QuotesPlaceholder });
-const quoteRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes/$quoteId", component: QuotePlaceholder });
+const quotesRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes", component: QuotesPage });
+const quoteRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes/$quoteId", component: QuoteEditorPage });
 const clientsRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients", component: ClientsPlaceholder });
 const clientRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients/$clientId", component: ClientPlaceholder });
 const routeIntelRoute = createRoute({ getParentRoute: () => appRoute, path: "/routes", component: RouteIntelPlaceholder });
