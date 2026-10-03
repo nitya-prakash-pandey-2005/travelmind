@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
+from travelmind.cache import close_redis
 from travelmind.config import get_settings
 from travelmind.dashboard.router import (
     dashboard_router,
@@ -13,11 +14,13 @@ from travelmind.dashboard.router import (
     onboarding_router,
     search_router,
 )
+from travelmind.db import get_engine
 from travelmind.demo.cleanup import demo_cleanup_loop
 from travelmind.demo.router import demo_router
 from travelmind.fareintel.routes import routes_router
 from travelmind.health import router as health_router
 from travelmind.hotels.router import hotels_router
+from travelmind.http import close_http_clients
 from travelmind.identity.router import auth_router, invitations_router, team_router
 from travelmind.middleware import (
     REQUEST_ID_HEADER,
@@ -41,10 +44,11 @@ from travelmind.workspace.timelines import timelines_router
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Remove expired demo workspaces at startup and then every interval (not under tests)."""
+    """Run the demo cleanup at startup and then every interval (not under tests, and not where a
+    worker owns the schedules), and close the process-wide clients on shutdown."""
     settings = get_settings()
     cleanup: asyncio.Task[None] | None = None
-    if settings.environment != "test":
+    if settings.environment != "test" and settings.run_scheduler:
         cleanup = asyncio.create_task(demo_cleanup_loop(settings.demo_cleanup_interval_seconds))
     try:
         yield
@@ -53,6 +57,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             cleanup.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await cleanup
+        await close_http_clients()
+        await close_redis()
+        await get_engine().dispose()
 
 
 def create_app() -> FastAPI:

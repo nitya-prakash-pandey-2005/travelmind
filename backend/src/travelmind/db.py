@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Depends
 from sqlalchemy import event, text
@@ -41,13 +41,38 @@ def _apply_tenant(session, transaction, connection):  # type: ignore[no-untyped-
         connection.execute(_SET_TENANT_SQL, {"key": TENANT_SETTING, "agency_id": str(agency_id)})
 
 
+def _pgbouncer_statement_name() -> str:
+    return f"__asyncpg_{uuid4()}__"
+
+
 @lru_cache
 def get_engine() -> AsyncEngine:
     settings = get_settings()
-    kwargs: dict[str, Any] = (
-        {"poolclass": NullPool} if settings.environment == "test" else {"pool_pre_ping": True}
+    if settings.environment == "test":
+        return create_async_engine(settings.database_url, poolclass=NullPool)
+    connect_args: dict[str, Any]
+    if settings.db_pgbouncer:
+        # Transaction pooling shares a server connection between clients, so no prepared statement
+        # may outlive its transaction: asyncpg's and SQLAlchemy's statement caches are off and
+        # every statement gets a unique name (SQLAlchemy asyncpg docs, "PgBouncer").
+        # PgBouncer rejects unknown startup parameters, so statement_timeout is set per role.
+        connect_args = {
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+            "prepared_statement_name_func": _pgbouncer_statement_name,
+        }
+    else:
+        connect_args = {
+            "server_settings": {"statement_timeout": str(settings.db_statement_timeout_ms)}
+        }
+    return create_async_engine(
+        settings.database_url,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_timeout=settings.db_pool_timeout_s,
+        pool_pre_ping=True,
+        connect_args=connect_args,
     )
-    return create_async_engine(settings.database_url, **kwargs)
 
 
 @lru_cache

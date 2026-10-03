@@ -9,6 +9,7 @@ from typing import Any, cast, get_args
 import httpx
 import structlog
 
+from travelmind.http import get_http_client
 from travelmind.offers.models import (
     Baggage,
     Cabin,
@@ -159,12 +160,15 @@ class DuffelFlightSupplier:
         self, method: str, path: str, *, params: dict[str, str], json: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         try:
-            async with httpx.AsyncClient(
-                base_url=self._base_url, timeout=self._http_timeout_s
-            ) as client:
-                response = await client.request(
-                    method, path, params=params, json=json, headers=self._headers()
-                )
+            client = get_http_client("duffel", timeout=httpx.Timeout(self._http_timeout_s))
+            response = await client.request(
+                method,
+                f"{self._base_url}{path}",
+                params=params,
+                json=json,
+                headers=self._headers(),
+                timeout=self._http_timeout_s,
+            )
         except httpx.TimeoutException as exc:
             raise SupplierError("timeout", "Duffel didn't answer in time.") from exc
         except httpx.HTTPError as exc:

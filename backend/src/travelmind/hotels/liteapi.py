@@ -9,6 +9,7 @@ import httpx
 import structlog
 
 from travelmind.hotels.models import HotelOffer, HotelSearchRequest
+from travelmind.http import get_http_client
 from travelmind.offers.models import Provenance
 from travelmind.offers.money import Money
 from travelmind.offers.suppliers.base import SupplierError, offer_id
@@ -214,8 +215,10 @@ class LiteApiHotelSupplier:
             "Content-Type": "application/json",
         }
         try:
-            async with httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout) as client:
-                response = await client.post(path, json=body, headers=headers)
+            client = get_http_client("liteapi", timeout=httpx.Timeout(self._timeout))
+            response = await client.post(
+                f"{self._base_url}{path}", json=body, headers=headers, timeout=self._timeout
+            )
         except httpx.TimeoutException as exc:
             raise SupplierError("timeout", "LiteAPI didn't answer in time.") from exc
         except httpx.HTTPError as exc:

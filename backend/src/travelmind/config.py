@@ -18,6 +18,13 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://travelmind_owner:owner_dev_pw@localhost:5433/travelmind"
     )
     redis_url: str = "redis://localhost:6380/0"
+    # Per-process pools. Size them so (API workers x (pool + overflow)) fits PgBouncer's limits.
+    db_pool_size: int = 10
+    db_max_overflow: int = 5
+    db_pool_timeout_s: float = 5.0
+    db_statement_timeout_ms: int = 5000
+    db_pgbouncer: bool = False  # transaction pooling: no prepared statements held across them
+    redis_max_connections: int = 100
     allowed_origins: list[str] = ["http://localhost:5173"]
     session_cookie_name: str = "tm_session"
     session_ttl_hours: int = 24 * 14
@@ -33,6 +40,8 @@ class Settings(BaseSettings):
     demo_window_seconds: int = 3600
     demo_ttl_days: int = 7
     demo_cleanup_interval_seconds: int = 3600
+    # Periodic jobs in the API process. Off where a worker owns the schedules (production).
+    run_scheduler: bool = True
     # Suppliers & market data — an empty value means "not connected".
     duffel_token: str = ""
     duffel_supplier_timeout_ms: int = 12000

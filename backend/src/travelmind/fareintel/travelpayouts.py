@@ -18,6 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.fareintel.models import FareSnapshot
+from travelmind.http import get_http_client
 from travelmind.offers.money import Money
 
 TP_PRICES_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
@@ -147,10 +148,13 @@ async def seed_route(
     }
     try:
         async with asyncio.timeout(FETCH_DEADLINE_SECONDS):
-            async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
-                response = await client.get(
-                    TP_PRICES_URL, params=params, headers={"X-Access-Token": token}
-                )
+            client = get_http_client("travelpayouts", timeout=FETCH_TIMEOUT)
+            response = await client.get(
+                TP_PRICES_URL,
+                params=params,
+                headers={"X-Access-Token": token},
+                timeout=FETCH_TIMEOUT,
+            )
         response.raise_for_status()
         items = _items(response.json(), currency)
     except httpx.HTTPStatusError as exc:

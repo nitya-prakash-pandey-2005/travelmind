@@ -3,6 +3,7 @@ import uuid
 
 import structlog
 from fastapi.exceptions import RequestValidationError
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -13,22 +14,39 @@ _VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 log = structlog.get_logger()
 
 
-def _request_id_from(request: Request) -> str:
-    supplied = request.headers.get(REQUEST_ID_HEADER, "")
+def _request_id_from(headers: Headers) -> str:
+    supplied = headers.get(REQUEST_ID_HEADER, "")
     return supplied if _VALID_REQUEST_ID.fullmatch(supplied) else uuid.uuid4().hex
 
 
-class RequestIdMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        request_id = _request_id_from(request)
-        request.state.request_id = request_id
+class RequestIdMiddleware:
+    """Tags each request with an id: `request.state.request_id`, the structlog context and the
+    `X-Request-ID` response header. A supplied id is kept when it is safe to echo.
+
+    Pure ASGI: `BaseHTTPMiddleware` would add a task and a body-stream copy to every request.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request_id = _request_id_from(Headers(scope=scope))
+        scope.setdefault("state", {})["request_id"] = request_id
+
+        async def send_with_request_id(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
+            await send(message)
+
         structlog.contextvars.bind_contextvars(request_id=request_id)
         try:
-            response = await call_next(request)
+            await self.app(scope, receive, send_with_request_id)
         finally:
             structlog.contextvars.clear_contextvars()
-        response.headers[REQUEST_ID_HEADER] = request_id
-        return response
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
