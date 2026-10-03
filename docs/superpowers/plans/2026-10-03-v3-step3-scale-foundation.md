@@ -335,7 +335,7 @@ def guard_for(name: str) -> SupplierGuard  # registry with settings-driven limit
   - Project name `travelmind-prod`. No host ports except nginx `8080:80`.
   - `postgres`: pgvector/pgvector:pg16, its own volume, `deploy/postgres/init.sql`, `max_connections=200`.
   - `pgbouncer`: `edoburu/pgbouncer` with `POOL_MODE=transaction`, `MAX_CLIENT_CONN=2000`, `DEFAULT_POOL_SIZE=40`, `AUTH_TYPE=scram-sha-256`, users for travelmind_app and travelmind_owner.
-  - `redis`: redis:7-alpine with `--maxmemory 256mb --maxmemory-policy volatile-lru` (only keys with a TTL are evicted, so per-agency cache version counters and rate-limit state are never evicted; ``.
+  - `redis`: redis:7-alpine with `--maxmemory 256mb --maxmemory-policy volatile-lru` (only keys with a TTL are evicted, so per-agency cache version counters and rate-limit state are never evicted).
   - `migrate`: one-shot `alembic upgrade head` straight to postgres as owner. It runs before the api starts (`depends_on: condition: service_completed_successfully`).
   - `api`: replicas via `deploy.replicas: ${API_REPLICAS:-2}`. `TM_DB_PGBOUNCER=true`, `TM_ENVIRONMENT=production`, `TM_RUN_SCHEDULER=false`, `TM_COOKIE_SECURE=false` (local HTTP only; documented), `TM_ALLOWED_ORIGINS=["http://localhost:8080"]`, `PROMETHEUS_MULTIPROC_DIR=/tmp/prom`. Healthcheck on `/ready`.
   - `worker`: `arq travelmind.worker.WorkerSettings`.
