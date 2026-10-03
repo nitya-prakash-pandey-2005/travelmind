@@ -19,9 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.fareintel.models import FareSnapshot
 from travelmind.http import get_http_client
+from travelmind.metrics import supplier_call
 from travelmind.offers.money import Money
 
 TP_PRICES_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
+SUPPLIER = "travelpayouts"  # metrics label, as in the supplier status list
 SEED_TTL_SECONDS = 24 * 3600
 CLAIM_TTL_SECONDS = 60  # one search fetches a route while concurrent ones skip it
 FAILURE_KEY = "tp:down"
@@ -147,16 +149,17 @@ async def seed_route(
         "sorting": "price",
     }
     try:
-        async with asyncio.timeout(FETCH_DEADLINE_SECONDS):
-            client = get_http_client("travelpayouts", timeout=FETCH_TIMEOUT)
-            response = await client.get(
-                TP_PRICES_URL,
-                params=params,
-                headers={"X-Access-Token": token},
-                timeout=FETCH_TIMEOUT,
-            )
-        response.raise_for_status()
-        items = _items(response.json(), currency)
+        with supplier_call(SUPPLIER):
+            async with asyncio.timeout(FETCH_DEADLINE_SECONDS):
+                client = get_http_client("travelpayouts", timeout=FETCH_TIMEOUT)
+                response = await client.get(
+                    TP_PRICES_URL,
+                    params=params,
+                    headers={"X-Access-Token": token},
+                    timeout=FETCH_TIMEOUT,
+                )
+            response.raise_for_status()
+            items = _items(response.json(), currency)
     except httpx.HTTPStatusError as exc:
         log.warning("travelpayouts_unavailable", status=exc.response.status_code)
         await _back_off(redis)

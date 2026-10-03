@@ -22,6 +22,7 @@ from travelmind.health import router as health_router
 from travelmind.hotels.router import hotels_router
 from travelmind.http import close_http_clients
 from travelmind.identity.router import auth_router, invitations_router, team_router
+from travelmind.metrics import MetricsMiddleware, metrics_router
 from travelmind.middleware import (
     REQUEST_ID_HEADER,
     OriginCheckMiddleware,
@@ -72,7 +73,8 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level)
     app = FastAPI(title="TravelMind API", version="0.1.0", lifespan=lifespan)
     # Starlette runs the last-added middleware first:
-    # RequestId → CORS → OriginCheck → UnhandledError → app.
+    # Metrics → RequestId → CORS → OriginCheck → UnhandledError → app.
+    # Metrics is outermost so its timing covers the whole stack and it sees the final status.
     # UnhandledError must sit inside CORS so 500s still carry CORS headers.
     app.add_middleware(UnhandledErrorMiddleware)
     app.add_middleware(OriginCheckMiddleware, allowed_origins=settings.allowed_origins)
@@ -85,9 +87,11 @@ def create_app() -> FastAPI:
         expose_headers=[REQUEST_ID_HEADER],
     )
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(MetricsMiddleware)
     app.add_exception_handler(Exception, unhandled_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.include_router(health_router)
+    app.include_router(metrics_router)
     app.include_router(auth_router)
     app.include_router(invitations_router)
     app.include_router(team_router)

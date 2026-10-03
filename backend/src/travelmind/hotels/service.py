@@ -17,6 +17,7 @@ from travelmind.db import utcnow
 from travelmind.hotels.liteapi import LiteApiHotelSupplier
 from travelmind.hotels.models import HotelOffer, HotelSearchRequest
 from travelmind.hotels.schemas import HotelOfferView, HotelSearchResponse
+from travelmind.metrics import supplier_call
 from travelmind.offers.display import display_money, rank_by_display
 from travelmind.offers.fx import display_currency_for, get_fx_rates
 from travelmind.offers.money import Money
@@ -61,17 +62,18 @@ async def _search_supplier(
         )
 
     try:
-        offers = await asyncio.wait_for(
-            supplier.search(
-                request,
-                latitude=latitude,
-                longitude=longitude,
-                currency=currency,
-                guest_nationality=guest_nationality,
-                timeout_s=timeout_s,
-            ),
-            timeout=timeout_s,
-        )
+        with supplier_call(SUPPLIER):
+            offers = await asyncio.wait_for(
+                supplier.search(
+                    request,
+                    latitude=latitude,
+                    longitude=longitude,
+                    currency=currency,
+                    guest_nationality=guest_nationality,
+                    timeout_s=timeout_s,
+                ),
+                timeout=timeout_s,
+            )
     except TimeoutError:
         return [], status("timeout", message=f"No answer within {timeout_s:g}s.")
     except SupplierError as exc:

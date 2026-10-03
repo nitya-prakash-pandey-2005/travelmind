@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     reprice_max_per_minute: int = 60  # price checks call the supplier too; a separate budget
     public_quote_max_per_minute: int = 60  # client quote page: per network and per link
     log_level: str = "INFO"
+    # Bearer token for GET /metrics. Empty: /metrics is served only outside production.
+    metrics_token: str = ""
 
     @property
     def sandbox_supplier_enabled(self) -> bool:

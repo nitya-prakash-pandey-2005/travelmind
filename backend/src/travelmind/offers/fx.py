@@ -20,9 +20,11 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from travelmind.http import get_http_client
+from travelmind.metrics import supplier_call
 from travelmind.offers.money import Money
 
 ECB_DAILY_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
+SUPPLIER = "ecb"  # metrics label, as in the supplier status list
 CACHE_KEY = "fx:ecb:daily"
 CACHE_TTL_SECONDS = 12 * 3600
 FAILURE_KEY = "fx:ecb:down"  # set after a failed fetch so we back off instead of retrying
@@ -132,11 +134,12 @@ async def get_fx_rates(
     except RedisError as exc:
         log.warning("fx_cache_unavailable", error_type=type(exc).__name__)
     try:
-        async with asyncio.timeout(FETCH_DEADLINE_SECONDS):
-            client = get_http_client("ecb", timeout=FETCH_TIMEOUT)
-            response = await client.get(url, timeout=FETCH_TIMEOUT)
-        response.raise_for_status()
-        rates = parse_ecb_xml(response.text)
+        with supplier_call(SUPPLIER):
+            async with asyncio.timeout(FETCH_DEADLINE_SECONDS):
+                client = get_http_client("ecb", timeout=FETCH_TIMEOUT)
+                response = await client.get(url, timeout=FETCH_TIMEOUT)
+            response.raise_for_status()
+            rates = parse_ecb_xml(response.text)
     except (httpx.HTTPError, ValueError, TimeoutError) as exc:
         log.warning("fx_rates_unavailable", error_type=type(exc).__name__)
         try:

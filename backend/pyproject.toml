@@ -19,6 +19,7 @@ dependencies = [
   "rapidfuzz>=3.10",
   "defusedxml>=0.7.1",
   "tzdata>=2026.4",
+  "prometheus-client>=0.26.0",
 ]
 
 [dependency-groups]

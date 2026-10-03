@@ -6,6 +6,7 @@ from typing import Literal
 
 import structlog
 
+from travelmind.metrics import supplier_call
 from travelmind.offers.display import rank_by_display
 from travelmind.offers.models import FlightOffer, FlightSearchRequest
 from travelmind.offers.money import Money
@@ -34,7 +35,8 @@ async def _run(
         return round((time.monotonic() - started) * 1000)
 
     try:
-        offers = await asyncio.wait_for(supplier.search(request), timeout=timeout_s)
+        with supplier_call(supplier.code):
+            offers = await asyncio.wait_for(supplier.search(request), timeout=timeout_s)
     except TimeoutError:
         return [], SourceStatus(
             supplier.code, "timeout", 0, elapsed(), f"No answer within {timeout_s:g}s."

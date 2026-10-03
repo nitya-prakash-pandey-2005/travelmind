@@ -28,6 +28,7 @@ from travelmind.fareintel.service import (
 )
 from travelmind.fareintel.travelpayouts import seed_route
 from travelmind.identity.ratelimit import LoginRateLimiter
+from travelmind.metrics import supplier_call
 from travelmind.offers.cache import recall_offer, remember_offers
 from travelmind.offers.carbon import TimClient
 from travelmind.offers.db_models import FlightSearchLog
@@ -419,8 +420,9 @@ async def reprice_offer(
     if supplier is None:
         raise SupplierGone()
     try:
-        async with asyncio.timeout(REPRICE_TIMEOUT_SECONDS):
-            fresh = await supplier.price(cached.supplier_ref)
+        with supplier_call(supplier.code):
+            async with asyncio.timeout(REPRICE_TIMEOUT_SECONDS):
+                fresh = await supplier.price(cached.supplier_ref)
     except TimeoutError:
         log.warning("reprice_timeout", supplier=supplier.code)
         raise PriceCheckFailed("Couldn't confirm the price in time. Try again.") from None
