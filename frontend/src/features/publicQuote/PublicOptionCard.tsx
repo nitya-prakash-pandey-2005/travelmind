@@ -1,6 +1,6 @@
 import { ArrowLeftRight, CircleCheck, Info, Leaf, Luggage, ReceiptText } from "lucide-react";
 import { useId } from "react";
-import { LIVE_PRICE_LABEL, type PublicOption, type PublicSlice } from "../../api/publicQuotes";
+import { INDICATIVE_PRICE_LABEL, LIVE_PRICE_LABEL, type PublicOption, type PublicSlice } from "../../api/publicQuotes";
 import { dayShift, localTime } from "../../lib/dates";
 import { formatDuration } from "../../lib/format";
 import { formatMoney } from "../../lib/money";
@@ -19,9 +19,13 @@ import {
   travelDay,
 } from "./format";
 
-/** The price label the constraints require, with a live dot for a live fare and an info mark otherwise. */
+/**
+ * The price label the constraints require, with a live dot for a live fare and an info mark otherwise. Anything
+ * but the live label reads as indicative, so no other wording from the server ever reaches the client.
+ */
 export function PriceLabel({ label, className }: { label: PublicOption["price_label"]; className?: string }) {
   const live = label === LIVE_PRICE_LABEL;
+  const text = live ? LIVE_PRICE_LABEL : INDICATIVE_PRICE_LABEL;
   return (
     <p className={cn("flex items-start gap-1.5 text-xs leading-4 text-dim", className)}>
       {live ? (
@@ -29,7 +33,7 @@ export function PriceLabel({ label, className }: { label: PublicOption["price_la
       ) : (
         <Info size={13} strokeWidth={1.75} aria-hidden="true" className="mt-px shrink-0 text-faint" />
       )}
-      <span>{label}</span>
+      <span>{text}</span>
     </p>
   );
 }
@@ -125,6 +129,8 @@ type PublicOptionCardProps = {
   option: PublicOption;
   /** "open": the client can accept it; "accepted": the option they chose; "closed": shown for reference. */
   state: OptionState;
+  /** Accepting is paused (the quote is reloading). */
+  disabled?: boolean;
   onAccept?: () => void;
 };
 
@@ -132,7 +138,7 @@ type PublicOptionCardProps = {
  * One option as the client sees it: airline and cabin, each journey with times, stops and flights, the price
  * with its label and per-traveller share, and the facts a traveller checks (bags, refunds, changes, CO₂).
  */
-export function PublicOptionCard({ option, state, onAccept }: PublicOptionCardProps) {
+export function PublicOptionCard({ option, state, disabled = false, onAccept }: PublicOptionCardProps) {
   const eyebrowId = useId();
   const titleId = useId();
   const number = option.index + 1;
@@ -193,17 +199,16 @@ export function PublicOptionCard({ option, state, onAccept }: PublicOptionCardPr
           <p className="tm-num mt-1 text-[26px] font-semibold leading-8 tracking-[-0.01em] text-ink">
             {formatMoney(option.sell)}
           </p>
-          {option.per_traveller ? (
+          {/* No share for one traveller (or a party with children): the total says it all. */}
+          {option.per_traveller && (
             <p className="mt-0.5 text-[13px] leading-5 text-dim">
               <span className="tm-num">{formatMoney(option.per_traveller)}</span> per traveller
             </p>
-          ) : (
-            <p className="mt-0.5 text-[13px] leading-5 text-dim">For all travellers</p>
           )}
           <PriceLabel label={option.price_label} className="mt-3" />
           {state === "open" && onAccept && (
             <div className="pt-4 md:mt-auto print:hidden">
-              <AccentButton onClick={onAccept} className="w-full">
+              <AccentButton onClick={onAccept} disabled={disabled} className="w-full">
                 Accept option {number}
               </AccentButton>
             </div>

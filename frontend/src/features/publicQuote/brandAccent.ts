@@ -56,7 +56,7 @@ export function accentVars(accent: BrandAccent): Record<string, string> {
 
 /**
  * The print sheet: every theme token from the light palette (and the accent checked against it) on the page root,
- * so a dark screen theme still prints dark text on white paper; the Terminal overlays are dropped.
+ * so a dark screen theme still prints dark text on white paper (html and body too); the Terminal overlays are dropped.
  */
 export function printCss(scope: string, brand: string): string {
   const palette = printPalette();
@@ -65,6 +65,8 @@ export function printCss(scope: string, brand: string): string {
   return [
     "@media print {",
     `  ${scope} { ${[...tokens, ...accent].join(" ")} color-scheme: light; }`,
+    // The page root may not fill the sheet: no strip of the dark screen background at its edges.
+    `  html, body { background: ${palette.bg} !important; }`,
     "  body::before, body::after { display: none !important; }",
     "  @page { margin: 14mm 12mm; }",
     "}",

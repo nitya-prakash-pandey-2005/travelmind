@@ -6,7 +6,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   INDICATIVE_PRICE_LABEL,
@@ -17,6 +17,7 @@ import {
 import { createQueryClient } from "../../api/queryClient";
 import { mockApi, type MockHandler } from "../../test/mockApi";
 import { renderWithClient } from "../../test/renderWithClient";
+import indexHtml from "../../../index.html?raw";
 import { PublicQuotePage, PublicQuoteView } from "./PublicQuotePage";
 
 const TOKEN = "tok_8sV2xQ";
@@ -116,6 +117,14 @@ const EMIRATES: PublicOption = {
   sell: { amount_minor: 9_120_000, currency: "INR" },
   per_traveller: null,
 };
+
+/** The page-level live notice that holds a refused decision's reason. */
+async function findRefusal(message: string) {
+  const text = await screen.findByText(message);
+  const region = text.closest('[role="status"]');
+  expect(region).not.toBeNull();
+  return region as HTMLElement;
+}
 
 const QUOTE: PublicQuote = {
   number: "Q-0004",
@@ -232,9 +241,67 @@ test("a quote decided elsewhere meanwhile reloads and shows its current state", 
   );
   await user.click(await screen.findByRole("button", { name: "Accept option 1" }));
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm acceptance" }));
-  expect(await screen.findByRole("heading", { name: "This quote has already been declined." })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "This quote was declined on 3 Oct 2026." })).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Accept option/ })).not.toBeInTheDocument();
+  // The reason gave way to the fresh state.
+  expect(screen.queryByText("This quote has already been declined.")).not.toBeInTheDocument();
+});
+
+test("a refused decision keeps its reason on the page, with the buttons off, while the quote reloads", async () => {
+  let reads = 0;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { user } = renderPage(
+    async () => {
+      reads += 1;
+      if (reads === 1) return { status: 200, body: QUOTE };
+      await held;
+      return { status: 429, body: { detail: "Too many requests. Please try again in a minute." } };
+    },
+    { [POST]: { status: 409, body: { detail: "This quote has already been declined." } } },
+  );
+  await user.click(await screen.findByRole("button", { name: "Accept option 1" }));
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm acceptance" }));
+
+  await findRefusal("This quote has already been declined.");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Accept option 1" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Decline this quote" })).toBeDisabled();
+
+  // The reload is refused too: the stale quote stays, and so does the reason.
+  release();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Accept option 1" })).toBeEnabled());
+  await findRefusal("This quote has already been declined.");
+});
+
+test("an expired quote's refusal is kept on the page when the reload fails", async () => {
+  let reads = 0;
+  const { user } = renderPage(
+    () => {
+      reads += 1;
+      return reads === 1 ? { status: 200, body: QUOTE } : { status: 503, body: { detail: "Service unavailable" } };
+    },
+    { [POST]: { status: 410, body: { detail: "This quote has expired. Ask your travel agent for a fresh one." } } },
+  );
+  await user.click(await screen.findByRole("button", { name: "Decline this quote" }));
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Decline quote" }));
+  await waitFor(() => expect(reads).toBe(2));
+  await findRefusal("This quote has expired. Ask your travel agent for a fresh one.");
+});
+
+test("confirming twice in a row sends one decision", async () => {
+  const { api } = renderPage(undefined, {
+    [POST]: { status: 200, body: { ...QUOTE, status: "declined", decided_at: "2026-10-03T10:00:00Z" } },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Decline this quote" }));
+  const confirmButton = within(screen.getByRole("dialog")).getByRole("button", { name: "Decline quote" });
+  fireEvent.click(confirmButton);
+  fireEvent.click(confirmButton);
+  expect(await screen.findByRole("heading", { name: "Thanks — Orbit Travel Co. has been notified." })).toBeInTheDocument();
+  expect(api.calls.filter((call) => call.method === "POST")).toHaveLength(1);
 });
 
 test("an expired quote says so and offers no decision", async () => {
@@ -251,10 +318,49 @@ test("an accepted quote shows which option was chosen", async () => {
     status: 200,
     body: { ...QUOTE, status: "accepted", decided_at: "2026-10-02T09:00:00Z", accepted_option: 0 },
   });
-  expect(await screen.findByRole("heading", { name: "This quote has already been accepted." })).toBeInTheDocument();
-  expect(screen.getByText(/You accepted option 1 on 2 Oct 2026/)).toBeInTheDocument();
+  // Neutral: the agency may have recorded the decision for the client.
+  expect(await screen.findByRole("heading", { name: "Option 1 was accepted on 2 Oct 2026." })).toBeInTheDocument();
+  expect(screen.queryByText(/You accepted/)).not.toBeInTheDocument();
   expect(within(screen.getByRole("article", { name: /Option 1/ })).getByText("Accepted")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Accept option/ })).not.toBeInTheDocument();
+});
+
+test("a declined quote says when, without saying who", async () => {
+  renderPage({ status: 200, body: { ...QUOTE, status: "declined", decided_at: "2026-10-02T09:00:00Z" } });
+  expect(await screen.findByRole("heading", { name: "This quote was declined on 2 Oct 2026." })).toBeInTheDocument();
+  expect(screen.queryByText(/You declined/)).not.toBeInTheDocument();
+});
+
+test("a single traveller's price is not called a price for all travellers", async () => {
+  renderPage();
+  const second = await screen.findByRole("article", { name: /Option 2/ });
+  expect(within(second).getByText("₹91,200")).toBeInTheDocument();
+  expect(screen.queryByText(/for all travellers/i)).not.toBeInTheDocument();
+});
+
+test("any price label other than the live one reads as indicative", async () => {
+  const odd = { ...EMIRATES, price_label: "Sandbox fare" } as unknown as PublicOption;
+  renderPage({ status: 200, body: { ...QUOTE, options: [INDIGO, odd] } });
+  const second = await screen.findByRole("article", { name: /Option 2/ });
+  expect(within(second).getByText(INDICATIVE_PRICE_LABEL)).toBeInTheDocument();
+  expect(screen.queryByText("Sandbox fare")).not.toBeInTheDocument();
+});
+
+test("the page asks not to be indexed and sends no referrer", async () => {
+  renderPage();
+  await screen.findByRole("heading", { level: 1 });
+  expect(document.head.querySelector('meta[name="robots"]')).toHaveAttribute("content", "noindex, nofollow");
+  expect(document.head.querySelector('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
+});
+
+test("the static page a link preview reads names no console or price-source wording", () => {
+  const doc = new DOMParser().parseFromString(indexHtml, "text/html");
+  expect(doc.title).toBe("TravelMind");
+  const description = doc.querySelector('meta[name="description"]')?.getAttribute("content") ?? "";
+  expect(description).toBe("Travel quotes and trip planning by TravelMind.");
+  for (const word of [/console/i, /sandbox/i, /cached/i, /\blive\b/i, /supplier/i]) {
+    expect(`${doc.title} ${description}`).not.toMatch(word);
+  }
 });
 
 test("an invalid link says so plainly", async () => {

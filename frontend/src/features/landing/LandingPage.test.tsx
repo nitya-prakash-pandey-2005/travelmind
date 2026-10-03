@@ -249,6 +249,16 @@ test("the page has a descriptive title", async () => {
   await waitFor(() => expect(document.title).toBe("TravelMind — Operations console for travel agencies"));
 });
 
+test("the page sets its own search description, since the shared page shell stays neutral", async () => {
+  mockApi(withSession(null, { "GET /api/v1/platform/facts": { status: 200, body: FACTS } }));
+  const { unmount } = renderApp("/");
+  await screen.findByRole("heading", { level: 1 });
+  const description = () => document.head.querySelector('meta[name="description"]')?.getAttribute("content");
+  await waitFor(() => expect(description()).toMatch(/^TravelMind is the operations console for travel agencies/));
+  unmount();
+  expect(description() ?? "").not.toMatch(/operations console/);
+});
+
 test("without WebGL the popular routes are still listed", async () => {
   webgl.available = false;
   mockApi(withSession(null, { "GET /api/v1/platform/facts": { status: 200, body: FACTS } }));

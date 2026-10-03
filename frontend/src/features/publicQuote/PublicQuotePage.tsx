@@ -1,6 +1,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { CalendarClock, CalendarX2, CircleCheck, CircleSlash, Clock, Link2Off, ReceiptText, TriangleAlert } from "lucide-react";
+import {
+  CalendarClock,
+  CalendarX2,
+  CircleAlert,
+  CircleCheck,
+  CircleSlash,
+  Clock,
+  Link2Off,
+  ReceiptText,
+  TriangleAlert,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { asApiError, type ApiError } from "../../api/client";
 import {
@@ -159,6 +169,7 @@ function StatusBanner({ quote, justDecided }: { quote: PublicQuote; justDecided:
 
   const accepted = quote.accepted_option !== null ? quote.options.find((o) => o.index === quote.accepted_option) : undefined;
   const on = quote.decided_at ? ` on ${longDate(quote.decided_at)}` : "";
+  // Neutral about who decided: the agency may have recorded the client's answer for them.
   let icon: ReactNode;
   let title: string;
   let body: string;
@@ -168,17 +179,20 @@ function StatusBanner({ quote, justDecided }: { quote: PublicQuote; justDecided:
     body = "Ask your travel agent for a fresh one. The options below are shown for reference only.";
   } else if (quote.status === "accepted") {
     icon = <CircleCheck size={18} strokeWidth={1.75} className="text-ok" />;
-    title = justDecided ? `Thanks — ${quote.agency.name} has been notified.` : "This quote has already been accepted.";
+    title = justDecided
+      ? `Thanks — ${quote.agency.name} has been notified.`
+      : `${accepted ? `Option ${accepted.index + 1}` : "This quote"} was accepted${on}.`;
     const which = accepted ? `option ${accepted.index + 1}` : "this quote";
+    const chosen = accepted ? `${carrierName(accepted)}, ${formatMoney(accepted.sell)}` : "";
     body = justDecided
-      ? `You accepted ${which}${accepted ? ` (${carrierName(accepted)}, ${formatMoney(accepted.sell)})` : ""}. Your travel agent will be in touch to confirm the details.`
-      : `You accepted ${which}${on}.`;
+      ? `You accepted ${which}${chosen ? ` (${chosen})` : ""}. Your travel agent will be in touch to confirm the details.`
+      : `${chosen ? `${chosen}. ` : ""}For any questions, contact ${quote.agency.name}.`;
   } else if (quote.status === "declined") {
     icon = <CircleSlash size={18} strokeWidth={1.75} className="text-dim" />;
-    title = justDecided ? `Thanks — ${quote.agency.name} has been notified.` : "This quote has already been declined.";
+    title = justDecided ? `Thanks — ${quote.agency.name} has been notified.` : `This quote was declined${on}.`;
     body = justDecided
       ? "You declined this quote. Your travel agent may follow up with other options."
-      : `You declined this quote${on}.`;
+      : `To look at other options, contact ${quote.agency.name}.`;
   } else {
     return null;
   }
@@ -203,11 +217,38 @@ function StatusBanner({ quote, justDecided }: { quote: PublicQuote; justDecided:
   );
 }
 
-function QuoteBody({ token, quote }: { token: string; quote: PublicQuote }) {
+/** Why a decision didn't go through (decided or expired meanwhile), kept on the page until the quote reloads. */
+function RefusalNotice({ message }: { message: string | null }) {
+  return (
+    <div role="status" className="empty:hidden">
+      {message && (
+        <div className="mt-8 flex gap-2.5 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-[13px] leading-5 text-ink sm:px-5">
+          <CircleAlert size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-warn" />
+          <p>{message}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type QuoteBodyProps = {
+  token: string;
+  quote: PublicQuote;
+  /** When the quote was last read: a refusal's notice stays until a newer read arrives. */
+  readAt: number;
+  /** A reload is in flight, so the quote shown may be out of date. */
+  refreshing: boolean;
+};
+
+function QuoteBody({ token, quote, readAt, refreshing }: QuoteBodyProps) {
   const queryClient = useQueryClient();
   const decide = usePublicQuoteDecision(token);
   const [pending, setPending] = useState<Decision | null>(null);
   const [justDecided, setJustDecided] = useState(false);
+  const [refusal, setRefusal] = useState<{ message: string; readAt: number } | null>(null);
+  const refusalMessage = refusal && refusal.readAt === readAt ? refusal.message : null;
+  // isPending reaches the render a tick after mutate(), so a second click in that gap is caught here.
+  const sending = useRef(false);
   const open = quote.status === "sent" || quote.status === "viewed";
   const greeting = quote.client_first_name ? `Hello ${quote.client_first_name},` : "Hello,";
 
@@ -217,21 +258,26 @@ function QuoteBody({ token, quote }: { token: string; quote: PublicQuote }) {
   }
 
   function confirm() {
-    if (!pending) return;
+    if (!pending || decide.isPending || sending.current) return;
+    sending.current = true;
     const body =
       pending.kind === "accept"
         ? { decision: "accept" as const, option_index: pending.option.index }
         : { decision: "decline" as const };
     decide.mutate(body, {
+      onSettled: () => {
+        sending.current = false;
+      },
       onSuccess: () => {
         setPending(null);
         setJustDecided(true);
       },
       onError: (error) => {
-        const status = asApiError(error).status;
-        // Decided or expired meanwhile: show the quote as it now stands.
-        if (status === 409 || status === 410) {
+        const refused = asApiError(error);
+        // Decided or expired meanwhile: say so on the page, and show the quote as it now stands.
+        if (refused.status === 409 || refused.status === 410) {
           setPending(null);
+          setRefusal({ message: refused.message, readAt });
           void queryClient.invalidateQueries({ queryKey: publicQuoteKeys.quote(token) });
         }
       },
@@ -276,6 +322,7 @@ function QuoteBody({ token, quote }: { token: string; quote: PublicQuote }) {
         )}
       </section>
 
+      <RefusalNotice message={refusalMessage} />
       <StatusBanner quote={quote} justDecided={justDecided} />
 
       <section aria-labelledby="pq-options" className="pt-8">
@@ -293,6 +340,7 @@ function QuoteBody({ token, quote }: { token: string; quote: PublicQuote }) {
               key={option.index}
               option={option}
               state={optionState(option.index)}
+              disabled={refreshing}
               onAccept={() => ask({ kind: "accept", option })}
             />
           ))}
@@ -307,7 +355,7 @@ function QuoteBody({ token, quote }: { token: string; quote: PublicQuote }) {
               Let {quote.agency.name} know, and they can look at other options.
             </p>
           </div>
-          <Button variant="secondary" onClick={() => ask({ kind: "decline" })}>
+          <Button variant="secondary" onClick={() => ask({ kind: "decline" })} disabled={refreshing}>
             Decline this quote
           </Button>
         </section>
@@ -336,7 +384,7 @@ export function PublicQuoteView({ token }: { token: string }) {
   if (quote) {
     return (
       <QuoteFrame agency={quote.agency}>
-        <QuoteBody token={token} quote={quote} />
+        <QuoteBody token={token} quote={quote} readAt={query.dataUpdatedAt} refreshing={query.isFetching} />
       </QuoteFrame>
     );
   }

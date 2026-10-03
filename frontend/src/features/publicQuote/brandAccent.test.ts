@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { contrastRatio, resolvePalette } from "../../theme";
-import { brandAccent, printPalette } from "./brandAccent";
+import { brandAccent, printCss, printPalette } from "./brandAccent";
 
 const LIGHT = resolvePalette({ theme: "clearsky", mode: "light", contrast: false });
 const DARK = resolvePalette({ theme: "orbital", mode: "dark", contrast: false });
@@ -35,4 +35,9 @@ test("anything but a well-formed #rrggbb keeps the theme primary", () => {
 
 test("print always uses a light page", () => {
   expect(contrastRatio(printPalette().bg, printPalette().ink)).toBeGreaterThanOrEqual(7);
+});
+
+test("print paints the whole sheet light, html and body included", () => {
+  const css = printCss("[data-public-quote]", "#0F766E");
+  expect(css).toContain(`html, body { background: ${printPalette().bg} !important; }`);
 });

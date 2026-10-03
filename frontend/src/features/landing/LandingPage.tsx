@@ -14,9 +14,13 @@ import { LandingFooter } from "./LandingFooter";
 import { PlatformFacts } from "./PlatformFacts";
 import { ProductTour } from "./ProductTour";
 import { TrustSection } from "./TrustSection";
+import { usePageDescription } from "./usePageDescription";
 import { Wordmark } from "./Wordmark";
 
 const NAV_LINK = "hidden rounded-sm text-[13px] text-dim transition-colors duration-150 ease-tm hover:text-ink lg:inline";
+
+const DESCRIPTION =
+  "TravelMind is the operations console for travel agencies: search airline and hotel suppliers in one pass, see whether each fare is good for its route, and run every enquiry through one pipeline. Every price is labelled live, cached or sandbox.";
 
 const SECTIONS = [
   { href: "#product", label: "Product" },
@@ -54,6 +58,7 @@ function TopNav() {
 /** The public front door: the pitch with the product beside it, what it connects to, a tour, and two ways in. */
 export function LandingPage() {
   useDocumentTitle("TravelMind — Operations console for travel agencies");
+  usePageDescription(DESCRIPTION);
   return (
     <div className="tm-landing min-h-dvh overflow-x-clip bg-bg">
       <a
