@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { STORAGE_KEY } from "../storage";
@@ -134,4 +134,84 @@ test("the choice survives a reload (remount after initTheme)", async () => {
   render(<ThemeSwitcher />);
   expect(screen.getByRole("button", { name: "Theme: Nebula" })).toBeInTheDocument();
   expect(html.dataset).toMatchObject({ theme: "nebula", mode: "light", contrast: "normal" });
+});
+
+test("Space picks the active theme, like Enter", async () => {
+  const user = userEvent.setup();
+  render(<ThemeSwitcher />);
+  screen.getByRole("button", { name: "Theme: Orbital" }).focus();
+  await user.keyboard(" ");
+  expect(screen.getByRole("listbox", { name: "Theme" })).toHaveFocus();
+  await user.keyboard("{ArrowDown}");
+  await user.keyboard(" ");
+  expect(html.dataset.theme).toBe("nebula");
+  expect(screen.getByRole("option", { name: /Nebula/ })).toHaveAttribute("aria-selected", "true");
+});
+
+test("Escape on the trigger closes an open panel and keeps focus there", async () => {
+  const user = userEvent.setup();
+  render(<ThemeSwitcher />);
+  const trigger = screen.getByRole("button", { name: "Theme: Orbital" });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("listbox", { name: "Theme" })).toHaveFocus();
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+  expect(trigger).toHaveFocus();
+  expect(screen.getByRole("listbox", { name: "Theme" })).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+});
+
+test("the active option follows a theme changed elsewhere while the panel is open", async () => {
+  const user = userEvent.setup();
+  render(<ThemeSwitcher />);
+  await user.click(screen.getByRole("button", { name: "Theme: Orbital" }));
+  expect(activeOption()).toHaveTextContent("Orbital");
+  act(() => setThemeChoice({ theme: "terminal" }));
+  expect(screen.getByRole("option", { name: /Terminal/ })).toHaveAttribute("aria-selected", "true");
+  expect(activeOption()).toHaveTextContent("Terminal");
+  await user.keyboard("{ArrowDown}");
+  expect(activeOption()).toHaveTextContent("Contrast");
+});
+
+test("an option shows either the hover fill or the selected fill, never both", async () => {
+  const user = userEvent.setup();
+  render(<ThemeSwitcher />);
+  await user.click(screen.getByRole("button", { name: "Theme: Orbital" }));
+  const list = screen.getByRole("listbox", { name: "Theme" });
+  const orbital = within(list).getByRole("option", { name: /Orbital/ });
+  // Orbital is both selected and active.
+  expect(activeOption()).toBe(orbital);
+  expect(orbital).toHaveClass("bg-selected");
+  expect(orbital).not.toHaveClass("bg-hover");
+  await user.keyboard("{ArrowDown}");
+  const nebula = within(list).getByRole("option", { name: /Nebula/ });
+  expect(nebula).toHaveClass("bg-hover");
+  expect(nebula).not.toHaveClass("bg-selected");
+  expect(orbital).toHaveClass("bg-selected");
+});
+
+test("on a narrow screen the panel is moved back inside the viewport", async () => {
+  const user = userEvent.setup();
+  const width = vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(360);
+  const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    // The right-aligned panel as Chrome lays it out under a trigger at 272–334 px: 344 px wide, 10 px off the left edge.
+    const shift = Number.parseFloat(this.style.translate || "0");
+    const left = this.getAttribute("role") === "dialog" ? -10 + shift : 0;
+    const right = this.getAttribute("role") === "dialog" ? 334 + shift : 0;
+    return { left, right, x: left, y: 0, top: 0, bottom: 0, width: right - left, height: 0, toJSON: () => ({}) } as DOMRect;
+  });
+  try {
+    render(<ThemeSwitcher />);
+    await user.click(screen.getByRole("button", { name: "Theme: Orbital" }));
+    const panel = screen.getByRole("dialog", { name: "Theme" });
+    const box = panel.getBoundingClientRect();
+    expect(box.left).toBeGreaterThanOrEqual(8);
+    expect(box.right).toBeLessThanOrEqual(352);
+  } finally {
+    rect.mockRestore();
+    width.mockRestore();
+  }
 });

@@ -1,5 +1,5 @@
 import { Check, ChevronDown } from "lucide-react";
-import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import { cn } from "../ui/cn";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { themeMeta, THEMES } from "./palettes";
@@ -45,6 +45,12 @@ export function ThemePanel({ onEscape, autoFocusList = false, className }: Theme
     THEMES.findIndex((theme) => theme.id === choice.theme),
   );
   const [active, setActive] = useState(selectedIndex);
+  // A theme picked elsewhere (another control, another tab) while the list is open moves the active option to it.
+  const [shownIndex, setShownIndex] = useState(selectedIndex);
+  if (shownIndex !== selectedIndex) {
+    setShownIndex(selectedIndex);
+    setActive(selectedIndex);
+  }
   const listRef = useRef<HTMLDivElement>(null);
   const baseId = useId();
   const labelId = `${baseId}-label`;
@@ -119,8 +125,8 @@ export function ThemePanel({ onEscape, autoFocusList = false, className }: Theme
               onPointerMove={() => setActive(index)}
               className={cn(
                 "flex cursor-pointer items-center gap-3 rounded-md px-2 py-2",
-                index === active && "bg-hover",
-                selected && "bg-selected",
+                // One fill at a time: the selected fill wins over the active (hover) one, so text is only ever on one.
+                selected ? "bg-selected" : index === active && "bg-hover",
               )}
             >
               <ThemeSwatch theme={theme} />
@@ -204,6 +210,9 @@ function ContrastSwitch({
   );
 }
 
+/** The least room the panel keeps from the viewport's left and right edges, in px. */
+const EDGE_GAP = 8;
+
 type ThemeSwitcherProps = {
   /** Which trigger edge the panel lines up with. */
   align?: "start" | "end";
@@ -213,14 +222,16 @@ type ThemeSwitcherProps = {
 };
 
 /**
- * Header control "Theme: <name>": opens the theme list with the mode and high-contrast controls. Escape closes it
- * and returns focus to the trigger; a click outside or tabbing away closes it too.
+ * Header control "Theme: <name>": opens the theme list with the mode and high-contrast controls. Escape (in the
+ * panel or on the trigger) closes it with focus on the trigger; a click outside or tabbing away closes it too.
+ * The panel stays inside the viewport on narrow screens.
  */
 export function ThemeSwitcher({ align = "end", hideNameBelow, className }: ThemeSwitcherProps) {
   const [choice] = useThemeChoice();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
   const meta = themeMeta(choice.theme);
 
@@ -234,6 +245,22 @@ export function ThemeSwitcher({ align = "end", hideNameBelow, className }: Theme
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
+  // Narrow headers: a panel aligned to the trigger can run off the screen edge, so nudge it back inside.
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!open || !panel) return;
+    const fit = () => {
+      panel.style.translate = "";
+      const { left, right } = panel.getBoundingClientRect();
+      const viewport = document.documentElement.clientWidth || window.innerWidth;
+      const shift = left < EDGE_GAP ? EDGE_GAP - left : right > viewport - EDGE_GAP ? viewport - EDGE_GAP - right : 0;
+      if (shift) panel.style.translate = `${Math.round(shift)}px 0`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [open]);
+
   function close() {
     setOpen(false);
     triggerRef.current?.focus();
@@ -245,7 +272,12 @@ export function ThemeSwitcher({ align = "end", hideNameBelow, className }: Theme
   }
 
   function onTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (event.key === "Escape" && open) {
+      // Focus is back on the trigger (e.g. Shift+Tab out of the list) with the panel still open.
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       setOpen(true);
     }
@@ -273,6 +305,7 @@ export function ThemeSwitcher({ align = "end", hideNameBelow, className }: Theme
       </button>
       {open && (
         <div
+          ref={panelRef}
           id={panelId}
           role="dialog"
           aria-label="Theme"
