@@ -781,12 +781,12 @@ _ONBOARDING = text(
 OnboardingKey = Literal["profile", "supplier", "team", "fare_scan", "client", "quote"]
 # (key, label, link). No link: the step's screen isn't built yet, so it is listed as coming.
 _STEPS: list[tuple[OnboardingKey, str, str | None]] = [
-    ("profile", "Add your agency details", None),
+    ("profile", "Add your agency details", "/app/settings"),
     ("supplier", "Connect a live supplier", "/app/suppliers"),
     ("team", "Invite a teammate", "/app/team"),
     ("fare_scan", "Run your first fare scan", "/app/fares"),
     ("client", "Add a client", "/app"),
-    ("quote", "Send your first quote", None),
+    ("quote", "Send your first quote", "/app/quotes"),
 ]
 
 
