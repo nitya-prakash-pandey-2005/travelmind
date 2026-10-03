@@ -21,7 +21,7 @@ import { ApiError } from "../../api/client";
 import { useLogout } from "../../auth/useLogout";
 import { cn } from "../../ui/cn";
 import { Kbd } from "../../ui/Kbd";
-import { useTheme } from "../../ui/theme";
+import { useModeToggle } from "../../theme";
 import { useAirportSearch } from "../airports/useAirportSearch";
 import { routeStore } from "../route/routeStore";
 import { formatRoute, RecordDrawer, Status, type RecordSelection } from "./RecordDrawer";
@@ -57,7 +57,7 @@ export function CommandPalette() {
   const [search, setSearch] = useState("");
   const [record, setRecord] = useState<RecordSelection | null>(null);
   const navigate = useNavigate();
-  const [theme, setTheme] = useTheme();
+  const modeToggle = useModeToggle();
   const logout = useLogout();
   const airports = useAirportSearch(search);
   const records = useRecordSearch(search);
@@ -98,14 +98,18 @@ export function CommandPalette() {
     { id: "nav-team", group: "Navigate", label: "Team", icon: Users, keywords: "team members invite crew roster", run: () => void navigate({ to: "/app/team" }) },
     { id: "nav-suppliers", group: "Navigate", label: "Suppliers", icon: PlugZap, keywords: "suppliers connections keys duffel liteapi data", run: () => void navigate({ to: "/app/suppliers" }) },
     { id: "nav-design", group: "Navigate", label: "Design system", icon: Palette, keywords: "styles components tokens", run: () => void navigate({ to: "/app/design" }) },
-    {
-      id: "theme",
-      group: "Actions",
-      label: theme === "dark" ? "Switch to daylight theme" : "Switch to dark theme",
-      icon: theme === "dark" ? Sun : Moon,
-      keywords: "theme light dark daylight mode",
-      run: () => setTheme(theme === "dark" ? "daylight" : "dark"),
-    },
+    ...(modeToggle.available
+      ? [
+          {
+            id: "theme",
+            group: "Actions",
+            label: modeToggle.label,
+            icon: modeToggle.mode === "dark" ? Sun : Moon,
+            keywords: "theme light dark daylight mode",
+            run: modeToggle.toggle,
+          } satisfies PaletteCommand,
+        ]
+      : []),
     { id: "logout", group: "Actions", label: "Sign out", icon: LogOut, keywords: "logout exit leave", run: () => logout.mutate() },
   ];
   const needle = search.trim().toLowerCase();

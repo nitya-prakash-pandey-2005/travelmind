@@ -1,52 +1,17 @@
 /*
- * Design tokens (design direction v2, "Operations Console"). The only place colour values live;
- * everything else uses these variables or the Tailwind colours mapped from them below.
+ * Theme tokens (v3 theme system). Colour values live in src/theme/palettes.ts; themes.generated.css is built
+ * from it and holds one block of --tm-* properties per look, keyed off <html data-theme data-mode data-contrast>
+ * (set before first paint by the inline script in index.html). Its bare :root block, Orbital dark, is the
+ * fallback when scripts are off. This file only maps those properties onto the Tailwind names components use.
  *
- * Contrast (WCAG, checked against bg, surface and surface-2):
- *   dark  - text 14.6-16.2:1 · text-2 6.9-7.7:1 · text-3 4.6-5.1:1 · every status hue >= 5.1:1
- *   light - text 16.7-18.6:1 · text-2 6.8-7.5:1 · text-3 4.5-5.0:1 · primary 4.5-5.0:1 · status >= 4.5:1
- * Two values are nudged from the direction doc to keep text at AA: light primary #0B84C6 -> #0875AF
- * (4.1:1 on white) and text-3 (dark #6B7385 -> #7A8294, light #707A8C -> #666F81). Chart hues are as specified.
+ * Contrast: every look is checked by src/theme/__tests__/contrast.test.ts (text >= 4.5:1 on bg, surface and
+ * surface-2, chart hues >= 3:1, status text >= 4.5:1 on its own tint, primary-ink on primary >= 4.5:1).
  */
-:root,
-[data-theme="dark"] {
-  --tm-bg: #0a0c10;
-  --tm-surface: #0f1217;
-  --tm-surface-2: #151920;
-  --tm-border: #222833;
-  --tm-border-strong: #2e3542;
-  --tm-text: #e7eaf0;
-  --tm-text-2: #9aa3b2;
-  --tm-text-3: #7a8294;
-  --tm-primary: #3cc6f0;
-  --tm-primary-ink: #04121a;
-  --tm-ok: #34c38f;
-  --tm-warn: #f0b429;
-  --tm-danger: #f0555a;
-  --tm-info: #6a9cff;
-  --tm-ai: #9b8afb;
-  --tm-globe-land: #2a3342;
-  --tm-globe-ocean: #0c0f14;
+@import "./themes.generated.css";
+
+:root {
   /* The agency's brand colour (set on the app shell from its settings); tints the workspace mark only. */
   --tm-brand: var(--tm-primary);
-  --tm-shadow-pop: 0 8px 24px -8px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(0 0 0 / 0.2);
-  --tm-backdrop: rgb(4 6 9 / 0.66);
-  --tm-hover: rgb(231 234 240 / 0.04);
-  --tm-selected: rgb(60 198 240 / 0.1);
-  /* Tinted fills (pills, chips): tone text stays >= 5:1 on the tinted fill. */
-  --tm-tint-fill: 12%;
-  --tm-tint-edge: 32%;
-  --tm-skeleton: rgb(154 163 178 / 0.1);
-  --tm-dot: rgb(231 234 240 / 0.07);
-  /* Categorical chart palette, assigned in fixed order. */
-  --tm-chart-1: #3cc6f0;
-  --tm-chart-2: #9b8afb;
-  --tm-chart-3: #f0b429;
-  --tm-chart-4: #34c38f;
-  --tm-chart-5: #f0555a;
-  --tm-chart-6: #6a9cff;
-  --tm-chart-grid: rgb(154 163 178 / 0.12);
-  --tm-chart-axis: #9aa3b2;
 
   /* v1 names, kept as aliases so existing pages keep compiling while they move to the names above. */
   --tm-void: var(--tm-bg);
@@ -57,42 +22,6 @@
   --tm-glass: var(--tm-surface);
   --tm-glass-strong: var(--tm-surface);
   --tm-grid-line: var(--tm-dot);
-}
-
-[data-theme="daylight"] {
-  --tm-bg: #f6f7f9;
-  --tm-surface: #ffffff;
-  --tm-surface-2: #f1f3f6;
-  --tm-border: #e3e6eb;
-  --tm-border-strong: #cdd2da;
-  --tm-text: #0e131b;
-  --tm-text-2: #4b5566;
-  --tm-text-3: #666f81;
-  --tm-primary: #0875af;
-  --tm-primary-ink: #ffffff;
-  --tm-ok: #15803d;
-  --tm-warn: #b45309;
-  --tm-danger: #c81e1e;
-  --tm-info: #2f5fd0;
-  --tm-ai: #6d4ae0;
-  --tm-globe-land: #c9d0da;
-  --tm-globe-ocean: #eef1f5;
-  --tm-shadow-pop: 0 8px 24px -10px rgb(14 19 27 / 0.18), 0 0 0 1px rgb(14 19 27 / 0.04);
-  --tm-backdrop: rgb(14 19 27 / 0.32);
-  --tm-hover: rgb(14 19 27 / 0.035);
-  --tm-selected: rgb(8 117 175 / 0.08);
-  --tm-tint-fill: 7%;
-  --tm-tint-edge: 28%;
-  --tm-skeleton: rgb(75 85 102 / 0.09);
-  --tm-dot: rgb(14 19 27 / 0.08);
-  --tm-chart-1: #0b84c6;
-  --tm-chart-2: #6d4ae0;
-  --tm-chart-3: #b45309;
-  --tm-chart-4: #15803d;
-  --tm-chart-5: #c81e1e;
-  --tm-chart-6: #2f5fd0;
-  --tm-chart-grid: rgb(75 85 102 / 0.12);
-  --tm-chart-axis: #4b5566;
 }
 
 @theme inline {
@@ -107,6 +36,7 @@
   --color-faint: var(--tm-text-3);
   --color-primary: var(--tm-primary);
   --color-primary-ink: var(--tm-primary-ink);
+  --color-accent-2: var(--tm-accent-2);
   --color-ok: var(--tm-ok);
   --color-warn: var(--tm-warn);
   --color-danger: var(--tm-danger);
@@ -130,9 +60,17 @@
   --color-chart-grid: var(--tm-chart-grid);
   --color-chart-axis: var(--tm-chart-axis);
 
+  /* Corners follow the theme: controls (rounded-md), panels (rounded-lg) and the small/large steps around them. */
+  --radius-xs: calc(var(--tm-radius-control) / 3);
+  --radius-sm: calc(var(--tm-radius-control) * 2 / 3);
+  --radius: calc(var(--tm-radius-control) * 2 / 3);
+  --radius-md: var(--tm-radius-control);
+  --radius-lg: var(--tm-radius-panel);
+  --radius-xl: calc(var(--tm-radius-panel) * 1.5);
+
   --ease-tm: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  /* The v1 display face is gone; `font-display` now resolves to the UI face. */
-  --font-display: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: var(--tm-font-sans);
+  /* Titles: the theme's display face (Fraunces in Ember, the UI face elsewhere). */
+  --font-display: var(--tm-font-display);
+  --font-mono: var(--tm-font-mono);
 }

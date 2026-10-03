@@ -4,20 +4,17 @@ import type { Me } from "../api/types";
 import { useLogout } from "../auth/useLogout";
 import { Avatar } from "../ui/Avatar";
 import { Menu, type MenuItem } from "../ui/Menu";
-import { useTheme } from "../ui/theme";
+import { useModeToggle } from "../theme";
 
 /** Avatar button (named after the user) opening the account menu. Settings joins it with the settings pages. */
 export function UserMenu({ me }: { me: Me }) {
   const navigate = useNavigate();
   const logout = useLogout();
-  const [theme, setTheme] = useTheme();
+  const modeToggle = useModeToggle();
   const items: MenuItem[] = [
-    {
-      id: "theme",
-      label: theme === "dark" ? "Switch to daylight theme" : "Switch to dark theme",
-      icon: theme === "dark" ? Sun : Moon,
-      onSelect: () => setTheme(theme === "dark" ? "daylight" : "dark"),
-    },
+    ...(modeToggle.available
+      ? [{ id: "theme", label: modeToggle.label, icon: modeToggle.mode === "dark" ? Sun : Moon, onSelect: modeToggle.toggle }]
+      : []),
     { id: "design", label: "Design system", icon: Palette, onSelect: () => void navigate({ to: "/app/design" }) },
     { id: "sign-out", label: "Sign out", icon: LogOut, onSelect: () => logout.mutate(), separated: true },
   ];

@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import { initTheme } from "../theme";
 
 // jsdom lacks these browser APIs; components use them for motion, layout and list scrolling.
 if (!window.matchMedia) {
@@ -60,5 +61,6 @@ afterEach(() => {
   } catch {
     // storage unavailable in this environment
   }
-  document.documentElement.removeAttribute("data-theme");
+  // Back to the default look (storage is empty now), so no test inherits another's theme.
+  initTheme();
 });

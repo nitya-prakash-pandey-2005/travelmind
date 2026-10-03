@@ -1,6 +1,7 @@
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import type { createAppRouter } from "../router";
+import { ThemeProvider } from "../theme";
 import { ToastProvider } from "../ui/toast/ToastProvider";
 
 export function AppProviders({
@@ -11,10 +12,12 @@ export function AppProviders({
   router: ReturnType<typeof createAppRouter>;
 }) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <RouterProvider router={router} />
-      </ToastProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }

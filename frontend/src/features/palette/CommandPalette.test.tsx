@@ -3,7 +3,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { AIRPORTS, ME_OWNER } from "../../test/fixtures";
 import { mockApi } from "../../test/mockApi";
 import { renderApp, withSession } from "../../test/renderApp";
-import { initTheme } from "../../ui/theme";
+import { initTheme } from "../../theme";
 import { routeStore } from "../route/routeStore";
 
 vi.mock("../globe/webgl", () => ({ hasWebGL: () => false }));
@@ -63,13 +63,13 @@ test("the hotel and supplier commands navigate", async () => {
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/suppliers"));
 });
 
-test("the theme command switches themes", async () => {
+test("the mode command switches between dark and light", async () => {
   const { user } = renderApp("/app");
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   await user.type(await screen.findByPlaceholderText(/command or an airport/i), "daylight");
   await user.keyboard("{Enter}");
-  expect(document.documentElement.dataset.theme).toBe("daylight");
+  expect(document.documentElement.dataset.mode).toBe("light");
 });
 
 test("choosing an airport sets it on the route and returns to the Command Center", async () => {
@@ -124,7 +124,7 @@ test("closing with Ctrl+K clears the search, so reopening starts fresh", async (
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   await user.keyboard("{Control>}k{/Control}");
   expect(await screen.findByPlaceholderText(/command or an airport/i)).toHaveValue("");
-  for (const name of ["Command Center", "Fare search", "Hotel search", "Suppliers", "Team", "Design system", "Switch to daylight theme", "Sign out"]) {
+  for (const name of ["Command Center", "Fare search", "Hotel search", "Suppliers", "Team", "Design system", "Switch to light mode", "Sign out"]) {
     expect(screen.getByRole("option", { name })).toBeInTheDocument();
   }
 });

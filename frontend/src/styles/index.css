@@ -3,14 +3,11 @@
 
 @layer base {
   html {
-    color-scheme: dark;
+    /* color-scheme comes with each theme block (themes.generated.css). */
     /* Reserve the scrollbar's space so locking scroll under an open dialog doesn't shift the layout. */
     scrollbar-gutter: stable;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
-  }
-  html[data-theme="daylight"] {
-    color-scheme: light;
   }
   body {
     @apply bg-bg font-sans text-ink antialiased;
@@ -27,8 +24,12 @@
   h4 {
     text-wrap: balance;
   }
+  /* Titles use the theme's display face (Fraunces in Ember, the UI face elsewhere). */
+  h1 {
+    font-family: var(--tm-font-display);
+  }
   :focus-visible {
-    outline: 2px solid var(--tm-primary);
+    outline: var(--tm-focus-width, 2px) solid var(--tm-primary);
     outline-offset: 2px;
   }
   /* In-page links on the landing page glide (reduced motion turns this off below). */
@@ -75,6 +76,7 @@
 
 /* 22/28 semibold page title. */
 @utility tm-page-title {
+  font-family: var(--tm-font-display);
   font-size: 1.375rem;
   line-height: 1.75rem;
   font-weight: 600;
@@ -297,7 +299,83 @@
   }
 }
 
+/* ---- Theme extras (v3 spec section 2). Unlayered on purpose: they restyle utilities per theme. ---------- */
+
+/* Orbital and Nebula: page titles carry a soft accent glow (--tm-glow is transparent in light and high contrast). */
+:root:is([data-theme="orbital"], [data-theme="nebula"]) :is(h1, .tm-page-title) {
+  text-shadow: 0 0 18px var(--tm-glow);
+}
+
+/* Ember: titles run saffron -> ink -> green, and the top bar picks up a faint warm tint. */
+:root[data-theme="ember"][data-contrast="normal"] :is(h1, .tm-page-title) {
+  background-image: linear-gradient(90deg, var(--tm-primary), var(--tm-text) 55%, var(--tm-accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+:root[data-theme="ember"][data-contrast="normal"] header[role="banner"] {
+  background-image: linear-gradient(90deg, color-mix(in oklab, var(--tm-primary) 7%, transparent), transparent 60%);
+}
+
+/* Terminal: static scanlines and a light vignette over everything, with a slow faint flicker. */
+:root[data-theme="terminal"] body::before,
+:root[data-theme="terminal"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+}
+:root[data-theme="terminal"] body::before {
+  background: repeating-linear-gradient(to bottom, transparent 0 2px, color-mix(in srgb, var(--tm-bg) 24%, transparent) 2px 3px);
+  animation: tm-flicker 5s steps(1, end) infinite;
+}
+:root[data-theme="terminal"] body::after {
+  background: radial-gradient(ellipse farthest-corner at 50% 50%, transparent 62%, color-mix(in srgb, var(--tm-bg) 26%, transparent));
+}
+:root[data-theme="terminal"] :is(h1, .tm-page-title) {
+  text-shadow: 0 0 8px color-mix(in srgb, var(--tm-text) 35%, transparent);
+}
+
+/* Contrast theme and any high-contrast look: thicker focus ring, no decorative gradients, glow or blur. */
+:root:is([data-theme="contrast"], [data-contrast="high"]) {
+  --tm-focus-width: 3px;
+}
+:root:is([data-theme="contrast"], [data-contrast="high"]) :is(h1, .tm-page-title) {
+  text-shadow: none;
+}
+:root:is([data-theme="contrast"], [data-contrast="high"]) [style*="gradient"] {
+  background: none !important;
+}
+:root:is([data-theme="contrast"], [data-contrast="high"]) [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: var(--tm-bg);
+}
+
+@keyframes tm-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  47% {
+    opacity: 0.85;
+  }
+  48% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.92;
+  }
+  51% {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  :root[data-theme="terminal"] body::before {
+    animation: none;
+  }
   *,
   *::before,
   *::after {
