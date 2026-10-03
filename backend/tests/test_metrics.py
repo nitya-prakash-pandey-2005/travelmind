@@ -5,6 +5,7 @@ after the action, or look for label sets that only the test itself produces.
 """
 
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -141,6 +142,14 @@ async def test_no_secret_values_in_metrics(client, monkeypatch):
         assert canary not in body
 
 
+class _CodedError(Exception):
+    """Not a SupplierError, but carries a `code` attribute like one."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
 @pytest.mark.parametrize(
     ("raised", "outcome"),
     [
@@ -151,6 +160,7 @@ async def test_no_secret_values_in_metrics(client, monkeypatch):
         (SupplierError("unavailable", "Couldn't reach it."), "error"),
         (httpx.ConnectError("refused"), "error"),
         (ValueError("bad payload"), "error"),
+        (_CodedError("timeout"), "error"),  # only a SupplierError's code is trusted
     ],
 )
 def test_supplier_call_classifies_outcomes(raised, outcome):
@@ -165,16 +175,100 @@ def test_supplier_call_classifies_outcomes(raised, outcome):
     assert _count(supplier, outcome) == before + 1
 
 
-async def test_cancelled_supplier_call_counts_as_timeout():
-    before = _count("unit_cancel", "timeout")
-
-    async def slow() -> None:
-        with metrics.supplier_call("unit_cancel"):
-            await asyncio.sleep(10)
+async def test_deadline_inside_supplier_call_counts_as_timeout():
+    # Every call site puts its asyncio.timeout / wait_for inside supplier_call, so the deadline
+    # reaches the timer as TimeoutError.
+    before = _count("unit_deadline", "timeout")
 
     with pytest.raises(TimeoutError):
-        await asyncio.wait_for(slow(), timeout=0.01)
-    assert _count("unit_cancel", "timeout") == before + 1
+        with metrics.supplier_call("unit_deadline"):
+            async with asyncio.timeout(0.01):
+                await asyncio.sleep(10)
+    assert _count("unit_deadline", "timeout") == before + 1
+
+
+async def test_externally_cancelled_supplier_call_is_not_a_timeout():
+    # A bare CancelledError is the caller going away (client disconnect, shutdown), not a slow
+    # supplier: it is counted as `cancelled` and re-raised unchanged.
+    before_timeout = _count("unit_cancel", "timeout")
+    before_cancelled = _count("unit_cancel", "cancelled")
+    started = asyncio.Event()
+
+    async def call() -> None:
+        with metrics.supplier_call("unit_cancel"):
+            started.set()
+            await asyncio.sleep(10)
+
+    task = asyncio.create_task(call())
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert task.cancelled()
+    assert _count("unit_cancel", "timeout") == before_timeout
+    assert _count("unit_cancel", "cancelled") == before_cancelled + 1
+
+
+async def test_pool_sample_failure_never_breaks_the_request_or_its_log(client, monkeypatch):
+    def broken_engine():
+        raise RuntimeError("engine gone")
+
+    monkeypatch.setattr(metrics, "get_engine", broken_engine)
+    with structlog.testing.capture_logs() as logs:
+        r = await client.get("/api/v1/public/quotes/abc123")
+
+    assert r.status_code == 404
+    assert [e["route"] for e in logs if e["event"] == "request"] == [
+        "/api/v1/public/quotes/{token}"
+    ]
+
+
+async def test_pool_sample_failure_keeps_the_original_error(monkeypatch):
+    # The app's own error middleware normally answers 500 first, so drive the metrics middleware
+    # directly with an inner app that raises.
+    async def failing_app(scope, receive, send):
+        raise LookupError("the real problem")
+
+    def broken_engine():
+        raise RuntimeError("engine gone")
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        pass
+
+    monkeypatch.setattr(metrics, "get_engine", broken_engine)
+    scope = {"type": "http", "method": "GET", "path": "/x", "headers": [], "state": {}}
+    with structlog.testing.capture_logs() as logs:
+        with pytest.raises(LookupError):
+            await metrics.MetricsMiddleware(failing_app)(scope, receive, send)
+
+    assert [(e["route"], e["status"]) for e in logs if e["event"] == "request"] == [
+        ("unmatched", 500)
+    ]
+
+
+async def test_probe_and_scrape_request_logs_are_debug(client):
+    config = structlog.get_config()
+    structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
+    try:
+        with structlog.testing.capture_logs() as logs:
+            await client.get("/health")
+            await client.get("/ready")
+            await client.get("/metrics")
+            await client.get("/api/v1/public/quotes/abc123")
+    finally:
+        structlog.configure(wrapper_class=config["wrapper_class"])
+
+    levels = {e["route"]: e["log_level"] for e in logs if e["event"] == "request"}
+    assert levels == {
+        "/health": "debug",
+        "/ready": "debug",
+        "/metrics": "debug",
+        "/api/v1/public/quotes/{token}": "info",
+    }
 
 
 async def test_fx_feed_is_observed(respx_mock):

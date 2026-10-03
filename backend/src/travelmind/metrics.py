@@ -36,6 +36,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from travelmind.cache import get_shared_redis
 from travelmind.config import get_settings
 from travelmind.db import get_engine
+from travelmind.offers.suppliers.base import SupplierError
 
 log = structlog.get_logger()
 
@@ -45,6 +46,8 @@ _METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
 # arq's default queue (a Redis sorted set). Add queues here as workers get their own.
 QUEUES = ("arq:queue",)
 QUEUE_SAMPLE_TIMEOUT_SECONDS = 1.0
+# Probe and scrape routes: their one `request` line per hit logs at debug, everything else at info.
+QUIET_ROUTES = frozenset({"/health", "/ready", "/metrics"})
 
 HTTP_REQUESTS = Counter(
     "http_requests_total",
@@ -86,23 +89,27 @@ QUEUE_DEPTH = Gauge(
 
 
 def observe_supplier(supplier: str, outcome: str, seconds: float) -> None:
-    """Record one outbound call. `outcome` is `ok`, `error` or `timeout`."""
+    """Record one outbound call. `outcome` is `ok`, `error`, `timeout` or `cancelled`."""
     SUPPLIER_DURATION.labels(supplier=supplier, outcome=outcome).observe(seconds)
 
 
 def _outcome(exc: BaseException) -> str:
-    # A cancelled call is one whose caller's deadline (asyncio.timeout / wait_for) ran out.
-    if isinstance(exc, TimeoutError | asyncio.CancelledError | httpx.TimeoutException):
+    # Call sites put their asyncio.timeout / wait_for inside supplier_call, so a deadline reaches
+    # here already converted to TimeoutError. A bare CancelledError is the caller going away
+    # (client disconnect, shutdown), which says nothing about the supplier's speed.
+    if isinstance(exc, asyncio.CancelledError):
+        return "cancelled"
+    if isinstance(exc, TimeoutError | httpx.TimeoutException):
         return "timeout"
-    if getattr(exc, "code", None) == "timeout":  # an adapter's own SupplierError("timeout")
+    if isinstance(exc, SupplierError) and exc.code == "timeout":
         return "timeout"
     return "error"
 
 
 @contextmanager
 def supplier_call(supplier: str) -> Iterator[None]:
-    """Time the enclosed outbound call: `ok` when it completes, otherwise `timeout` or `error`
-    from the exception, which is always re-raised unchanged."""
+    """Time the enclosed outbound call: `ok` when it completes, otherwise `timeout`, `cancelled`
+    or `error` from the exception, which is always re-raised unchanged."""
     started = time.perf_counter()
     outcome = "ok"
     try:
@@ -115,9 +122,14 @@ def supplier_call(supplier: str) -> Iterator[None]:
 
 
 def _sample_db_pool() -> None:
-    checked_out = getattr(get_engine().pool, "checkedout", None)  # NullPool (tests) has none
-    if checked_out is not None:
-        DB_POOL_CHECKED_OUT.set(checked_out())
+    """Best effort: it runs in the request middleware's `finally`, where an error of its own
+    would replace the request's exception and skip the request log line."""
+    try:
+        checked_out = getattr(get_engine().pool, "checkedout", None)  # NullPool (tests) has none
+        if checked_out is not None:
+            DB_POOL_CHECKED_OUT.set(checked_out())
+    except Exception as exc:
+        log.debug("db_pool_sample_failed", error_type=type(exc).__name__)
 
 
 async def _queue_depth(queue: str) -> int:
@@ -200,7 +212,8 @@ class MetricsMiddleware:
             HTTP_DURATION.labels(method=method, route=route).observe(elapsed)
             # Keeps each worker's pool gauge current between scrapes (multiprocess sums them).
             _sample_db_pool()
-            log.info(
+            emit = log.debug if route in QUIET_ROUTES else log.info
+            emit(
                 "request",
                 method=method,
                 route=route,
