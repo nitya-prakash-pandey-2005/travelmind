@@ -355,6 +355,7 @@ def guard_for(name: str) -> SupplierGuard  # registry with settings-driven limit
   - `worker_connections 4096`, gzip on for text types/JS/CSS/JSON, long cache for `/assets/*` (immutable) and `no-cache` for `index.html`.
   - SPA fallback, `/api/` and `/health` `/ready` → `upstream api { server api:8000; keepalive 64; }` with `proxy_http_version 1.1`, `proxy_set_header X-Forwarded-For $remote_addr` (overwrite, never append client-supplied) and `X-Forwarded-Proto $scheme`.
   - `location = /metrics { return 404; }`.
+  - `location /q/` (client quote links): SPA fallback plus `add_header X-Robots-Tag "noindex, nofollow" always;` and `add_header Referrer-Policy no-referrer always;`.
   - Security headers: `X-Content-Type-Options nosniff`, `Referrer-Policy strict-origin-when-cross-origin` (the API's public quote responses already send `no-referrer`), `X-Frame-Options DENY`, `Permissions-Policy` minimal.
   - `client_max_body_size 1m`. Rate limiting stays in the app.
 - Create: `deploy/README.md`: how to run (`docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build`), ports, scaling `API_REPLICAS`, pool math, and how to seed load-test users (Task 7).
