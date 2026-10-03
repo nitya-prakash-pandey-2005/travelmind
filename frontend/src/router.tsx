@@ -27,11 +27,13 @@ import { validateFareSearch } from "./features/fares/fareSearchParams";
 import { EnquiryPage } from "./features/enquiries/EnquiryPage";
 import { HotelScanPage } from "./features/hotels/HotelScanPage";
 import { LandingPage } from "./features/landing/LandingPage";
-import { RouteIntelPlaceholder, SettingsPlaceholder } from "./features/planned/pages";
 import { PipelinePage } from "./features/pipeline/PipelinePage";
 import { PublicQuotePage } from "./features/publicQuote/PublicQuotePage";
 import { QuoteEditorPage } from "./features/quotes/QuoteEditorPage";
 import { QuotesPage } from "./features/quotes/QuotesPage";
+import { RouteIntelPage } from "./features/routes/RouteIntelPage";
+import { validateRouteIntelSearch } from "./features/routes/routeIntelParams";
+import { SettingsPage } from "./features/settings/SettingsPage";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
 import { TeamPage } from "./features/team/TeamPage";
 import { AppShell } from "./shell/AppShell";
@@ -175,8 +177,13 @@ const quotesRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes
 const quoteRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes/$quoteId", component: QuoteEditorPage });
 const clientsRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients", component: ClientsPage });
 const clientRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients/$clientId", component: ClientPage });
-const routeIntelRoute = createRoute({ getParentRoute: () => appRoute, path: "/routes", component: RouteIntelPlaceholder });
-const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: "/settings", component: SettingsPlaceholder });
+const routeIntelRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/routes",
+  validateSearch: validateRouteIntelSearch,
+  component: RouteIntelPage,
+});
+const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: "/settings", component: SettingsPage });
 
 /** Pre-/app addresses (bookmarks, old links) move to their new home with their query and hash intact. */
 function legacyRedirect(path: "/fares" | "/hotels" | "/suppliers" | "/team" | "/design") {

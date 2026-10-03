@@ -23,6 +23,18 @@ export type TrendSeries = {
    * A null or non-finite value is a gap: skipped by the line, shown as "—" in the tooltip and table.
    */
   points: { date: string; value: number | null }[];
+  /** Shade the area under the line (default true). Off for a line drawn over a band. */
+  area?: boolean;
+};
+
+/**
+ * A shaded range between two values per date (e.g. the 25th to 75th percentile). A date where either end is
+ * missing is a gap: the shading stops there and resumes at the next complete date.
+ */
+export type TrendBand = {
+  label: string;
+  color: ChartColor;
+  points: { date: string; low: number | null; high: number | null }[];
 };
 
 type AreaTrendProps = {
@@ -31,6 +43,8 @@ type AreaTrendProps = {
   valueFormat: (value: number) => string;
   /** Names the chart for assistive tech and captions its data table. */
   label: string;
+  /** Optional shaded range drawn under the series, listed after them in the legend, tooltip and table. */
+  band?: TrendBand;
 };
 
 const PAD_TOP = 10;
@@ -44,7 +58,7 @@ const GLYPH = 6.2;
  * Multi-series area chart over dates on one shared y-axis. Keyboard: focus the chart, then
  * Left/Right (Home/End) move a crosshair; the tooltip lists every series at that date.
  */
-export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTrendProps) {
+export function AreaTrend({ series, height = 180, valueFormat, label, band }: AreaTrendProps) {
   const [ref, size] = useElementSize<HTMLDivElement>();
   const animate = useChartAnimation();
   const colors = useChartColors();
@@ -52,14 +66,21 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
   const focused = useRef(false);
   const tooltipId = useId();
 
-  const dates = useMemo(() => [...new Set(series.flatMap((s) => s.points.map((p) => p.date)))].sort(), [series]);
+  const dates = useMemo(
+    () => [...new Set([...series.flatMap((s) => s.points.map((p) => p.date)), ...(band?.points.map((p) => p.date) ?? [])])].sort(),
+    [series, band],
+  );
   const lookups = useMemo(() => series.map((s) => new Map(s.points.map((p) => [p.date, p.value]))), [series]);
+  const bandLookup = useMemo(() => new Map(band?.points.map((p) => [p.date, p] as const) ?? []), [band]);
 
   if (dates.length === 0) return <ChartEmpty label={label} height={height} />;
 
   const width = size.width || FALLBACK_WIDTH;
   const n = dates.length;
-  const values = series.flatMap((s) => s.points.map((p) => p.value)).filter(isValue);
+  const values = [
+    ...series.flatMap((s) => s.points.map((p) => p.value)),
+    ...(band?.points.flatMap((p) => [p.low, p.high]) ?? []),
+  ].filter(isValue);
   const max = Math.max(0, ...values);
   const top = niceMax(max);
   const integerData = values.every(Number.isInteger);
@@ -84,6 +105,43 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
       return isValue(v) ? [[x(di), y(Math.max(0, v))]] : [];
     }),
   );
+
+  const rangeAt = (dateIndex: number): [number, number] | null => {
+    const point = bandLookup.get(dates[dateIndex] ?? "");
+    return point && isValue(point.low) && isValue(point.high) ? [point.low, point.high] : null;
+  };
+  // One closed shape per run of consecutive dates with both ends: along the highs, back along the lows.
+  const bandPieces: string[] = [];
+  if (band) {
+    const bandPath = (indices: number[]) => {
+      const edge = (pick: 0 | 1) =>
+        indices.map((di): Point => [x(di), y(Math.max(0, (rangeAt(di) as [number, number])[pick]))]);
+      let highs = edge(1);
+      let lows = edge(0).reverse();
+      if (indices.length === 1) {
+        // A lone date: a narrow bar, so the range still shows.
+        const [[hx, hy]] = highs as [Point];
+        const [[, ly]] = lows as [Point];
+        highs = [[hx - 2, hy], [hx + 2, hy]];
+        lows = [[hx + 2, ly], [hx - 2, ly]];
+      }
+      return `${pathFromPoints([...highs, ...lows])}Z`;
+    };
+    let run: number[] = [];
+    const flush = () => {
+      if (run.length > 0) bandPieces.push(bandPath(run));
+      run = [];
+    };
+    dates.forEach((_, di) => {
+      if (rangeAt(di)) run.push(di);
+      else flush();
+    });
+    flush();
+  }
+  const rangeText = (dateIndex: number) => {
+    const range = rangeAt(dateIndex);
+    return range ? `${valueFormat(range[0])}–${valueFormat(range[1])}` : "—";
+  };
 
   const indexAt = (px: number) => {
     if (n === 1) return 0;
@@ -114,7 +172,10 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
   const tooltipRows =
     active === null
       ? []
-      : series.map((s, si) => ({ key: s.key, label: s.label, value: formatted(valueAt(si, active)), color: colors.series(s.color) }));
+      : [
+          ...series.map((s, si) => ({ key: s.key, label: s.label, value: formatted(valueAt(si, active)), color: colors.series(s.color) })),
+          ...(band ? [{ key: "__band", label: band.label, value: rangeText(active), color: colors.series(band.color) }] : []),
+        ];
   const readout =
     active === null ? "" : `${dayAt(active)}: ${tooltipRows.map((r) => `${r.label} ${r.value}`).join(", ")}`;
 
@@ -123,15 +184,23 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
       const own = s.points.map((p) => p.value).filter(isValue);
       return own.length === 0 ? `${s.label} no data` : `${s.label} latest ${formatted(valueAt(si, n - 1))}, peak ${valueFormat(Math.max(...own))}`;
     })
-    .join("; ")}. Use arrow keys to read each date.`;
+    .join("; ")}${band ? `; ${band.label} latest ${rangeText(n - 1)}` : ""}. Use arrow keys to read each date.`;
+  const legend = [
+    ...series.map((s) => ({ key: s.key, label: s.label, color: s.color, isBand: false })),
+    ...(band ? [{ key: "band", label: band.label, color: band.color, isBand: true }] : []),
+  ];
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {series.length > 1 && (
+      {legend.length > 1 && (
         <ul aria-label={`${label} legend`} className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-dim">
-          {series.map((s) => (
-            <li key={s.key} className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className="h-2 w-2 rounded-[2px]" style={{ background: colors.series(s.color) }} />
+          {legend.map((s) => (
+            <li key={`${s.isBand ? "band" : "series"}-${s.key}`} className="inline-flex items-center gap-1.5">
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 rounded-[2px]"
+                style={{ background: colors.series(s.color), opacity: s.isBand ? 0.45 : undefined }}
+              />
               {s.label}
             </li>
           ))}
@@ -208,18 +277,33 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
                 {dayAt(di)}
               </text>
             ))}
-            {series.map((s, si) => (
-              <path
-                key={`area-${s.key}`}
-                data-area=""
-                d={areaPath(pointsOf(si), baseline)}
-                fill={colors.series(s.color)}
-                fillOpacity={0.15}
-                data-animate={animate ? "" : undefined}
-                className={animate ? "tm-fade-in" : undefined}
-                style={animate ? { animationDelay: `${200 + si * 80}ms` } : undefined}
-              />
-            ))}
+            {band &&
+              bandPieces.map((d, i) => (
+                <path
+                  key={`band-${i}`}
+                  data-band=""
+                  d={d}
+                  fill={colors.series(band.color)}
+                  fillOpacity={0.18}
+                  data-animate={animate ? "" : undefined}
+                  className={animate ? "tm-fade-in" : undefined}
+                  style={animate ? { animationDelay: "160ms" } : undefined}
+                />
+              ))}
+            {series.map((s, si) =>
+              s.area === false ? null : (
+                <path
+                  key={`area-${s.key}`}
+                  data-area=""
+                  d={areaPath(pointsOf(si), baseline)}
+                  fill={colors.series(s.color)}
+                  fillOpacity={0.15}
+                  data-animate={animate ? "" : undefined}
+                  className={animate ? "tm-fade-in" : undefined}
+                  style={animate ? { animationDelay: `${200 + si * 80}ms` } : undefined}
+                />
+              ),
+            )}
             {series.map((s, si) => (
               <path
                 key={`line-${s.key}`}
@@ -272,8 +356,12 @@ export function AreaTrend({ series, height = 180, valueFormat, label }: AreaTren
       </span>
       <ChartDataTable
         caption={`${label} data`}
-        headers={["Date", ...series.map((s) => s.label)]}
-        rows={dates.map((_, di) => [dayAt(di), ...series.map((_, si) => formatted(valueAt(si, di)))])}
+        headers={["Date", ...series.map((s) => s.label), ...(band ? [band.label] : [])]}
+        rows={dates.map((_, di) => [
+          dayAt(di),
+          ...series.map((_, si) => formatted(valueAt(si, di))),
+          ...(band ? [rangeText(di)] : []),
+        ])}
       />
     </div>
   );
