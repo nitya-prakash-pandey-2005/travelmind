@@ -90,7 +90,7 @@ export const publicQuoteKeys = {
 
 /**
  * Read once per visit: the first read of a sent quote marks it viewed, and every read counts against
- * the link's rate limit, so no background refetching or retries.
+ * the link's rate limit, so no background refetching or retries. A 401 never sends the visitor to sign in.
  */
 export function publicQuoteQueryOptions(token: string) {
   return queryOptions({
@@ -100,6 +100,7 @@ export function publicQuoteQueryOptions(token: string) {
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    meta: { skipAuthRedirect: true },
   });
 }
 

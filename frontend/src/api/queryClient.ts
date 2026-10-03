@@ -22,7 +22,11 @@ export function createQueryClient({ retry = true }: { retry?: boolean } = {}): Q
     }
   };
   const client: QueryClient = new QueryClient({
-    queryCache: new QueryCache({ onError: handleAuthError }),
+    queryCache: new QueryCache({
+      onError: (error, query) => {
+        if (!query.meta?.skipAuthRedirect) handleAuthError(error);
+      },
+    }),
     mutationCache: new MutationCache({
       onError: (error, _variables, _context, mutation) => {
         if (!mutation.meta?.skipAuthRedirect) handleAuthError(error);
