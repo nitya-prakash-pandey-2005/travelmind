@@ -7,10 +7,8 @@ import { renderApp, withSession } from "../../test/renderApp";
 vi.mock("../globe/webgl", () => ({ hasWebGL: () => false }));
 
 test.each([
-  ["/app/clients", "Clients", [], [["Pipeline", "/app/pipeline"], ["Quotes", "/app/quotes"]]],
   ["/app/routes", "Route intel", [], [["Fare search", "/app/fares"], ["Command Center", "/app"]]],
   ["/app/settings", "Settings", [], [["Team", "/app/team"], ["Suppliers", "/app/suppliers"]]],
-  ["/app/clients/c-1", "Client", ["Clients"], [["Clients", "/app/clients"], ["Pipeline", "/app/pipeline"]]],
 ] as const)("%s shows a titled page that says what is coming", async (path, title, crumbs, links) => {
   mockApi(withSession(ME_OWNER));
   renderApp(path);

@@ -18,6 +18,8 @@ import { AcceptInvitePage } from "./auth/AcceptInvitePage";
 import { LoginPage } from "./auth/LoginPage";
 import { resetSessionState } from "./auth/resetSessionState";
 import { SignupPage } from "./auth/SignupPage";
+import { ClientPage } from "./features/clients/ClientPage";
+import { ClientsPage } from "./features/clients/ClientsPage";
 import { CommandCenterPage } from "./features/command/CommandCenterPage";
 import { DemoLaunchPage } from "./features/demo/DemoLaunchPage";
 import { FareScanPage } from "./features/fares/FareScanPage";
@@ -25,12 +27,7 @@ import { validateFareSearch } from "./features/fares/fareSearchParams";
 import { EnquiryPage } from "./features/enquiries/EnquiryPage";
 import { HotelScanPage } from "./features/hotels/HotelScanPage";
 import { LandingPage } from "./features/landing/LandingPage";
-import {
-  ClientPlaceholder,
-  ClientsPlaceholder,
-  RouteIntelPlaceholder,
-  SettingsPlaceholder,
-} from "./features/planned/pages";
+import { RouteIntelPlaceholder, SettingsPlaceholder } from "./features/planned/pages";
 import { PipelinePage } from "./features/pipeline/PipelinePage";
 import { PublicQuotePage } from "./features/publicQuote/PublicQuotePage";
 import { QuoteEditorPage } from "./features/quotes/QuoteEditorPage";
@@ -176,8 +173,8 @@ const enquiryRoute = createRoute({
 });
 const quotesRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes", component: QuotesPage });
 const quoteRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes/$quoteId", component: QuoteEditorPage });
-const clientsRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients", component: ClientsPlaceholder });
-const clientRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients/$clientId", component: ClientPlaceholder });
+const clientsRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients", component: ClientsPage });
+const clientRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients/$clientId", component: ClientPage });
 const routeIntelRoute = createRoute({ getParentRoute: () => appRoute, path: "/routes", component: RouteIntelPlaceholder });
 const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: "/settings", component: SettingsPlaceholder });
 

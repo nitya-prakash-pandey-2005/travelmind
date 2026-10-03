@@ -1,9 +1,9 @@
-import { FileText, LayoutDashboard, Plane, PlugZap, SquareKanban, UserRound, Users } from "lucide-react";
+import { LayoutDashboard, Plane, PlugZap, Users } from "lucide-react";
 import { PlannedPage, type RelatedPage } from "./PlannedPage";
 
 /**
  * This release's new pages while their screens are finished. Each is swapped for its real screen in
- * the router (clients, client, route intel and settings).
+ * the router (route intel and settings).
  */
 
 const COMMAND_CENTER: RelatedPage = {
@@ -18,52 +18,6 @@ const FARE_SEARCH: RelatedPage = {
   hint: "Search every connected airline supplier",
   icon: Plane,
 };
-const PIPELINE: RelatedPage = {
-  to: "/app/pipeline",
-  label: "Pipeline",
-  hint: "Every enquiry by stage",
-  icon: SquareKanban,
-};
-const QUOTES: RelatedPage = { to: "/app/quotes", label: "Quotes", hint: "Quotes built and sent", icon: FileText };
-const CLIENTS: RelatedPage = {
-  to: "/app/clients",
-  label: "Clients",
-  hint: "Travellers and companies you quote for",
-  icon: UserRound,
-};
-
-export function ClientsPlaceholder() {
-  return (
-    <PlannedPage
-      title="Clients"
-      description="The travellers and companies you quote for."
-      coming={[
-        "Search and tag filters across every client",
-        "Contact details, home airport, tags and notes",
-        "Each client's enquiries, quotes, won value and last and next trips",
-        "New clients added from a form with inline checks",
-      ]}
-      related={[PIPELINE, QUOTES]}
-    />
-  );
-}
-
-export function ClientPlaceholder() {
-  return (
-    <PlannedPage
-      title="Client"
-      breadcrumb={[{ label: "Clients", to: "/app/clients" }, { label: "Client" }]}
-      description="One client's details, trips and history."
-      coming={[
-        "Contact details, tags and notes, editable in place",
-        "Enquiries and quotes for the client, with won value and last trip",
-        "A new enquiry for the client in one click",
-        "A timeline of everything that happened with the client",
-      ]}
-      related={[CLIENTS, PIPELINE]}
-    />
-  );
-}
 
 export function RouteIntelPlaceholder() {
   return (

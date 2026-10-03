@@ -199,7 +199,7 @@ export function ClientCombobox({
 }
 
 /** The form, mounted only while the dialog is open so every opening starts fresh. */
-function NewEnquiryForm({ onClose }: { onClose: () => void }) {
+function NewEnquiryForm({ onClose, client: preset }: { onClose: () => void; client?: ClientChoice }) {
   const formId = useId();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -210,7 +210,7 @@ function NewEnquiryForm({ onClose }: { onClose: () => void }) {
   const [adults, setAdults] = useState("1");
   const [cabin, setCabin] = useState<Cabin>("economy");
   const [clientMode, setClientMode] = useState<ClientMode>("existing");
-  const [client, setClient] = useState<ClientChoice | null>(null);
+  const [client, setClient] = useState<ClientChoice | null>(preset ?? null);
   const [clientName, setClientName] = useState("");
   const [notes, setNotes] = useState("");
   const [nameError, setNameError] = useState<string | undefined>();
@@ -271,7 +271,9 @@ function NewEnquiryForm({ onClose }: { onClose: () => void }) {
       open
       onClose={onClose}
       title="New enquiry"
-      description="Capture a trip request now; quote it when you're ready."
+      description={
+        preset ? `Capture a trip request for ${preset.name}; quote it when you're ready.` : "Capture a trip request now; quote it when you're ready."
+      }
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -380,7 +382,10 @@ function NewEnquiryForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Compact create-enquiry dialog: route, dates, travellers, cabin, client (existing or new) and notes. */
-export function NewEnquiryDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return open ? <NewEnquiryForm onClose={onClose} /> : null;
+/**
+ * Compact create-enquiry dialog: route, dates, travellers, cabin, client (existing or new) and notes.
+ * `client` opens it with that client already picked (e.g. from the client's page).
+ */
+export function NewEnquiryDialog({ open, onClose, client }: { open: boolean; onClose: () => void; client?: ClientChoice }) {
+  return open ? <NewEnquiryForm onClose={onClose} client={client} /> : null;
 }
