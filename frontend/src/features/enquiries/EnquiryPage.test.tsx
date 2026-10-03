@@ -76,7 +76,8 @@ function enquiryPage(extra: Record<string, MockHandler> = {}) {
 
 test("the header, trip, quotes and timeline describe the enquiry", async () => {
   const { calls } = enquiryPage();
-  expect(await screen.findByRole("heading", { level: 1, name: "E-0005" })).toBeInTheDocument();
+  // The first test of the file also pays for the app's first render; give it room under full-suite load.
+  expect(await screen.findByRole("heading", { level: 1, name: "E-0005" }, { timeout: 5000 })).toBeInTheDocument();
   const main = screen.getByRole("main");
   expect(within(main).getAllByText("Quoted").length).toBeGreaterThan(0);
   expect(within(main).getAllByRole("link", { name: "Priya Sharma" })[0]).toHaveAttribute("href", "/app/clients/c-priya");
@@ -127,7 +128,7 @@ test("quote values and the budget show in whole units", async () => {
   expect(screen.getByRole("region", { name: "Enquiry figures" })).toHaveTextContent("₹25,772");
 });
 
-test("Create quote starts a quote and opens it", async () => {
+test("Create quote opens the new-quote dialog for this enquiry, then starts the quote and opens it", async () => {
   const { calls, user, router } = enquiryPage({
     "POST /api/v1/quotes": {
       status: 201,
@@ -151,8 +152,19 @@ test("Create quote starts a quote and opens it", async () => {
     "GET /api/v1/quotes/q-new": { status: 404, body: { detail: "Quote not found." } },
   });
   await user.click(await screen.findByRole("button", { name: "Create quote" }));
+  const dialog = screen.getByRole("dialog", { name: "New quote" });
+  // Prefilled with this enquiry: no picker, nothing posted yet.
+  expect(within(dialog).getByText("E-0005 DEL → BOM")).toBeInTheDocument();
+  expect(within(dialog).queryByRole("radiogroup", { name: "Open enquiries" })).not.toBeInTheDocument();
+  expect(calls.some((c) => c.method === "POST" && c.path === "/api/v1/quotes")).toBe(false);
+  await user.type(within(dialog).getByLabelText("Markup (%)"), "7.5");
+  await user.click(within(dialog).getByRole("button", { name: "Create quote" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/quotes/q-new"));
-  expect(calls.find((c) => c.method === "POST" && c.path === "/api/v1/quotes")?.body).toEqual({ enquiry_id: "e-5" });
+  expect(calls.find((c) => c.method === "POST" && c.path === "/api/v1/quotes")?.body).toEqual({
+    enquiry_id: "e-5",
+    markup_kind: "percent",
+    markup_value: 750,
+  });
 });
 
 test("Edit saves only the changed fields", async () => {

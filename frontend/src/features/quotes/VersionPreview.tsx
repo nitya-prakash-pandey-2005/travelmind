@@ -15,12 +15,13 @@ const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric",
 /** "Fri 20 Nov" for an airport-local timestamp. */
 const localDay = (iso: string) => DAY.format(new Date(`${iso.slice(0, 10)}T00:00:00Z`));
 
-/** One traveller's share of a party's sell price: exact when it divides evenly, else "≈" to the minor unit. */
+/**
+ * One traveller's share of a party's sell price, rounded half-up to the minor unit: the figure the
+ * client's page shows, which it shows only for adults-only parties (backend public_quotes.py).
+ */
 function perTraveller(option: QuoteOption): string {
-  const count = option.offer.passenger_count;
-  const share = option.sell.amount_minor / count;
-  const money = formatMoney({ amount_minor: Math.round(share), currency: option.sell.currency });
-  return Number.isInteger(share) ? money : `≈ ${money}`;
+  const share = Math.round(option.sell.amount_minor / option.offer.passenger_count);
+  return formatMoney({ amount_minor: share, currency: option.sell.currency });
 }
 
 const PERCENT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -37,7 +38,7 @@ function Figure({ label, value, hint, strong = false }: { label: string; value: 
   );
 }
 
-function OptionCard({ option, index, accepted }: { option: QuoteOption; index: number; accepted: boolean }) {
+function OptionCard({ option, index, accepted, adultsOnly }: { option: QuoteOption; index: number; accepted: boolean; adultsOnly: boolean }) {
   const { offer } = option;
   const fareLine = [offer.cabin ? cabinLabel(offer.cabin) : null, offer.slices[0]?.fare_brand].filter(Boolean).join(" · ");
   const markupShare = offer.total.amount_minor > 0 ? (option.markup_minor / offer.total.amount_minor) * 100 : null;
@@ -93,10 +94,10 @@ function OptionCard({ option, index, accepted }: { option: QuoteOption; index: n
         <Figure label="Supplier fare" value={formatMoney(offer.total)} />
         <Figure label="Markup" value={formatMoney({ amount_minor: option.markup_minor, currency: option.sell.currency })} hint={markupShare !== null ? `${PERCENT.format(markupShare)}%` : undefined} />
         <Figure label="Sell" value={formatMoney(option.sell)} strong />
-        {travellers > 1 ? (
+        {travellers > 1 && adultsOnly ? (
           <Figure label="Per traveller" value={perTraveller(option)} hint={`× ${travellers}`} />
         ) : (
-          <Figure label="Travellers" value="1" />
+          <Figure label="Travellers" value={String(travellers)} hint={travellers > 1 ? "total price only" : undefined} />
         )}
       </dl>
     </li>
@@ -111,12 +112,15 @@ export function VersionPreview({
   quote,
   version,
   author,
+  adultsOnly,
   now,
   className,
 }: {
   quote: QuoteDetail;
   version: QuoteVersion | undefined;
   author: string | undefined;
+  /** Whether the enquiry's party is adults only; a per-traveller price is shown only then, as on the client's page. */
+  adultsOnly: boolean;
   now: Date;
   className?: string;
 }) {
@@ -152,7 +156,13 @@ export function VersionPreview({
       <div className="flex flex-col gap-3">
         <ol aria-label={`Options in version ${version.version}`} className="flex flex-col gap-2">
           {version.options.map((option, index) => (
-            <OptionCard key={`${option.offer.id}-${index}`} option={option} index={index} accepted={acceptedHere === index} />
+            <OptionCard
+              key={`${option.offer.id}-${index}`}
+              option={option}
+              index={index}
+              accepted={acceptedHere === index}
+              adultsOnly={adultsOnly}
+            />
           ))}
         </ol>
         <div className="flex flex-col gap-1 rounded-md border border-line bg-surface-2 px-3 py-2">

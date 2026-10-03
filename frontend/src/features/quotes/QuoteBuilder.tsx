@@ -114,6 +114,8 @@ type QuoteBuilderProps = {
   lockedReason: string | null;
   /** Called with the new version's number once the server has priced and saved it. */
   onSaved: (version: number) => void;
+  /** True while a re-price or save runs, so the offer picker can hold the selection still. */
+  onBusyChange?: (busy: boolean) => void;
   className?: string;
 };
 
@@ -123,7 +125,7 @@ type QuoteBuilderProps = {
  * copy of the offer, and its answer is the preview. "Re-price and save" checks each fare with its
  * supplier first and saves the fresh offers.
  */
-export function QuoteBuilder({ quote, picks, onPicksChange, lockedReason, onSaved, className }: QuoteBuilderProps) {
+export function QuoteBuilder({ quote, picks, onPicksChange, lockedReason, onSaved, onBusyChange, className }: QuoteBuilderProps) {
   const { toast } = useToast();
   const messageId = useId();
   const counterId = useId();
@@ -151,6 +153,7 @@ export function QuoteBuilder({ quote, picks, onPicksChange, lockedReason, onSave
   }
 
   function save(offers: FlightOffer[]) {
+    onBusyChange?.(true);
     addVersion.mutate(
       { id: quote.id, version: versionBody(offers) },
       {
@@ -159,12 +162,14 @@ export function QuoteBuilder({ quote, picks, onPicksChange, lockedReason, onSave
           onSaved(saved.current_version);
         },
         onError: (error) => toast({ tone: "danger", title: "Couldn't save the version", description: asApiError(error).message }),
+        onSettled: () => onBusyChange?.(false),
       },
     );
   }
 
   async function repriceAndSave() {
     setRepricing(true);
+    onBusyChange?.(true);
     const fresh: FlightOffer[] = [];
     const changes: string[] = [];
     for (const pick of picks) {
@@ -176,6 +181,7 @@ export function QuoteBuilder({ quote, picks, onPicksChange, lockedReason, onSave
         }
       } catch (error) {
         setRepricing(false);
+        onBusyChange?.(false);
         toast({ tone: "danger", title: `Couldn't re-price ${carrierName(pick.offer)}`, description: asApiError(error).message });
         return;
       }
@@ -190,6 +196,7 @@ export function QuoteBuilder({ quote, picks, onPicksChange, lockedReason, onSave
     const otherCurrency = fresh.find((offer) => offer.total.currency !== quote.currency);
     if (otherCurrency) {
       toast({ tone: "danger", title: "Not saved", description: `${carrierName(otherCurrency)} is now billed in ${otherCurrency.total.currency}.` });
+      onBusyChange?.(false);
       return;
     }
     save(fresh);

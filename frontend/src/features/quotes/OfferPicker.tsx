@@ -125,6 +125,8 @@ type OfferPickerProps = {
   pickedIds: ReadonlySet<string>;
   /** Why nothing can be added (the quote is closed); null when it can. */
   lockedReason: string | null;
+  /** Hold the selection still (a re-price or save is running). */
+  frozen?: boolean;
   onToggle: (offer: FlightOffer, selected: boolean) => void;
   className?: string;
 };
@@ -134,7 +136,7 @@ type OfferPickerProps = {
  * the results as offer cards the agent ticks to add to the quote. Only offers billed in the quote's
  * currency can be added, up to the option limit.
  */
-export function OfferPicker({ quote, enquiry, pickedIds, lockedReason, onToggle, className }: OfferPickerProps) {
+export function OfferPicker({ quote, enquiry, pickedIds, lockedReason, frozen = false, onToggle, className }: OfferPickerProps) {
   const trip = tripRequest(quote, enquiry);
   const [request, setRequest] = useState<FlightSearchRequest | null>(null);
   const [editing, setEditing] = useState(false);
@@ -252,6 +254,7 @@ export function OfferPicker({ quote, enquiry, pickedIds, lockedReason, onToggle,
                           selected: pickedIds.has(offer.id),
                           onChange: (selected) => onToggle(offer, selected),
                           disabledReason: reasonFor(offer),
+                          frozen,
                         }}
                       />
                     </li>

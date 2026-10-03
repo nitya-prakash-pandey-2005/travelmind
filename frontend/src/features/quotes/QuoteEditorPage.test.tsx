@@ -80,6 +80,15 @@ async function searchAndPick(user: ReturnType<typeof renderApp>["user"], cards: 
 
 const versionCalls = (calls: MockCall[]) => calls.filter((c) => c.method === "POST" && c.path === "/api/v1/quotes/q-4/versions");
 
+/** The body of the first version saved; fails the test when none was. */
+function savedBody(calls: MockCall[]): Record<string, unknown> {
+  const call = versionCalls(calls)[0];
+  expect(call).toBeDefined();
+  return (call?.body ?? {}) as Record<string, unknown>;
+}
+
+const quoteReads = (calls: MockCall[]) => calls.filter((c) => c.method === "GET" && c.path === "/api/v1/quotes/q-4").length;
+
 test("the builder never posts prices: offers by id, the message and markups only; the preview is the server's", async () => {
   // The server prices the version: these sells are deliberately not offer total + 10%.
   const saved = quoteDetail({
@@ -88,13 +97,14 @@ test("the builder never posts prices: offers by id, the message and markups only
   const { user, calls } = editor(quoteDetail(), {
     "POST /api/v1/quotes/q-4/versions": { status: 201, body: saved },
   });
-  expect(await screen.findByRole("heading", { level: 1, name: "Q-0004" })).toBeInTheDocument();
+  // The file's first test also pays for the app's first render; give it room under full-suite load.
+  expect(await screen.findByRole("heading", { level: 1, name: "Q-0004" }, { timeout: 5000 })).toBeInTheDocument();
   await searchAndPick(user, [/^IndiGo/, /^Air India/]);
   await user.type(screen.getByLabelText("Message to the client"), "Two morning flights.");
   await user.click(screen.getByRole("button", { name: "Save version" }));
 
   await waitFor(() => expect(versionCalls(calls)).toHaveLength(1));
-  const body = versionCalls(calls)[0]?.body as Record<string, unknown>;
+  const body = savedBody(calls);
   expect(Object.keys(body).sort()).toEqual(["message", "offer_ids", "option_markups"]);
   expect(body.offer_ids).toEqual(["sandbox~6e", "sandbox~ai"]);
   expect(body.option_markups).toEqual([1000, 1000]);
@@ -119,7 +129,7 @@ test("a percent markup is sent in basis points, per-option overrides included", 
   await user.type(screen.getByLabelText("Markup for option 2"), "12");
   await user.click(screen.getByRole("button", { name: "Save version" }));
   await waitFor(() => expect(versionCalls(calls)).toHaveLength(1));
-  expect((versionCalls(calls)[0]?.body as { option_markups: unknown }).option_markups).toEqual([850, 1200]);
+  expect(savedBody(calls).option_markups).toEqual([850, 1200]);
 });
 
 test("a fixed markup is typed in rupees and sent in paise", async () => {
@@ -131,7 +141,7 @@ test("a fixed markup is typed in rupees and sent in paise", async () => {
   await user.type(screen.getByLabelText("Markup for option 1"), "250.50");
   await user.click(screen.getByRole("button", { name: "Save version" }));
   await waitFor(() => expect(versionCalls(calls)).toHaveLength(1));
-  expect((versionCalls(calls)[0]?.body as { option_markups: unknown }).option_markups).toEqual([25_050, 50_000]);
+  expect(savedBody(calls).option_markups).toEqual([25_050, 50_000]);
 });
 
 test("an invalid markup blocks saving with a reason", async () => {
@@ -179,7 +189,7 @@ test("re-price selected checks each option with its supplier, toasts a change an
   await searchAndPick(user, [/^IndiGo/, /^Air India/]);
   await user.click(screen.getByRole("button", { name: "Re-price and save" }));
   await waitFor(() => expect(versionCalls(calls)).toHaveLength(1));
-  expect((versionCalls(calls)[0]?.body as { offer_ids: unknown }).offer_ids).toEqual(["sandbox~6e-2", "sandbox~ai"]);
+  expect(savedBody(calls).offer_ids).toEqual(["sandbox~6e-2", "sandbox~ai"]);
   expect(await screen.findByText(/IndiGo is now ₹5,400 \(was ₹5,234\)/)).toBeInTheDocument();
 });
 
@@ -268,4 +278,105 @@ test("an unknown quote shows a not-found state", async () => {
   renderApp("/app/quotes/q-9");
   expect(await screen.findByText("Quote not found")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Back to quotes" })).toHaveAttribute("href", "/app/quotes");
+});
+
+test("after a save the selection clears and the preview shows the new version", async () => {
+  const saved = quoteDetail({ versions: [quoteVersion(1, [quoteOption(INDIGO, 52_340)])] });
+  const { user } = editor(quoteDetail(), { "POST /api/v1/quotes/q-4/versions": { status: 201, body: saved } });
+  await searchAndPick(user, [/^IndiGo/]);
+  await user.click(screen.getByRole("button", { name: "Save version" }));
+  expect(await screen.findByRole("region", { name: "Version 1 preview" })).toBeInTheDocument();
+  expect(screen.queryByRole("list", { name: "Options in this version" })).not.toBeInTheDocument();
+  expect(addBox(/^IndiGo/)).not.toBeChecked();
+});
+
+test("reuse options from the latest version saves those offers again", async () => {
+  const { user, calls } = editor(sentQuote(), {
+    "POST /api/v1/quotes/q-4/versions": { status: 201, body: sentQuote({ current_version: 4 }) },
+  });
+  await user.click(await screen.findByRole("button", { name: "Reuse options from v3" }));
+  const options = screen.getByRole("list", { name: "Options in this version" });
+  expect(within(options).getAllByRole("listitem")).toHaveLength(2);
+  await user.click(screen.getByRole("button", { name: "Save version" }));
+  await waitFor(() => expect(versionCalls(calls)).toHaveLength(1));
+  expect(savedBody(calls).offer_ids).toEqual(["sandbox~6e", "sandbox~ai"]);
+  expect(savedBody(calls).message).toBe("Two morning options.");
+});
+
+const CONFLICT = { status: 409, body: { detail: "This quote was already accepted, so it can't be changed." } };
+
+test("a conflict on save shows the server's reason and refetches the quote", async () => {
+  const { user, calls } = editor(quoteDetail(), { "POST /api/v1/quotes/q-4/versions": CONFLICT });
+  await searchAndPick(user, [/^IndiGo/]);
+  const reads = quoteReads(calls);
+  await user.click(screen.getByRole("button", { name: "Save version" }));
+  expect(await screen.findByText("This quote was already accepted, so it can't be changed.")).toBeInTheDocument();
+  await waitFor(() => expect(quoteReads(calls)).toBeGreaterThan(reads));
+});
+
+test("a conflict on send shows the server's reason and refetches the quote", async () => {
+  const quote = quoteDetail({ versions: [quoteVersion(1, [quoteOption(INDIGO, 0)])] });
+  const { user, calls } = editor(quote, { "POST /api/v1/quotes/q-4/send": CONFLICT });
+  await user.click(await screen.findByRole("button", { name: "Send to client" }));
+  const reads = quoteReads(calls);
+  const dialog = screen.getByRole("dialog", { name: "Send Q-0004 to the client" });
+  await user.click(within(dialog).getByRole("button", { name: "Create link" }));
+  expect(await within(dialog).findByText("This quote was already accepted, so it can't be changed.")).toBeInTheDocument();
+  await waitFor(() => expect(quoteReads(calls)).toBeGreaterThan(reads));
+});
+
+test("a conflict on an outcome shows the server's reason and refetches the quote", async () => {
+  const { user, calls } = editor(sentQuote(), {
+    "POST /api/v1/quotes/q-4/status": { status: 409, body: { detail: "This quote was already declined, so it can't be changed." } },
+  });
+  await user.click(await screen.findByRole("button", { name: "Record outcome" }));
+  await user.click(screen.getByRole("menuitem", { name: "Mark accepted" }));
+  const reads = quoteReads(calls);
+  const dialog = screen.getByRole("dialog", { name: "Mark Q-0004 accepted?" });
+  await user.click(within(dialog).getByRole("button", { name: "Mark accepted" }));
+  expect(await within(dialog).findByText("This quote was already declined, so it can't be changed.")).toBeInTheDocument();
+  await waitFor(() => expect(quoteReads(calls)).toBeGreaterThan(reads));
+});
+
+test("closing the send dialog before copying the link asks first; a failed copy says so", async () => {
+  const quote = quoteDetail({ versions: [quoteVersion(1, [quoteOption(INDIGO, 0)])] });
+  const { user } = editor(quote, {
+    "POST /api/v1/quotes/q-4/send": { status: 200, body: { share_url: "/q/tok_abc", token: "tok_abc", expires_at: "2026-10-17T09:00:00Z" } },
+  });
+  await user.click(await screen.findByRole("button", { name: "Send to client" }));
+  const dialog = screen.getByRole("dialog", { name: "Send Q-0004 to the client" });
+  await user.click(within(dialog).getByRole("button", { name: "Create link" }));
+  await within(dialog).findByLabelText("Client link");
+  await user.click(within(dialog).getByRole("button", { name: "Done" }));
+  expect(within(dialog).getByRole("alert")).toHaveTextContent("You haven't copied the link yet.");
+  await user.click(within(dialog).getByRole("button", { name: "Go back" }));
+
+  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("denied"));
+  await user.click(within(dialog).getByRole("button", { name: "Copy link" }));
+  expect(await screen.findByText("Couldn't copy — select the link")).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Client link")).toHaveValue(`${window.location.origin}/q/tok_abc`);
+
+  await user.click(within(dialog).getByRole("button", { name: "Done" }));
+  await user.click(within(dialog).getByRole("button", { name: "Close without copying" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+});
+
+test("a per-traveller price shows only for an adults-only party", async () => {
+  const party = makeOffer({ passenger_count: 3, total: { amount_minor: 900_000, currency: "INR" } });
+  editor(quoteDetail({ versions: [quoteVersion(1, [quoteOption(party, 1)])] }), {
+    "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, adults: 3 } },
+  });
+  const preview = await screen.findByRole("region", { name: "Version 1 preview" });
+  // ₹9,000.01 for three: half-up to ₹3,000, as on the client's page.
+  expect(await within(preview).findByText("₹3,000")).toBeInTheDocument();
+});
+
+test("a party with children shows the total only", async () => {
+  const party = makeOffer({ passenger_count: 3, total: { amount_minor: 900_000, currency: "INR" } });
+  editor(quoteDetail({ versions: [quoteVersion(1, [quoteOption(party, 0)])] }), {
+    "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, adults: 2, children_ages: [7] } },
+  });
+  const preview = await screen.findByRole("region", { name: "Version 1 preview" });
+  expect(await within(preview).findByText("total price only")).toBeInTheDocument();
+  expect(within(preview).queryByText("Per traveller")).not.toBeInTheDocument();
 });

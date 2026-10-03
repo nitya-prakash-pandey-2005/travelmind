@@ -174,6 +174,8 @@ export type OfferSelection = {
   onChange: (selected: boolean) => void;
   /** Why the offer can't be added (another currency, the option limit); the checkbox is then disabled. */
   disabledReason?: string | null;
+  /** Hold the checkbox as it is, ticked or not (e.g. while the selection is being saved). */
+  frozen?: boolean;
 };
 
 export type OfferCardProps = { offer: FlightOffer; selectable?: OfferSelection };
@@ -182,6 +184,7 @@ export type OfferCardProps = { offer: FlightOffer; selectable?: OfferSelection }
 function AddToQuote({ selection }: { selection: OfferSelection }) {
   const id = useId();
   const blocked = Boolean(selection.disabledReason) && !selection.selected;
+  const disabled = blocked || Boolean(selection.frozen);
   return (
     <div className="mt-2 flex max-w-44 flex-col items-end gap-1">
       <label
@@ -190,7 +193,7 @@ function AddToQuote({ selection }: { selection: OfferSelection }) {
           "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary",
           selection.selected
             ? "border-primary/60 bg-primary/10 text-ink"
-            : blocked
+            : disabled
               ? "cursor-not-allowed border-line text-faint"
               : "cursor-pointer border-line-strong bg-surface-2 text-ink hover:border-faint hover:bg-hover",
         )}
@@ -198,7 +201,7 @@ function AddToQuote({ selection }: { selection: OfferSelection }) {
         <input
           type="checkbox"
           checked={selection.selected}
-          disabled={blocked}
+          disabled={disabled}
           aria-describedby={blocked ? id : undefined}
           onChange={(event) => selection.onChange(event.target.checked)}
           className="h-3.5 w-3.5 accent-primary"

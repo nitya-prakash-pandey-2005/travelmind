@@ -1,10 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { FilePlus2, FileText, Plane, Search, SearchX, Send, SquareKanban, X } from "lucide-react";
-import { useId, useMemo, useState } from "react";
-import { asApiError } from "../../api/client";
-import { enquiriesQueryOptions, type EnquiryOut } from "../../api/enquiries";
-import { quotesQueryOptions, useCreateQuote, type QuoteStatus, type QuoteSummary } from "../../api/quotes";
+import { useMemo, useState } from "react";
+import { quotesQueryOptions, type QuoteStatus, type QuoteSummary } from "../../api/quotes";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { formatDate, formatNumber, formatRelativeTime } from "../../lib/format";
 import { formatMoneyCompact } from "../../lib/money";
@@ -13,15 +11,14 @@ import { Button, buttonClasses } from "../../ui/Button";
 import { KpiStrip, KpiTile } from "../../ui/charts";
 import { cn } from "../../ui/cn";
 import { DataTable, type DataTableColumn } from "../../ui/DataTable";
-import { Dialog } from "../../ui/Dialog";
 import { EmptyState } from "../../ui/EmptyState";
 import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { STATUS_PILL, StatusPill } from "../../ui/StatusPill";
 import { Tabs } from "../../ui/Tabs";
-import { useToast } from "../../ui/toast/useToast";
 import { PanelError } from "../command/PanelError";
-import { formatWholeMoney, routeLabel, travellersLabel, tripDates } from "../pipeline/enquiryFacts";
+import { NewQuoteDialog } from "./NewQuoteDialog";
+import { formatWholeMoney, routeLabel } from "../pipeline/enquiryFacts";
 
 /** The list shows up to this many quotes (the API's page limit), newest first. */
 const LIST_LIMIT = 200;
@@ -100,9 +97,9 @@ function QuoteFigures({ figures, currency, loading }: { figures: Figures; curren
         loading={loading}
       />
       <KpiTile
-        label="Accepted value"
-        value={money(figures.acceptedValue)}
-        hint={`${formatNumber(counts.accepted)} quote${counts.accepted === 1 ? "" : "s"} accepted`}
+        label="Accepted quotes"
+        value={formatNumber(counts.accepted)}
+        hint={counts.accepted > 0 ? `${money(figures.acceptedValue)} at their cheapest options` : "None accepted yet"}
         loading={loading}
       />
     </KpiStrip>
@@ -150,119 +147,6 @@ function HowQuotingWorks() {
         ))}
       </ol>
     </Panel>
-  );
-}
-
-const OPEN_ENQUIRY = new Set(["new", "quoting", "quoted"]);
-
-/** Start a quote for one of the open enquiries, then open it in the editor. */
-function NewQuoteDialog({ onClose }: { onClose: () => void }) {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const listId = useId();
-  const [term, setTerm] = useState("");
-  const [chosen, setChosen] = useState<string | null>(null);
-  const enquiries = useQuery(enquiriesQueryOptions({ limit: LIST_LIMIT }));
-  const createQuote = useCreateQuote();
-  const open = (enquiries.data?.items ?? []).filter((item) => OPEN_ENQUIRY.has(item.status));
-  const needle = term.trim().toLowerCase();
-  const shown = needle
-    ? open.filter((item) => [item.number, item.client?.name, routeLabel(item)].filter(Boolean).join(" ").toLowerCase().includes(needle))
-    : open;
-
-  function create() {
-    if (!chosen) return;
-    createQuote.mutate(
-      { enquiry_id: chosen },
-      {
-        onSuccess: (quote) => {
-          toast({ tone: "ok", title: `Quote ${quote.number} created` });
-          onClose();
-          void navigate({ to: "/app/quotes/$quoteId", params: { quoteId: quote.id } });
-        },
-      },
-    );
-  }
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title="New quote"
-      description="Pick the open enquiry this quote answers. Its trip prefills the fare search."
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={create} disabled={!chosen} loading={createQuote.isPending}>
-            Create quote
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-3">
-        <div className="relative">
-          <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
-          <input
-            type="search"
-            aria-label="Search open enquiries"
-            aria-controls={listId}
-            placeholder="Number, route or client"
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-            className={SEARCH_INPUT}
-          />
-        </div>
-        {createQuote.isError && (
-          <p role="alert" className="text-[13px] text-danger">
-            {asApiError(createQuote.error).message}
-          </p>
-        )}
-        {enquiries.isError ? (
-          <PanelError error={enquiries.error} onRetry={() => void enquiries.refetch()} retrying={enquiries.isFetching} />
-        ) : enquiries.isPending ? (
-          <p className="text-[13px] text-dim">Loading open enquiries…</p>
-        ) : shown.length === 0 ? (
-          <EmptyState
-            icon={SquareKanban}
-            title={open.length === 0 ? "No open enquiries" : "No enquiries match"}
-            description={open.length === 0 ? "Quotes answer an enquiry. Add one in the pipeline first." : "Try another number, route or client."}
-            className="py-4"
-          />
-        ) : (
-          <div id={listId} role="radiogroup" aria-label="Open enquiries" className="flex max-h-80 flex-col gap-1.5 overflow-y-auto">
-            {shown.map((item) => (
-              <EnquiryChoice key={item.id} enquiry={item} checked={chosen === item.id} onChoose={() => setChosen(item.id)} />
-            ))}
-          </div>
-        )}
-      </div>
-    </Dialog>
-  );
-}
-
-function EnquiryChoice({ enquiry, checked, onChoose }: { enquiry: EnquiryOut; checked: boolean; onChoose: () => void }) {
-  return (
-    <label
-      className={cn(
-        "flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 transition-colors duration-150 ease-tm",
-        "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-primary",
-        checked ? "border-primary/60 bg-primary/10" : "border-line hover:border-line-strong hover:bg-hover",
-      )}
-    >
-      <input type="radio" name="enquiry" checked={checked} onChange={onChoose} className="sr-only" />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex items-center gap-2 text-[13px]">
-          <span className="font-mono text-ink">{enquiry.number}</span>
-          <span className="font-mono font-medium text-ink">{routeLabel(enquiry)}</span>
-        </span>
-        <span className="truncate text-xs text-dim">
-          {[enquiry.client?.name ?? "No client", tripDates(enquiry) ?? "Dates not set", travellersLabel(enquiry)].join(" · ")}
-        </span>
-      </span>
-      <StatusPill status={enquiry.status} />
-    </label>
   );
 }
 
@@ -318,6 +202,7 @@ export function QuotesPage() {
   const needle = term.trim();
   const rows = useMemo(() => (source.data?.items ?? []).filter((quote) => matches(quote, needle)), [source.data, needle]);
   const total = all.data?.total ?? 0;
+  const currencies = useMemo(() => [...new Set(rows.map((quote) => quote.currency))], [rows]);
   const nothingYet = !all.isPending && !all.isError && total === 0;
 
   const tabs = [
@@ -492,12 +377,16 @@ export function QuotesPage() {
           )}
           {total > (all.data?.items.length ?? 0) && (
             <p className="border-t border-line px-3 py-2 text-xs text-dim">
-              Showing the {formatNumber(all.data?.items.length ?? 0)} newest of {formatNumber(total)} quotes. Search or filter to
-              find older ones.
+              Showing the {formatNumber(all.data?.items.length ?? 0)} newest of {formatNumber(total)} quotes. Search looks
+              through these rows only; a status tab loads the newest {formatNumber(LIST_LIMIT)} with that status.
             </p>
           )}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-3 py-2 text-xs text-dim">
-            <span>Values are each quote's cheapest option in its latest version, in whole {currency}.</span>
+            <span>
+              Values are each quote's cheapest option in its latest version, in whole{" "}
+              {currencies.length === 1 ? currencies[0] : "units of each quote's own currency"}.
+              {currencies.some((code) => code !== currency) && ` The figures above count ${currency} quotes only.`}
+            </span>
             <Link to="/app/pipeline" className={buttonClasses({ variant: "ghost", size: "sm", className: "-my-1 h-7" })}>
               <SquareKanban size={13} aria-hidden="true" />
               Pipeline

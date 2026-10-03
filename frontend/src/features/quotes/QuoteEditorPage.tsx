@@ -178,6 +178,7 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
   const [previewing, setPreviewing] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
   const [outcome, setOutcome] = useState<QuoteDecisionStatus | null>(null);
+  const [building, setBuilding] = useState(false);
 
   const names = useMemo(() => new Map((team.data ?? []).map((member) => [member.id, member.full_name])), [team.data]);
   const pickedIds = useMemo(() => new Set(picks.map((pick) => pick.offer.id)), [picks]);
@@ -281,6 +282,7 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
             quote={quote}
             version={previewed}
             author={previewed?.created_by ? names.get(previewed.created_by) : undefined}
+            adultsOnly={enquiry.data ? enquiry.data.children_ages.length === 0 : false}
             now={now}
             className="max-lg:order-1"
           />
@@ -289,6 +291,7 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
             enquiry={enquiry.data}
             pickedIds={pickedIds}
             lockedReason={locked}
+            frozen={building}
             onToggle={toggle}
             className="max-lg:order-3"
           />
@@ -299,7 +302,11 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
             picks={picks}
             onPicksChange={setPicks}
             lockedReason={locked}
-            onSaved={() => setPreviewing(null)}
+            onSaved={() => {
+              setPicks([]);
+              setPreviewing(null);
+            }}
+            onBusyChange={setBuilding}
             className="max-lg:order-2"
           />
           <VersionHistory

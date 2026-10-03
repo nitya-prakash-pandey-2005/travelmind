@@ -17,6 +17,11 @@ test("fixed markups are typed in major units and sent in minor units of the quot
   expect(parseMarkup("fixed", "500", "INR")).toEqual({ value: 50_000 });
   expect(parseMarkup("fixed", "250.50", "INR")).toEqual({ value: 25_050 });
   expect(parseMarkup("fixed", "1,250", "INR")).toEqual({ value: 125_000 });
+  expect(parseMarkup("fixed", "1,250.50", "INR")).toEqual({ value: 125_050 });
+  expect(parseMarkup("percent", "8,5", "INR")).toEqual({ error: "Use a dot for decimals, like 8.5." });
+  expect(parseMarkup("fixed", "12,50", "INR")).toEqual({ error: "Use a dot for decimals, like 8.5." });
+  expect(parseMarkup("fixed", "1,25,000", "INR")).toEqual({ value: 12_500_000 });
+  expect(parseMarkup("fixed", "1,2,3", "INR")).toEqual({ error: "Use a dot for decimals, like 8.5." });
   expect(parseMarkup("fixed", "1.005", "INR")).toEqual({ error: "Up to 2 decimal places." });
   expect(parseMarkup("fixed", "3000", "JPY")).toEqual({ value: 3000 });
   expect(parseMarkup("fixed", "3000.5", "JPY")).toEqual({ error: "Whole amounts only." });

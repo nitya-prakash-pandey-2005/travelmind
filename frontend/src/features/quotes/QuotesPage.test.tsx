@@ -2,10 +2,10 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import type { QuoteSummary } from "../../api/quotes";
 import { ME_OWNER } from "../../test/fixtures";
-import { mockApi, type MockCall } from "../../test/mockApi";
+import { mockApi, type MockCall, type MockHandler } from "../../test/mockApi";
 import { renderApp, withSession } from "../../test/renderApp";
-import { commandCenterMocks } from "../../test/workspaceFixtures";
-import { minutesAgo, quoteSummary } from "./quoteFixtures";
+import { commandCenterMocks, enquiryOut } from "../../test/workspaceFixtures";
+import { minutesAgo, quoteDetail, quoteSummary } from "./quoteFixtures";
 
 vi.mock("../globe/webgl", () => ({ hasWebGL: () => false }));
 
@@ -27,7 +27,7 @@ const QUOTES: QuoteSummary[] = [
   quoteSummary({ id: "q-2", number: "Q-0002", status: "declined", sent_version: 1, sent_at: minutesAgo(9000) }),
 ];
 
-function quotesPage(items: QuoteSummary[] = QUOTES) {
+function quotesPage(items: QuoteSummary[] = QUOTES, extra: Record<string, MockHandler> = {}) {
   const api = mockApi(
     withSession(ME_OWNER, {
       ...commandCenterMocks({ populated: true }),
@@ -36,6 +36,7 @@ function quotesPage(items: QuoteSummary[] = QUOTES) {
         const rows = status ? items.filter((q) => q.status === status) : items;
         return { status: 200, body: { items: rows, total: rows.length } };
       },
+      ...extra,
     }),
   );
   return { ...api, ...renderApp("/app/quotes") };
@@ -90,4 +91,37 @@ test("with no quotes yet the page explains where quotes come from", async () => 
   quotesPage([]);
   expect(await screen.findByText("No quotes yet")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Open pipeline" })).toHaveAttribute("href", "/app/pipeline");
+});
+
+test("New quote picks an open enquiry and a fixed markup, creates the quote and opens it", async () => {
+  const created = quoteDetail({ id: "q-new", number: "Q-0009", markup_kind: "fixed", markup_value: 50_000 });
+  const { user, calls, router } = quotesPage(QUOTES, {
+    "GET /api/v1/enquiries": {
+      status: 200,
+      body: {
+        items: [
+          enquiryOut({ id: "e-7", number: "E-0007", origin: "DEL", destination: "GOI", status: "new", client: null }),
+          enquiryOut({ id: "e-4", number: "E-0004", origin: "DEL", destination: "BOM", status: "won", client: null }),
+        ],
+        total: 2,
+      },
+    },
+    "POST /api/v1/quotes": { status: 201, body: created },
+    "GET /api/v1/quotes/q-new": { status: 200, body: created },
+  });
+  await user.click(await screen.findByRole("button", { name: "New quote" }));
+  const dialog = screen.getByRole("dialog", { name: "New quote" });
+  const choices = await within(dialog).findByRole("radiogroup", { name: "Open enquiries" });
+  // Won and lost enquiries take no new quotes.
+  expect(within(choices).queryByText("E-0004")).not.toBeInTheDocument();
+  await user.click(within(choices).getByText("E-0007"));
+  await user.click(within(dialog).getByRole("radio", { name: "Fixed amount" }));
+  await user.type(within(dialog).getByLabelText("Markup per option (INR)"), "500");
+  await user.click(within(dialog).getByRole("button", { name: "Create quote" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/quotes/q-new"));
+  expect(calls.find((c) => c.method === "POST" && c.path === "/api/v1/quotes")?.body).toEqual({
+    enquiry_id: "e-7",
+    markup_kind: "fixed",
+    markup_value: 50_000,
+  });
 });

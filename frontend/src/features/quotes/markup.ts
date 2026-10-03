@@ -10,6 +10,8 @@ import { currencyExponent, formatMoney } from "../../lib/money";
 export type ParsedMarkup = { value: number | null } | { error: string };
 
 const DECIMAL = /^(\d+)(?:\.(\d*))?$|^\.(\d+)$/;
+/** Grouping commas: Western "1,250,000" or Indian "12,50,000". */
+const THOUSANDS = /^(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3})(?:\.\d*)?$/;
 /** Percent markups are typed with up to this many decimals (basis points). */
 const PERCENT_DIGITS = 2;
 
@@ -19,8 +21,11 @@ function digitsFor(kind: MarkupKind, currency: string): number {
 
 /** Text typed into a markup field → its API value; blank is `null` (use the default). */
 export function parseMarkup(kind: MarkupKind, text: string, currency: string): ParsedMarkup {
-  const clean = text.trim().replace(/,/g, "");
-  if (clean === "") return { value: null };
+  const trimmed = text.trim();
+  if (trimmed === "") return { value: null };
+  // Commas only as digit grouping ("1,250", "1,25,000"); "8,5" is a decimal comma, not 85.
+  if (trimmed.includes(",") && !THOUSANDS.test(trimmed)) return { error: "Use a dot for decimals, like 8.5." };
+  const clean = trimmed.replace(/,/g, "");
   const match = DECIMAL.exec(clean);
   if (!match) return { error: kind === "percent" ? "Enter a number, like 8.5." : "Enter an amount, like 500." };
   const whole = match[1] ?? "0";

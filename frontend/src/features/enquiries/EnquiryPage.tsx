@@ -4,7 +4,7 @@ import { FilePlus2, FileText, Pencil, Plane, SearchX } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { asApiError } from "../../api/client";
 import { enquiryQueryOptions, type EnquiryOut } from "../../api/enquiries";
-import { quotesQueryOptions, useCreateQuote, type QuoteSummary } from "../../api/quotes";
+import { quotesQueryOptions, type QuoteSummary } from "../../api/quotes";
 import { isoDateFromNow } from "../../lib/dates";
 import { formatDate, formatNumber, formatRelativeTime } from "../../lib/format";
 import { useClock } from "../../shell/useClock";
@@ -17,7 +17,6 @@ import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { Skeleton } from "../../ui/Skeleton";
 import { StatusPill } from "../../ui/StatusPill";
-import { useToast } from "../../ui/toast/useToast";
 import { PanelError } from "../command/PanelError";
 import { validateFareSearch, type FareSearchParams } from "../fares/fareSearchParams";
 import {
@@ -32,6 +31,7 @@ import {
 } from "../pipeline/enquiryFacts";
 import { MoveMenu } from "../pipeline/MoveMenu";
 import { useEnquiryMove } from "../pipeline/useEnquiryMove";
+import { NewQuoteDialog } from "../quotes/NewQuoteDialog";
 import { EditEnquiryDrawer } from "./EditEnquiryDrawer";
 import { EnquiryTimeline } from "./EnquiryTimeline";
 
@@ -108,7 +108,7 @@ function TripPanel({ enquiry }: { enquiry: EnquiryOut }) {
   );
 }
 
-function QuotesPanel({ enquiry, onCreate, creating }: { enquiry: EnquiryOut; onCreate: () => void; creating: boolean }) {
+function QuotesPanel({ enquiry, onCreate }: { enquiry: EnquiryOut; onCreate: () => void }) {
   const navigate = useNavigate();
   const quotes = useQuery(quotesQueryOptions({ enquiry_id: enquiry.id, limit: 50 }));
   const rows = quotes.data?.items ?? [];
@@ -147,8 +147,8 @@ function QuotesPanel({ enquiry, onCreate, creating }: { enquiry: EnquiryOut; onC
       flush
       actions={
         rows.length > 0 && (
-          <Button variant="secondary" size="sm" onClick={onCreate} loading={creating}>
-            {!creating && <FilePlus2 size={14} aria-hidden="true" />}
+          <Button variant="secondary" size="sm" onClick={onCreate}>
+            <FilePlus2 size={14} aria-hidden="true" />
             New quote
           </Button>
         )
@@ -284,26 +284,13 @@ function LoadingEnquiry() {
 }
 
 function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
-  const navigate = useNavigate();
   const now = useClock(60_000);
-  const { toast } = useToast();
-  const createQuote = useCreateQuote();
   const { move, dialog } = useEnquiryMove();
   const [editing, setEditing] = useState(false);
+  const [quoting, setQuoting] = useState(false);
   const dates = tripDates(enquiry);
 
-  function startQuote() {
-    createQuote.mutate(
-      { enquiry_id: enquiry.id },
-      {
-        onSuccess: (quote) => {
-          toast({ tone: "ok", title: `Quote ${quote.number} created` });
-          void navigate({ to: "/app/quotes/$quoteId", params: { quoteId: quote.id } });
-        },
-        onError: (error) => toast({ tone: "danger", title: "Couldn't create the quote", description: asApiError(error).message }),
-      },
-    );
-  }
+  const startQuote = () => setQuoting(true);
 
   const summary = [routeLabel(enquiry), dates ?? "Dates not set", travellersLabel(enquiry), cabinLabel(enquiry.cabin)].join(" · ");
 
@@ -350,8 +337,8 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
               <Plane size={14} aria-hidden="true" />
               Scan fares
             </Link>
-            <Button size="sm" onClick={startQuote} loading={createQuote.isPending}>
-              {!createQuote.isPending && <FilePlus2 size={14} aria-hidden="true" />}
+            <Button size="sm" onClick={startQuote}>
+              <FilePlus2 size={14} aria-hidden="true" />
               Create quote
             </Button>
           </>
@@ -361,7 +348,7 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
           <TripPanel enquiry={enquiry} />
-          <QuotesPanel enquiry={enquiry} onCreate={startQuote} creating={createQuote.isPending} />
+          <QuotesPanel enquiry={enquiry} onCreate={startQuote} />
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           <DetailsPanel enquiry={enquiry} now={now} />
@@ -370,6 +357,7 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
       </div>
       {dialog}
       <EditEnquiryDrawer enquiry={enquiry} open={editing} onClose={() => setEditing(false)} />
+      {quoting && <NewQuoteDialog enquiry={enquiry} onClose={() => setQuoting(false)} />}
     </>
   );
 }

@@ -6,6 +6,7 @@ import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 import { FormError } from "../../ui/FormError";
 import { FIELD_CONTROL, FIELD_LABEL } from "../../ui/TextField";
+import { useToast } from "../../ui/toast/useToast";
 import { composeQuoteMessage, optionLine } from "./quoteText";
 
 const DAY_MS = 86_400_000;
@@ -44,6 +45,7 @@ export function SendQuoteDialog({
   const linkId = useId();
   const messageId = useId();
   const send = useSendQuote();
+  const { toast } = useToast();
   const [sent, setSent] = useState<QuoteSent | null>(null);
   const [copied, setCopied] = useState<Copied>(null);
   // The version being shared: the current one, captured when the dialog opened.
@@ -53,21 +55,33 @@ export function SendQuoteDialog({
   const message = sent && version
     ? composeQuoteMessage({ clientName: quote.client?.name ?? null, options: version.options, expiresAt: sent.expires_at, link, agencyName, timeZone })
     : "";
-  const validUntil = dateIn(timeZone, new Date(Date.now() + SHARE_TTL_DAYS * DAY_MS).toISOString());
+  // When a link sent now would stop working (for the confirmation; the server sets the real expiry).
+  const [validUntil] = useState(() => dateIn(timeZone, new Date(Date.now() + SHARE_TTL_DAYS * DAY_MS).toISOString()));
+  // The link is shown once: closing before copying it asks first.
+  const [everCopied, setEverCopied] = useState(false);
+  const [confirmingClose, setConfirmingClose] = useState(false);
+
+  function requestClose() {
+    if (sent && !everCopied && !confirmingClose) setConfirmingClose(true);
+    else onClose();
+  }
 
   async function copy(text: string, what: Exclude<Copied, null>) {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(what);
+      setEverCopied(true);
+      setConfirmingClose(false);
     } catch {
       setCopied(null);
+      toast({ tone: "danger", title: "Couldn't copy — select the link", description: "Select the link or message and copy it by hand." });
     }
   }
 
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={requestClose}
       title={`Send ${quote.number} to the client`}
       description={
         version
@@ -76,7 +90,18 @@ export function SendQuoteDialog({
       }
       footer={
         sent ? (
-          <Button onClick={onClose}>Done</Button>
+          confirmingClose ? (
+            <>
+              <Button variant="secondary" onClick={() => setConfirmingClose(false)}>
+                Go back
+              </Button>
+              <Button variant="danger" onClick={onClose}>
+                Close without copying
+              </Button>
+            </>
+          ) : (
+            <Button onClick={requestClose}>Done</Button>
+          )
         ) : (
           <>
             <Button variant="secondary" onClick={onClose}>
@@ -133,6 +158,15 @@ export function SendQuoteDialog({
               />
             </div>
           </div>
+          {confirmingClose && (
+            <div role="alert" className="flex gap-2.5 rounded-md border border-warn/40 bg-warn/5 px-3 py-2.5 text-[13px] leading-5 text-ink">
+              <TriangleAlert size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-warn" />
+              <p>
+                You haven't copied the link yet. It won't be shown again; to get a new one you would need to send the quote
+                again.
+              </p>
+            </div>
+          )}
           <p className="text-xs leading-4 text-dim">
             This link is shown once. Copy it now. Sending the quote again creates a new link, and this one stops working.
           </p>

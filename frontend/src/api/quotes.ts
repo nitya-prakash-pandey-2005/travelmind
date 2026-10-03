@@ -1,5 +1,5 @@
 import { mutationOptions, queryOptions, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { apiFetch } from "./client";
+import { apiFetch, asApiError } from "./client";
 import type { FlightOffer, Money } from "./offers";
 import { TIMELINE_STALE_MS, type Timeline } from "./timeline";
 import { queryString, RECORD_ROOTS, refreshWorkspace, segment } from "./workspaceCache";
@@ -170,6 +170,14 @@ function stored(client: QueryClient, quote: QuoteDetail): void {
   refreshWorkspace(client);
 }
 
+/**
+ * A 409 means the quote moved on elsewhere (sent, decided or expired by someone else, or its enquiry
+ * closed): refetch it so the screen shows where it stands now.
+ */
+function refreshOnConflict(client: QueryClient, id: string, error: unknown): void {
+  if (asApiError(error).status === 409) void client.invalidateQueries({ queryKey: quoteKeys.detail(id) });
+}
+
 export function createQuoteMutation(client: QueryClient) {
   return mutationOptions({
     mutationFn: (body: QuoteCreate) => quotesApi.create(body),
@@ -182,6 +190,7 @@ export function addQuoteVersionMutation(client: QueryClient) {
   return mutationOptions({
     mutationFn: ({ id, version }: { id: string; version: QuoteVersionCreate }) => quotesApi.addVersion(id, version),
     onSuccess: (quote) => stored(client, quote),
+    onError: (error, { id }) => refreshOnConflict(client, id, error),
   });
 }
 
@@ -190,6 +199,7 @@ export function sendQuoteMutation(client: QueryClient) {
   return mutationOptions({
     mutationFn: (id: string) => quotesApi.send(id),
     onSuccess: () => refreshWorkspace(client),
+    onError: (error, id) => refreshOnConflict(client, id, error),
   });
 }
 
@@ -197,6 +207,7 @@ export function decideQuoteMutation(client: QueryClient) {
   return mutationOptions({
     mutationFn: ({ id, status }: { id: string; status: QuoteDecisionStatus }) => quotesApi.decide(id, status),
     onSuccess: (quote) => stored(client, quote),
+    onError: (error, { id }) => refreshOnConflict(client, id, error),
   });
 }
 
