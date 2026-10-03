@@ -10,6 +10,20 @@ vi.mock("../features/globe/webgl", () => ({ hasWebGL: () => false }));
 
 beforeEach(() => routeStore.reset());
 
+const ALL_PAGES = [
+  "Command Center",
+  "Pipeline",
+  "Quotes",
+  "Clients",
+  "Fare search",
+  "Hotel search",
+  "Route intel",
+  "Team",
+  "Suppliers",
+  "Settings",
+  "Design system",
+];
+
 const SEARCH_RESULTS = {
   clients: [{ id: "c1", name: "Priya Sharma", email: "priya@example.com", company_name: "Sharma Exports" }],
   enquiries: [{ id: "e1", number: "E-0002", origin: "DEL", destination: "GOI", status: "quoting" }],
@@ -46,7 +60,7 @@ test("grouped navigation and collapse", async () => {
   mockApi(withSession(ME_OWNER, { ...commandCenterMocks() }));
   const { user } = renderApp("/app");
   const nav = await screen.findByRole("navigation", { name: "Primary" });
-  for (const name of ["Command Center", "Fare search", "Hotel search", "Team", "Suppliers", "Design system"]) {
+  for (const name of ALL_PAGES) {
     expect(within(nav).getByRole("link", { name })).toBeInTheDocument();
   }
   await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
@@ -62,8 +76,23 @@ test("navigation is grouped under Operate, Market and Admin, and the collapse is
     "Market",
     "Admin",
   ]);
+  const groups = within(nav).getAllByRole("list");
+  expect(groups.map((list) => within(list).getAllByRole("link").map((link) => link.textContent))).toEqual([
+    ["Command Center", "Pipeline", "Quotes", "Clients"],
+    ["Fare search", "Hotel search", "Route intel"],
+    ["Team", "Suppliers", "Settings", "Design system"],
+  ]);
   expect(within(nav).getByRole("link", { name: "Command Center" })).toHaveAttribute("aria-current", "page");
-  expect(within(nav).getByRole("link", { name: "Team" })).toHaveAttribute("href", "/app/team");
+  for (const [name, href] of [
+    ["Pipeline", "/app/pipeline"],
+    ["Quotes", "/app/quotes"],
+    ["Clients", "/app/clients"],
+    ["Route intel", "/app/routes"],
+    ["Team", "/app/team"],
+    ["Settings", "/app/settings"],
+  ]) {
+    expect(within(nav).getByRole("link", { name })).toHaveAttribute("href", href);
+  }
   expect(screen.getByRole("button", { name: "Collapse sidebar" })).toHaveAttribute("aria-expanded", "true");
   await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
   expect(window.localStorage.getItem("tm-sidebar")).toBe("collapsed");
@@ -243,22 +272,20 @@ test("a one-letter term doesn't search records", async () => {
 });
 
 test.each([
-  ["Clients", /Priya Sharma/, "Priya Sharma", ["priya@example.com", "Sharma Exports"]],
-  ["Enquiries", /E-0002/, "E-0002", ["DEL → GOI", "Quoting"]],
-  ["Quotes", /Q-0004/, "Q-0004", ["Viewed", "Priya Sharma"]],
-])("choosing a record from %s opens it in a drawer", async (group, option, title, facts) => {
+  ["Clients", /Priya Sharma/, "/app/clients/c1", "Client"],
+  ["Enquiries", /E-0002/, "/app/enquiries/e1", "Enquiry"],
+  ["Quotes", /Q-0004/, "/app/quotes/q1", "Quote"],
+])("choosing a record from %s opens its page", async (group, option, path, heading) => {
   mockApi(withSession(ME_OWNER, { ...commandCenterMocks(), "GET /api/v1/search": { status: 200, body: SEARCH_RESULTS } }));
-  const { user } = renderApp("/app");
+  const { user, router } = renderApp("/app");
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   await user.type(await screen.findByPlaceholderText(/command or an airport/i), "pri");
   const records = await screen.findByRole("group", { name: group });
   await user.click(within(records).getByRole("option", { name: option }));
-  const drawer = await screen.findByRole("dialog", { name: title });
-  for (const fact of facts) expect(drawer).toHaveTextContent(fact);
+  await waitFor(() => expect(router.state.location.pathname).toBe(path));
+  expect(await screen.findByRole("heading", { level: 1, name: heading })).toBeInTheDocument();
   expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
-  await user.click(within(drawer).getByRole("button", { name: "Close" }));
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: title })).not.toBeInTheDocument());
 });
 
 test("palette navigation covers every sidebar item", async () => {
@@ -267,7 +294,7 @@ test("palette navigation covers every sidebar item", async () => {
   await screen.findByRole("banner");
   await user.keyboard("{Control>}k{/Control}");
   const navigate = await screen.findByRole("group", { name: "Navigate" });
-  for (const name of ["Command Center", "Fare search", "Hotel search", "Team", "Suppliers", "Design system"]) {
+  for (const name of ALL_PAGES) {
     expect(within(navigate).getByRole("option", { name })).toBeInTheDocument();
   }
 });
@@ -290,14 +317,11 @@ test("the agency clock follows the agency's timezone", async () => {
   expect(within(footer).queryByText(/^IST /)).not.toBeInTheDocument();
 });
 
-test("Ctrl+K does nothing while a record drawer is open", async () => {
-  mockApi(withSession(ME_OWNER, { ...commandCenterMocks(), "GET /api/v1/search": { status: 200, body: SEARCH_RESULTS } }));
+test("Ctrl+K does nothing while a dialog is open", async () => {
+  mockApi(withSession(ME_OWNER, { ...commandCenterMocks() }));
   const { user } = renderApp("/app");
-  await screen.findByRole("banner");
-  await user.keyboard("{Control>}k{/Control}");
-  await user.type(await screen.findByPlaceholderText(/command or an airport/i), "pri");
-  await user.click(within(await screen.findByRole("group", { name: "Clients" })).getByRole("option", { name: /Priya/ }));
-  expect(await screen.findByRole("dialog", { name: "Priya Sharma" })).toBeInTheDocument();
+  await user.click(await screen.findByRole("button", { name: "New enquiry" }));
+  expect(await screen.findByRole("dialog", { name: "New enquiry" })).toBeInTheDocument();
   await user.keyboard("{Control>}k{/Control}");
   expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
 });

@@ -270,7 +270,7 @@ export function PipelineScreen() {
           <p className="text-xs font-semibold text-ink">
             Quote Q-0031 <span className="font-normal text-dim">for E-0142 · Mehta family</span>
           </p>
-          <Badge tone="info">Coming in the next release</Badge>
+          <StatusPill status="viewed" />
         </div>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           {[
@@ -285,9 +285,9 @@ export function PipelineScreen() {
               price: "₹2,18,400",
             },
             {
-              label: "Hotel",
-              detail: "7 nights · 2 rooms",
-              price: "₹1,12,000",
+              label: "Option C",
+              detail: "AI 161 · direct",
+              price: "₹2,62,500",
             },
           ].map((option) => (
             <span key={option.label} className="flex min-w-0 flex-col rounded-md border border-line bg-bg px-2.5 py-2">

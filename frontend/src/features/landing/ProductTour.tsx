@@ -1,6 +1,5 @@
 import { Check, LayoutDashboard, Plane, SquareKanban, Users, type LucideIcon } from "lucide-react";
 import { useRef, useState, type ComponentType, type KeyboardEvent } from "react";
-import { Badge } from "../../ui/Badge";
 import { cn } from "../../ui/cn";
 import { Illustration } from "./ConsolePreview";
 import { CtaLink } from "./CtaLink";
@@ -14,13 +13,11 @@ type Stop = {
   title: string;
   body: string;
   points: [string, string, string];
-  /** Shown when part of the stop hasn't shipped yet. */
-  upcoming?: string;
   screen: ComponentType;
   caption: string;
 };
 
-/** Each stop describes a screen that exists today (quotes excepted, and labelled so). */
+/** Each stop describes a screen that exists today. */
 const COMMAND_CENTER: Stop = {
   id: "command-center",
   label: "Command Center",
@@ -57,16 +54,14 @@ const STOPS: Stop[] = [
     label: "Pipeline and quotes",
     icon: SquareKanban,
     title: "Move every enquiry from new to won",
-    body: "Enquiries carry their client, route, dates and assignee, and move through new, quoting, quoted and won, with value at each stage.",
+    body: "Enquiries carry their client, route, dates and assignee, and move through new, quoting, quoted and won as their quotes are sent and accepted.",
     points: [
       "Stage counts, conversion and quoted value",
-      "Find any client or enquiry with Ctrl K",
-      "Quotes with options, markup and a client link, in the next release",
+      "Find any client, enquiry or quote with Ctrl K",
+      "Quotes with up to three options, your markup and a link the client can accept",
     ],
-    upcoming: "Quote building and client links.",
     screen: PipelineScreen,
-    caption:
-      "Illustration of the pipeline with sample data. Clients, routes and values are examples; the quote card shows the next release.",
+    caption: "Illustration of the pipeline and a quote with sample data. Clients, routes and values are examples.",
   },
   {
     id: "team",
@@ -211,12 +206,6 @@ export function ProductTour() {
                 </li>
               ))}
             </ul>
-            {stop.upcoming && (
-              <p className="-mt-1 mb-5 flex flex-wrap items-center gap-2 text-[13px] text-dim">
-                <Badge tone="info">Coming in the next release</Badge>
-                {stop.upcoming}
-              </p>
-            )}
             <Illustration caption={stop.caption}>
               <Screen />
             </Illustration>

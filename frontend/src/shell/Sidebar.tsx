@@ -1,12 +1,17 @@
 import { Link } from "@tanstack/react-router";
 import {
   BedDouble,
+  ChartLine,
+  FileText,
   LayoutDashboard,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
   Plane,
   PlugZap,
+  Settings,
+  SquareKanban,
+  UserRound,
   Users,
   X,
   type LucideIcon,
@@ -14,21 +19,38 @@ import {
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "../ui/cn";
 
-type NavItem = {
-  to: "/app" | "/app/fares" | "/app/hotels" | "/app/team" | "/app/suppliers" | "/app/design";
-  label: string;
-  icon: LucideIcon;
-};
+export type NavPath =
+  | "/app"
+  | "/app/pipeline"
+  | "/app/quotes"
+  | "/app/clients"
+  | "/app/fares"
+  | "/app/hotels"
+  | "/app/routes"
+  | "/app/team"
+  | "/app/suppliers"
+  | "/app/settings"
+  | "/app/design";
+type NavItem = { to: NavPath; label: string; icon: LucideIcon };
 type NavGroup = { label: string; items: NavItem[] };
 
 /** The sidebar's sections. The command palette offers the same destinations. */
 export const NAV_GROUPS: NavGroup[] = [
-  { label: "Operate", items: [{ to: "/app", label: "Command Center", icon: LayoutDashboard }] },
+  {
+    label: "Operate",
+    items: [
+      { to: "/app", label: "Command Center", icon: LayoutDashboard },
+      { to: "/app/pipeline", label: "Pipeline", icon: SquareKanban },
+      { to: "/app/quotes", label: "Quotes", icon: FileText },
+      { to: "/app/clients", label: "Clients", icon: UserRound },
+    ],
+  },
   {
     label: "Market",
     items: [
       { to: "/app/fares", label: "Fare search", icon: Plane },
       { to: "/app/hotels", label: "Hotel search", icon: BedDouble },
+      { to: "/app/routes", label: "Route intel", icon: ChartLine },
     ],
   },
   {
@@ -36,6 +58,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/app/team", label: "Team", icon: Users },
       { to: "/app/suppliers", label: "Suppliers", icon: PlugZap },
+      { to: "/app/settings", label: "Settings", icon: Settings },
       { to: "/app/design", label: "Design system", icon: Palette },
     ],
   },

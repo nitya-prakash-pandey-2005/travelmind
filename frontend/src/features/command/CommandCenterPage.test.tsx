@@ -314,6 +314,43 @@ test("the onboarding checklist tracks progress and can be dismissed per agency",
   expect(screen.queryByRole("region", { name: "Get set up" })).not.toBeInTheDocument();
 });
 
+test.each([
+  ["with the server's links", "/app/settings", "/app/quotes"],
+  ["without links", null, null],
+])(
+  "once agency details and quotes are available, their steps open Settings and Quotes (%s)",
+  async (_case, profileHref, quoteHref) => {
+    mockApi(
+      withSession(ME_OWNER, {
+        ...commandCenterMocks({ populated: true }),
+        "GET /api/v1/onboarding": {
+          status: 200,
+          body: {
+            items: [
+              { key: "profile", label: "Add your agency details", done: false, available: true, href: profileHref },
+              { key: "supplier", label: "Connect a live supplier", done: true, available: true, href: "/app/suppliers" },
+              { key: "team", label: "Invite a teammate", done: true, available: true, href: "/app/team" },
+              { key: "fare_scan", label: "Run your first fare scan", done: true, available: true, href: "/app/fares" },
+              { key: "client", label: "Add a client", done: false, available: true, href: "/app" },
+              { key: "quote", label: "Send your first quote", done: false, available: true, href: quoteHref },
+            ],
+            completed: 3,
+            total: 6,
+          },
+        },
+      }),
+    );
+    const { user, router } = renderApp("/app");
+    await screen.findByRole("region", { name: "Get set up" });
+    const checklist = await loaded("Get set up");
+    expect(within(checklist).getByRole("link", { name: /Add your agency details/ })).toHaveAttribute("href", "/app/settings");
+    expect(within(checklist).getByRole("link", { name: /Send your first quote/ })).toHaveAttribute("href", "/app/quotes");
+    expect(within(checklist).queryByText("Coming in the next release")).not.toBeInTheDocument();
+    await user.click(within(checklist).getByRole("link", { name: /Send your first quote/ }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/app/quotes"));
+  },
+);
+
 test("a finished checklist is hidden", async () => {
   const mocks = commandCenterMocks({ populated: true });
   mockApi(

@@ -59,10 +59,10 @@ function QuoteSketch() {
     <div className="flex flex-col gap-1.5 text-[11px]">
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-dim">Q-0031</span>
-        <Badge tone="info">Next release</Badge>
+        <StatusPill status="viewed" />
       </div>
       <div className="flex items-center justify-between rounded border border-line bg-surface-2 px-2 py-1">
-        <span className="text-ink">2 flight options + hotel</span>
+        <span className="text-ink">3 flight options</span>
         <span className="text-faint">markup 8%</span>
       </div>
       <div className="flex items-center justify-between rounded border border-dashed border-line-strong px-2 py-1">
@@ -73,7 +73,7 @@ function QuoteSketch() {
   );
 }
 
-type Step = { title: string; body: string; note?: string; sketch: ReactNode };
+type Step = { title: string; body: string; sketch: ReactNode };
 
 const STEPS: Step[] = [
   {
@@ -88,8 +88,7 @@ const STEPS: Step[] = [
   },
   {
     title: "Send the quote",
-    body: "Pick the best options, set your markup and send your client a link to the quote.",
-    note: "Quote sending arrives in the next release.",
+    body: "Pick up to three fares, set your markup and send your client a link. They open it on any device and accept the option they want.",
     sketch: <QuoteSketch />,
   },
 ];
@@ -121,7 +120,6 @@ export function HowItWorks() {
                 <div className="flex-1">
                   <h3 className="text-[15px] font-semibold text-ink">{step.title}</h3>
                   <p className="mt-1.5 text-[13px] leading-5 text-dim">{step.body}</p>
-                  {step.note && <p className="mt-2 text-[13px] text-info">{step.note}</p>}
                 </div>
                 <div aria-hidden="true" className="mt-5 select-none border-t border-line pt-4">
                   {step.sketch}

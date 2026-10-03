@@ -129,7 +129,7 @@ test("the integrations strip names the real data sources, as text", async () => 
   expect(strip.querySelector("img")).toBeNull();
 });
 
-test("the product tour switches screens by click and by arrow keys, and labels quotes as upcoming", async () => {
+test("the product tour switches screens by click and by arrow keys, and shows quotes as shipped", async () => {
   const user = userEvent.setup();
   mockApi(withSession(null, { "GET /api/v1/platform/facts": { status: 200, body: FACTS } }));
   renderApp("/");
@@ -145,8 +145,8 @@ test("the product tour switches screens by click and by arrow keys, and labels q
 
   await user.click(within(tour).getByRole("tab", { name: "Pipeline and quotes" }));
   const pipeline = within(tour).getByRole("tabpanel", { name: "Pipeline and quotes" });
-  expect(pipeline).toHaveTextContent("Coming in the next release");
-  expect(pipeline).toHaveTextContent("Quote building and client links.");
+  expect(pipeline).not.toHaveTextContent(/next release/i);
+  expect(pipeline).toHaveTextContent("Quotes with up to three options, your markup and a link the client can accept");
 
   await user.keyboard("{ArrowDown}");
   expect(within(tour).getByRole("tab", { name: "Team and roles" })).toHaveFocus();
@@ -166,10 +166,12 @@ test("the hero promises only what ships today", async () => {
   expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
   expect(
     screen.getByText(
-      "TravelMind searches your airline and hotel suppliers in one pass, shows whether each fare is good for its route, and keeps every enquiry in one pipeline. Every price says whether it is live, cached or sandbox.",
+      "TravelMind searches your airline and hotel suppliers in one pass, shows whether each fare is good for its route, and turns each enquiry into a quote your client can open and accept. Every price says whether it is live, cached or sandbox.",
     ),
   ).toBeInTheDocument();
   expect(document.body.textContent).not.toMatch(/send polished quotes/);
+  // Quotes have shipped: nothing on the page is still announced as upcoming.
+  expect(document.body.textContent).not.toMatch(/next release|coming soon/i);
   // No invented social proof anywhere on the page.
   expect(document.body.textContent).not.toMatch(/trusted by|testimonial|customers love|★/i);
 });
@@ -202,9 +204,8 @@ test("top navigation, features, steps, security, FAQ and footer", async () => {
     "Quotes clients can open anywhere",
   ]);
   const quotes = within(features).getByRole("heading", { name: "Quotes clients can open anywhere" }).closest("article");
-  expect(quotes).toHaveTextContent("Coming in the next release");
-  const search = within(features).getByRole("heading", { name: "Every supplier in one search" }).closest("article");
-  expect(search).not.toHaveTextContent("Coming in the next release");
+  expect(quotes).not.toHaveTextContent(/next release/i);
+  expect(quotes).toHaveTextContent("accept");
 
   const steps = screen.getByRole("region", { name: "How it works" });
   expect(
@@ -212,7 +213,7 @@ test("top navigation, features, steps, security, FAQ and footer", async () => {
       .getAllByRole("listitem")
       .map((li) => li.querySelector("h3")?.textContent),
   ).toEqual(["Log the enquiry", "Search every supplier", "Send the quote"]);
-  expect(within(steps).getAllByRole("listitem")[2]).toHaveTextContent("Quote sending arrives in the next release.");
+  expect(within(steps).getAllByRole("listitem")[2]).not.toHaveTextContent(/next release/i);
 
   const security = screen.getByRole("region", { name: "Security and data handling" });
   expect(

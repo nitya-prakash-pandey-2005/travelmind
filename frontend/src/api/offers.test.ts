@@ -12,6 +12,7 @@ import {
   suppliersQueryOptions,
 } from "./queries";
 import { createQueryClient } from "./queryClient";
+import { routeIntelKeys } from "./routeIntel";
 import { workspaceKeys } from "./workspace";
 
 const FLIGHTS: FlightSearchRequest = {
@@ -93,7 +94,7 @@ test("searches stay idle until there is a request", () => {
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-test("a completed search marks the Command Center figures and the setup checklist out of date", async () => {
+test("a completed search marks the Command Center figures, the setup checklist and route intel out of date", async () => {
   mockApi({
     "POST /api/v1/flights/search": { status: 200, body: searchResponse() },
     "POST /api/v1/hotels/search": { status: 200, body: NO_HOTELS },
@@ -103,12 +104,14 @@ test("a completed search marks the Command Center figures and the setup checklis
   const seed = () => {
     client.setQueryData(summary, { kpis: [] });
     client.setQueryData(workspaceKeys.onboarding, { items: [], completed: 0, total: 6 });
+    client.setQueryData(routeIntelKeys.intel("DEL", "BOM", "economy"), { daily: [] });
   };
 
   seed();
   await client.fetchQuery(flightSearchQueryOptions(FLIGHTS));
   expect(client.getQueryState(summary)?.isInvalidated).toBe(true);
   expect(client.getQueryState(workspaceKeys.onboarding)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(routeIntelKeys.intel("DEL", "BOM", "economy"))?.isInvalidated).toBe(true);
 
   seed();
   await client.fetchQuery(hotelSearchQueryOptions(HOTELS));

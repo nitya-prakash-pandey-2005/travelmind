@@ -63,6 +63,24 @@ test("the hotel and supplier commands navigate", async () => {
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/suppliers"));
 });
 
+test.each([
+  ["pipeline", "/app/pipeline"],
+  ["kanban", "/app/pipeline"],
+  ["quotes", "/app/quotes"],
+  ["proposals", "/app/quotes"],
+  ["travellers", "/app/clients"],
+  ["route intel", "/app/routes"],
+  ["fare history", "/app/routes"],
+  ["branding", "/app/settings"],
+])("the command for %s navigates to %s", async (term, path) => {
+  const { user, router } = renderApp("/app");
+  await screen.findByRole("banner");
+  await user.keyboard("{Control>}k{/Control}");
+  await user.type(await screen.findByPlaceholderText(/command or an airport/i), term);
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(router.state.location.pathname).toBe(path));
+});
+
 test("the mode command switches between dark and light", async () => {
   const { user } = renderApp("/app");
   await screen.findByRole("banner");
@@ -124,7 +142,21 @@ test("closing with Ctrl+K clears the search, so reopening starts fresh", async (
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   await user.keyboard("{Control>}k{/Control}");
   expect(await screen.findByPlaceholderText(/command or an airport/i)).toHaveValue("");
-  for (const name of ["Command Center", "Fare search", "Hotel search", "Suppliers", "Team", "Design system", "Switch to light mode", "Sign out"]) {
+  for (const name of [
+    "Command Center",
+    "Pipeline",
+    "Quotes",
+    "Clients",
+    "Fare search",
+    "Hotel search",
+    "Route intel",
+    "Suppliers",
+    "Team",
+    "Settings",
+    "Design system",
+    "Switch to light mode",
+    "Sign out",
+  ]) {
     expect(screen.getByRole("option", { name })).toBeInTheDocument();
   }
 });

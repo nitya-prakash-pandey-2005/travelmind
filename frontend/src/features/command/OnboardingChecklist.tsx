@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, type LinkProps } from "@tanstack/react-router";
 import { ArrowRight, Circle, CircleCheck, X } from "lucide-react";
 import { useState } from "react";
-import { onboardingQueryOptions, type OnboardingItem } from "../../api/workspace";
+import { onboardingQueryOptions, type OnboardingItem, type OnboardingKey } from "../../api/workspace";
 import { APP_HOME } from "../../app/paths";
 import { Button } from "../../ui/Button";
 import { Panel } from "../../ui/Panel";
@@ -30,11 +30,26 @@ function saveDismissed(agencyId: string): void {
   }
 }
 
+/**
+ * Steps whose screens live in the app: once the server reports one available it opens here, whatever
+ * link (if any) the server sends. Other steps follow the server's link.
+ */
+const STEP_PAGES: Partial<Record<OnboardingKey, LinkProps["to"]>> = {
+  profile: "/app/settings",
+  quote: "/app/quotes",
+};
+
+/** Where an available step leads, or null when it leads nowhere yet. */
+function stepDestination(item: OnboardingItem): string | null {
+  if (!item.available) return null;
+  return STEP_PAGES[item.key] ?? item.href;
+}
+
 const ITEM_BASE =
   "group inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-line px-2.5 text-left text-[13px] leading-none";
 const ITEM_CLASS = cn(ITEM_BASE, "transition-colors duration-150 ease-tm hover:border-line-strong hover:bg-hover");
 
-function ItemBody({ item }: { item: OnboardingItem }) {
+function ItemBody({ item, linked }: { item: OnboardingItem; linked: boolean }) {
   const Icon = item.done ? CircleCheck : Circle;
   return (
     <>
@@ -47,7 +62,7 @@ function ItemBody({ item }: { item: OnboardingItem }) {
           <span className="sr-only">Coming in the next release</span>
         </span>
       )}
-      {item.available && !item.done && (
+      {linked && !item.done && (
         <ArrowRight
           size={12}
           aria-hidden="true"
@@ -61,7 +76,8 @@ function ItemBody({ item }: { item: OnboardingItem }) {
 /**
  * First-week setup steps as one slim card, shown until all are done or the agency dismisses it (remembered
  * per agency on this device). Steps that happen on this page (adding a client) open the New enquiry dialog;
- * steps whose screens aren't built yet (`available: false`) are listed without a link.
+ * agency details and the first quote open Settings and Quotes once the server reports them available;
+ * steps whose screens aren't ready (`available: false`) are listed without a link.
  */
 export function OnboardingChecklist({ agencyId, onNewEnquiry }: { agencyId: string; onNewEnquiry: () => void }) {
   const [dismissed, setDismissed] = useState(() => readDismissed(agencyId));
@@ -127,23 +143,26 @@ export function OnboardingChecklist({ agencyId, onNewEnquiry }: { agencyId: stri
       }
     >
       <ul className="flex flex-wrap gap-1.5">
-        {items.map((item) => (
-          <li key={item.key} className="max-w-full">
-            {!item.available || item.href === null ? (
-              <div className={ITEM_BASE}>
-                <ItemBody item={item} />
-              </div>
-            ) : item.href === APP_HOME ? (
-              <button type="button" className={ITEM_CLASS} onClick={onNewEnquiry}>
-                <ItemBody item={item} />
-              </button>
-            ) : (
-              <Link to={item.href as LinkProps["to"]} className={ITEM_CLASS}>
-                <ItemBody item={item} />
-              </Link>
-            )}
-          </li>
-        ))}
+        {items.map((item) => {
+          const destination = stepDestination(item);
+          return (
+            <li key={item.key} className="max-w-full">
+              {destination === null ? (
+                <div className={ITEM_BASE}>
+                  <ItemBody item={item} linked={false} />
+                </div>
+              ) : destination === APP_HOME ? (
+                <button type="button" className={ITEM_CLASS} onClick={onNewEnquiry}>
+                  <ItemBody item={item} linked />
+                </button>
+              ) : (
+                <Link to={destination as LinkProps["to"]} className={ITEM_CLASS}>
+                  <ItemBody item={item} linked />
+                </Link>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </Panel>
   );

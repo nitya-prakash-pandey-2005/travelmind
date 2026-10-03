@@ -15,7 +15,19 @@ test("the shell shows the agency, the user and navigation", async () => {
   expect(within(banner).getByText("Asha Rao")).toBeInTheDocument();
   expect(within(banner).getByText("owner")).toBeInTheDocument();
   const nav = screen.getByRole("navigation", { name: "Primary" });
-  for (const name of ["Command Center", "Fare search", "Hotel search", "Suppliers", "Team", "Design system"]) {
+  for (const name of [
+    "Command Center",
+    "Pipeline",
+    "Quotes",
+    "Clients",
+    "Fare search",
+    "Hotel search",
+    "Route intel",
+    "Suppliers",
+    "Team",
+    "Settings",
+    "Design system",
+  ]) {
     expect(within(nav).getByRole("link", { name })).toBeInTheDocument();
   }
 });
@@ -67,6 +79,26 @@ test("the scanners and suppliers are reachable from the navigation", async () =>
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/fares"));
   await user.click(screen.getByRole("link", { name: "Suppliers" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/suppliers"));
+});
+
+test("the pipeline, quotes, clients, route intel and settings pages are reachable from the navigation", async () => {
+  mockApi(withSession(ME_OWNER));
+  const { user, router } = renderApp("/app");
+  for (const [link, path] of [
+    ["Pipeline", "/app/pipeline"],
+    ["Quotes", "/app/quotes"],
+    ["Clients", "/app/clients"],
+    ["Route intel", "/app/routes"],
+    ["Settings", "/app/settings"],
+  ] as const) {
+    await user.click(await screen.findByRole("link", { name: link }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(path));
+    expect(await screen.findByRole("heading", { level: 1, name: link })).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Primary" })).getByRole("link", { name: link })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  }
 });
 
 test("unknown pages show a way home", async () => {

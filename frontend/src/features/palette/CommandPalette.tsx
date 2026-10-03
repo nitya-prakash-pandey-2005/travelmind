@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Command } from "cmdk";
 import {
   BedDouble,
+  ChartLine,
   FileText,
   Inbox,
   LayoutDashboard,
@@ -11,6 +12,8 @@ import {
   Plane,
   PlugZap,
   Search,
+  Settings,
+  SquareKanban,
   Sun,
   UserRound,
   Users,
@@ -24,7 +27,7 @@ import { Kbd } from "../../ui/Kbd";
 import { useModeToggle } from "../../theme";
 import { useAirportSearch } from "../airports/useAirportSearch";
 import { routeStore } from "../route/routeStore";
-import { formatRoute, RecordDrawer, Status, type RecordSelection } from "./RecordDrawer";
+import { formatRoute, Status } from "./recordParts";
 import { useRecordSearch } from "./useRecordSearch";
 
 type PaletteCommand = {
@@ -50,12 +53,11 @@ const codeClass =
 
 /**
  * Global search and commands (Ctrl/⌘+K or the top bar's search field): navigation, actions, the
- * agency's clients, enquiries and quotes (opened in a drawer), and airports (placed on the route).
+ * agency's clients, enquiries and quotes (each opens its page), and airports (placed on the route).
  */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [record, setRecord] = useState<RecordSelection | null>(null);
   const navigate = useNavigate();
   const modeToggle = useModeToggle();
   const logout = useLogout();
@@ -66,7 +68,7 @@ export function CommandPalette() {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        // A modal (a record drawer, a form dialog) owns the screen; the palette would open behind it.
+        // A modal (a drawer, a form dialog) owns the screen; the palette would open behind it.
         if (document.querySelector("dialog[open]")) return;
         // Closing by shortcut resets the search exactly like close() does for Escape, overlay and select.
         if (open) {
@@ -89,14 +91,18 @@ export function CommandPalette() {
     close();
     action();
   };
-  const openRecord = (selection: RecordSelection) => runAndClose(() => setRecord(selection));
 
   const commands: PaletteCommand[] = [
     { id: "nav-command", group: "Navigate", label: "Command Center", icon: LayoutDashboard, keywords: "home dashboard mission control metrics globe route", run: () => void navigate({ to: "/app" }) },
+    { id: "nav-pipeline", group: "Navigate", label: "Pipeline", icon: SquareKanban, keywords: "enquiries board kanban stages leads won lost", run: () => void navigate({ to: "/app/pipeline" }) },
+    { id: "nav-quotes", group: "Navigate", label: "Quotes", icon: FileText, keywords: "proposals offers markup send share link accepted", run: () => void navigate({ to: "/app/quotes" }) },
+    { id: "nav-clients", group: "Navigate", label: "Clients", icon: UserRound, keywords: "customers travellers companies contacts", run: () => void navigate({ to: "/app/clients" }) },
     { id: "nav-fares", group: "Navigate", label: "Fare search", icon: Plane, keywords: "flights fares prices offers scan", run: () => void navigate({ to: "/app/fares" }) },
     { id: "nav-hotels", group: "Navigate", label: "Hotel search", icon: BedDouble, keywords: "hotels rooms stay accommodation scan", run: () => void navigate({ to: "/app/hotels" }) },
+    { id: "nav-routes", group: "Navigate", label: "Route intel", icon: ChartLine, keywords: "route intelligence fare history trends median carriers", run: () => void navigate({ to: "/app/routes" }) },
     { id: "nav-team", group: "Navigate", label: "Team", icon: Users, keywords: "team members invite crew roster", run: () => void navigate({ to: "/app/team" }) },
     { id: "nav-suppliers", group: "Navigate", label: "Suppliers", icon: PlugZap, keywords: "suppliers connections keys duffel liteapi data", run: () => void navigate({ to: "/app/suppliers" }) },
+    { id: "nav-settings", group: "Navigate", label: "Settings", icon: Settings, keywords: "agency profile branding brand colour color timezone", run: () => void navigate({ to: "/app/settings" }) },
     { id: "nav-design", group: "Navigate", label: "Design system", icon: Palette, keywords: "styles components tokens", run: () => void navigate({ to: "/app/design" }) },
     ...(modeToggle.available
       ? [
@@ -180,7 +186,7 @@ export function CommandPalette() {
                 <Command.Item
                   key={client.id}
                   value={`client-${client.id}`}
-                  onSelect={() => openRecord({ type: "client", record: client })}
+                  onSelect={() => runAndClose(() => void navigate({ to: "/app/clients/$clientId", params: { clientId: client.id } }))}
                   className={itemClass}
                 >
                   <UserRound size={15} aria-hidden="true" className={iconClass} />
@@ -198,7 +204,9 @@ export function CommandPalette() {
                 <Command.Item
                   key={enquiry.id}
                   value={`enquiry-${enquiry.id}`}
-                  onSelect={() => openRecord({ type: "enquiry", record: enquiry })}
+                  onSelect={() =>
+                    runAndClose(() => void navigate({ to: "/app/enquiries/$enquiryId", params: { enquiryId: enquiry.id } }))
+                  }
                   className={itemClass}
                 >
                   <Inbox size={15} aria-hidden="true" className={iconClass} />
@@ -217,7 +225,7 @@ export function CommandPalette() {
                 <Command.Item
                   key={quote.id}
                   value={`quote-${quote.id}`}
-                  onSelect={() => openRecord({ type: "quote", record: quote })}
+                  onSelect={() => runAndClose(() => void navigate({ to: "/app/quotes/$quoteId", params: { quoteId: quote.id } }))}
                   className={itemClass}
                 >
                   <FileText size={15} aria-hidden="true" className={iconClass} />
@@ -297,7 +305,6 @@ export function CommandPalette() {
           <span className="ml-auto">Airports fill From, then To</span>
         </div>
       </Command.Dialog>
-      <RecordDrawer selection={record} onClose={() => setRecord(null)} />
     </>
   );
 }

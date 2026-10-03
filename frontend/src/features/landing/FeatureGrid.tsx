@@ -1,5 +1,4 @@
 import { BedDouble, Command, Gauge, Leaf, Radar, ReceiptText, SquareKanban, Tags, type LucideIcon } from "lucide-react";
-import { Badge } from "../../ui/Badge";
 import { cn } from "../../ui/cn";
 import { ANCHOR, CONTAINER, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
 
@@ -7,7 +6,6 @@ type Feature = {
   icon: LucideIcon;
   title: string;
   body: string;
-  comingSoon?: boolean;
 };
 
 const FEATURES: Feature[] = [
@@ -49,8 +47,7 @@ const FEATURES: Feature[] = [
   {
     icon: ReceiptText,
     title: "Quotes clients can open anywhere",
-    body: "Bundle options, apply your markup and share a quote link your client can open on any device.",
-    comingSoon: true,
+    body: "Offer up to three fares, apply your markup and send a link your client can open on any device to accept or decline.",
   },
 ];
 
@@ -63,23 +60,20 @@ export function FeatureGrid() {
             Features
           </h2>
           <p className={cn(SECTION_LEAD, "lg:mt-0")}>
-            Search, pricing context and the enquiry pipeline in one workspace, so agents stop switching between supplier tabs and
-            spreadsheets.
+            Search, pricing context, the enquiry pipeline and client quotes in one workspace, so agents stop switching between
+            supplier tabs and spreadsheets.
           </p>
         </div>
         <ul className="mt-10 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
-          {FEATURES.map(({ icon: Icon, title, body, comingSoon }) => (
+          {FEATURES.map(({ icon: Icon, title, body }) => (
             <li key={title} className="flex bg-bg">
               <article className="flex w-full flex-col p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span
-                    aria-hidden="true"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line-strong bg-surface text-primary"
-                  >
-                    <Icon size={16} strokeWidth={1.75} />
-                  </span>
-                  {comingSoon && <Badge tone="info">Coming in the next release</Badge>}
-                </div>
+                <span
+                  aria-hidden="true"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line-strong bg-surface text-primary"
+                >
+                  <Icon size={16} strokeWidth={1.75} />
+                </span>
                 <h3 className="mt-4 text-[15px] font-semibold text-ink">{title}</h3>
                 <p className="mt-1.5 text-[13px] leading-5 text-dim">{body}</p>
               </article>

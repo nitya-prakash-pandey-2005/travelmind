@@ -20,7 +20,7 @@ const enter = (index: number) => ({ "--tm-enter-index": index }) as CSSPropertie
 
 const HERO_TITLE = "Answer travel enquiries with fares you can explain";
 const HERO_LEAD =
-  "TravelMind searches your airline and hotel suppliers in one pass, shows whether each fare is good for its route, and keeps every enquiry in one pipeline. Every price says whether it is live, cached or sandbox.";
+  "TravelMind searches your airline and hotel suppliers in one pass, shows whether each fare is good for its route, and turns each enquiry into a quote your client can open and accept. Every price says whether it is live, cached or sandbox.";
 
 const PROOF = ["Source label on every price", "Fare insight per traveller", "Each agency's data kept apart"];
 

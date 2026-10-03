@@ -23,6 +23,17 @@ import { DemoLaunchPage } from "./features/demo/DemoLaunchPage";
 import { FareScanPage } from "./features/fares/FareScanPage";
 import { HotelScanPage } from "./features/hotels/HotelScanPage";
 import { LandingPage } from "./features/landing/LandingPage";
+import {
+  ClientPlaceholder,
+  ClientsPlaceholder,
+  EnquiryPlaceholder,
+  PipelinePlaceholder,
+  PublicQuotePlaceholder,
+  QuotePlaceholder,
+  QuotesPlaceholder,
+  RouteIntelPlaceholder,
+  SettingsPlaceholder,
+} from "./features/planned/pages";
 import { SuppliersPage } from "./features/suppliers/SuppliersPage";
 import { TeamPage } from "./features/team/TeamPage";
 import { AppShell } from "./shell/AppShell";
@@ -120,6 +131,13 @@ const inviteRoute = createRoute({
   component: AcceptInvitePage,
 });
 
+/** The client's quote page: public, outside the app shell, never checks or needs a session. */
+const publicQuoteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/q/$token",
+  component: PublicQuotePlaceholder,
+});
+
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/app",
@@ -144,6 +162,18 @@ const designRoute = createRoute({ getParentRoute: () => appRoute, path: "/design
 const faresRoute = createRoute({ getParentRoute: () => appRoute, path: "/fares", component: FareScanPage });
 const hotelsRoute = createRoute({ getParentRoute: () => appRoute, path: "/hotels", component: HotelScanPage });
 const suppliersRoute = createRoute({ getParentRoute: () => appRoute, path: "/suppliers", component: SuppliersPage });
+const pipelineRoute = createRoute({ getParentRoute: () => appRoute, path: "/pipeline", component: PipelinePlaceholder });
+const enquiryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/enquiries/$enquiryId",
+  component: EnquiryPlaceholder,
+});
+const quotesRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes", component: QuotesPlaceholder });
+const quoteRoute = createRoute({ getParentRoute: () => appRoute, path: "/quotes/$quoteId", component: QuotePlaceholder });
+const clientsRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients", component: ClientsPlaceholder });
+const clientRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients/$clientId", component: ClientPlaceholder });
+const routeIntelRoute = createRoute({ getParentRoute: () => appRoute, path: "/routes", component: RouteIntelPlaceholder });
+const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: "/settings", component: SettingsPlaceholder });
 
 /** Pre-/app addresses (bookmarks, old links) move to their new home with their query and hash intact. */
 function legacyRedirect(path: "/fares" | "/hotels" | "/suppliers" | "/team" | "/design") {
@@ -163,7 +193,23 @@ export const routeTree = rootRoute.addChildren([
   loginRoute,
   signupRoute,
   inviteRoute,
-  appRoute.addChildren([commandRoute, faresRoute, hotelsRoute, suppliersRoute, teamRoute, designRoute]),
+  publicQuoteRoute,
+  appRoute.addChildren([
+    commandRoute,
+    pipelineRoute,
+    enquiryRoute,
+    quotesRoute,
+    quoteRoute,
+    clientsRoute,
+    clientRoute,
+    faresRoute,
+    hotelsRoute,
+    routeIntelRoute,
+    suppliersRoute,
+    teamRoute,
+    settingsRoute,
+    designRoute,
+  ]),
   legacyRedirect("/fares"),
   legacyRedirect("/hotels"),
   legacyRedirect("/suppliers"),
@@ -173,7 +219,7 @@ export const routeTree = rootRoute.addChildren([
 
 /** Public pages: an expired session there needs no trip to the login page. */
 const PUBLIC_PATHS = ["/", "/demo"];
-const PUBLIC_PREFIXES = ["/login", "/signup", "/invite/"];
+const PUBLIC_PREFIXES = ["/login", "/signup", "/invite/", "/q/"];
 
 export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {
   const router = createRouter({
