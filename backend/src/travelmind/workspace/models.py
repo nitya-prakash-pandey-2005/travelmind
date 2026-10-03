@@ -153,6 +153,8 @@ class Quote(Base):
     sent_at: Mapped[datetime | None] = mapped_column(_TS)
     first_viewed_at: Mapped[datetime | None] = mapped_column(_TS)
     decided_at: Mapped[datetime | None] = mapped_column(_TS)
+    # The option the client accepted on the public page (index into the sent version's options).
+    accepted_option: Mapped[int | None] = mapped_column(SmallInteger)
     created_by: Mapped[UUID | None] = _user_fk()
     created_at: Mapped[datetime] = _timestamp()
     updated_at: Mapped[datetime] = _timestamp()

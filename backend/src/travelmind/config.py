@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     search_timeout_seconds: float = 25.0
     search_max_per_minute: int = 30
     reprice_max_per_minute: int = 60  # price checks call the supplier too; a separate budget
+    public_quote_max_per_minute: int = 60  # client quote page: per network and per link
     log_level: str = "INFO"
 
     @property

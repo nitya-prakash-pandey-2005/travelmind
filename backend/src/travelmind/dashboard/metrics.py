@@ -61,6 +61,7 @@ from travelmind.identity.service import AgencySettings
 from travelmind.offers.registry import supplier_statuses
 from travelmind.workspace._common import escape_like
 from travelmind.workspace.counters import format_number
+from travelmind.workspace.quotes import expire_overdue_quotes
 
 __all__ = [
     "ACTIVITY_MAX",
@@ -362,6 +363,7 @@ def _kpi(
 async def summary(
     db: AsyncSession, agency: AgencySettings, range_: Range, *, now: datetime
 ) -> SummaryOut:
+    await expire_overdue_quotes(db, agency.id, now=now)  # the caller commits
     params = _range_params(agency, window(now, agency.timezone, RANGE_DAYS[range_]))
 
     async def one(query: TextClause) -> Any:
@@ -439,7 +441,10 @@ _PIPELINE_STAGES = text(
 )
 
 
-async def pipeline(db: AsyncSession, agency: AgencySettings) -> PipelineOut:
+async def pipeline(
+    db: AsyncSession, agency: AgencySettings, *, now: datetime | None = None
+) -> PipelineOut:
+    await expire_overdue_quotes(db, agency.id, now=now)  # the caller commits
     rows = await db.execute(_PIPELINE_STAGES, {"agency": agency.id, "currency": agency.currency})
     found = {row.status: (row.count, int(row.value)) for row in rows}
     return PipelineOut(

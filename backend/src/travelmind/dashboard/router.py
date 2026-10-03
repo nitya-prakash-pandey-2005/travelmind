@@ -54,13 +54,17 @@ async def summary_route(
     current: AuthedUser, db: DbSession, range_: RangeQuery = "30d"
 ) -> SummaryOut:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    return await metrics.summary(db, agency, range_, now=utcnow())
+    out = await metrics.summary(db, agency, range_, now=utcnow())
+    await db.commit()  # keep any lazy quote expiry
+    return out
 
 
 @dashboard_router.get("/pipeline")
 async def pipeline_route(current: AuthedUser, db: DbSession) -> PipelineOut:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    return await metrics.pipeline(db, agency)
+    out = await metrics.pipeline(db, agency, now=utcnow())
+    await db.commit()  # keep any lazy quote expiry
+    return out
 
 
 @dashboard_router.get("/activity")

@@ -7,13 +7,16 @@ client. Share tokens are returned once, on send, and stored only as their sha256
 
 Lifecycle: draft → sent (→ viewed, by the public page) → accepted | declined | expired.
 Sending shares the current version (`sent_version`); versions added later wait until the agent
-re-sends (from sent, viewed or expired), which also rotates the share token. The enquiry follows
+re-sends (from sent, viewed or expired), which also rotates the share token. A sent or viewed
+quote whose link is past `share_expires_at` becomes expired the next time anything reads the
+agency's quotes (`expire_overdue_quotes`: lists, details, the Command Center, the public page).
+The enquiry follows
 along where its pipeline allows: new → quoting on the first quote, → quoted on send, → won on
 accept, → lost on decline (unless another of its quotes is still open). A won or lost enquiry
 takes no new quotes, versions or sends until it is reopened.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Any, Literal
@@ -22,7 +25,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, status
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
 from redis.asyncio import Redis
-from sqlalchemy import ColumnElement, Select, exists, func, select
+from sqlalchemy import ColumnElement, Select, exists, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.cache import RedisClient
@@ -35,7 +38,7 @@ from travelmind.offers.money import CurrencyCode
 from travelmind.offers.schemas import OfferView
 from travelmind.offers.service import offer_view
 from travelmind.workspace._common import NO_NUL, WorkspaceError, http_error
-from travelmind.workspace.activity import ActivityKind, record_activity
+from travelmind.workspace.activity import ActivityKind, ActivityValue, record_activity
 from travelmind.workspace.counters import format_number, next_number
 from travelmind.workspace.enquiries import (
     ALLOWED,
@@ -62,6 +65,7 @@ __all__ = [
     "apply_markup",
     "create_quote",
     "decide_quote",
+    "expire_overdue_quotes",
     "get_quote",
     "list_quotes",
     "load_quote",
@@ -201,6 +205,8 @@ class QuoteDetail(QuoteSummary):
     share_expires_at: datetime | None
     first_viewed_at: datetime | None
     decided_at: datetime | None
+    # The option the client accepted on the public page (index into the sent version's options).
+    accepted_option: int | None
     versions: list[QuoteVersionOut]
 
 
@@ -245,7 +251,7 @@ async def _log(
     summary: str,
     actor_user_id: UUID | None,
     at: datetime,
-    data: dict[str, str | int] | None = None,
+    data: Mapping[str, ActivityValue] | None = None,
 ) -> None:
     await record_activity(
         db,
@@ -458,8 +464,9 @@ async def add_version(
 async def send_quote(
     db: AsyncSession, quote: Quote, actor_user_id: UUID | None, *, now: datetime | None = None
 ) -> str:
-    """Send the current version: issue a fresh share token (replacing any earlier one) valid for
-    SHARE_TTL, record it as `sent_version` and mark the quote sent; the enquiry moves to
+    """Send the current version: issue a fresh share token (replacing any earlier one, which
+    stops working) valid for SHARE_TTL, record it as `sent_version` and mark the quote sent (a
+    re-send after expiry clears `decided_at`); the enquiry moves to
     `quoted`. Returns the token: it is never stored or shown again. Lock the quote first; the
     caller commits."""
     _check_revisable(quote)
@@ -473,8 +480,11 @@ async def send_quote(
     quote.status = "sent"
     quote.sent_version = quote.current_version
     quote.sent_at = quote.sent_at or at
+    quote.decided_at = None  # a re-send after expiry reopens the decision
     quote.updated_at = at
     await db.flush()
+    # The public page finds the agency through this lookup; the previous token stops resolving.
+    await db.execute(_SET_SHARE_TOKEN, {"quote_id": quote.id, "token_hash": quote.share_token_hash})
     await _log(
         db,
         quote,
@@ -488,6 +498,43 @@ async def send_quote(
         db, enquiry, frozenset({"new", "quoting"}), "quoted", actor_user_id, at
     )
     return token
+
+
+_SET_SHARE_TOKEN = text("SELECT set_quote_share_token(:quote_id, :token_hash)")
+
+
+async def expire_overdue_quotes(
+    db: AsyncSession, agency_id: UUID, *, now: datetime | None = None
+) -> int:
+    """Mark the agency's sent and viewed quotes whose share link is past its expiry as expired,
+    logging `quote.expired` for each; returns how many. The session must be bound to the agency;
+    the caller commits."""
+    at = now or utcnow()
+    rows = (
+        await db.execute(
+            update(Quote)
+            .where(
+                Quote.agency_id == agency_id,
+                Quote.status.in_(_DECIDABLE),
+                Quote.share_expires_at < at,
+            )
+            .values(status="expired", updated_at=at)
+            .returning(Quote.id, Quote.number)
+        )
+    ).all()
+    for quote_id, number in rows:
+        await record_activity(
+            db,
+            agency_id=agency_id,
+            kind="quote.expired",
+            summary=f"{format_number('quote', number)} expired",
+            entity_type="quote",
+            entity_id=quote_id,
+            occurred_at=at,
+        )
+    if rows:
+        await db.flush()
+    return len(rows)
 
 
 _DECISION_KIND: dict[str, ActivityKind] = {
@@ -518,11 +565,15 @@ async def decide_quote(
     actor_user_id: UUID | None,
     *,
     now: datetime | None = None,
+    accepted_option: int | None = None,
+    data: Mapping[str, ActivityValue] | None = None,
 ) -> None:
     """Record the client's decision on a sent quote (accepted, declined or expired).
 
     Accepting wins the enquiry; declining loses it ("Quote declined") unless another of its
-    quotes is still open. Lock the quote first; the caller commits.
+    quotes is still open. `accepted_option` (the option the client chose, when known) is kept on
+    an accepted quote; `data` goes on the activity event. Lock the quote first; the caller
+    commits.
     """
     if to_status not in _DECISION_KIND:
         raise InvalidQuote(f"A quote can't be marked {to_status}.")
@@ -535,10 +586,17 @@ async def decide_quote(
     at = now or utcnow()
     quote.status = to_status
     quote.decided_at = at
+    quote.accepted_option = accepted_option if to_status == "accepted" else None
     quote.updated_at = at
     await db.flush()
     await _log(
-        db, quote, _DECISION_KIND[to_status], f"{_label(quote)} {to_status}", actor_user_id, at
+        db,
+        quote,
+        _DECISION_KIND[to_status],
+        f"{_label(quote)} {to_status}",
+        actor_user_id,
+        at,
+        data,
     )
     if to_status == "accepted":
         await _move_enquiry_if_allowed(db, enquiry, frozenset({"quoted"}), "won", actor_user_id, at)
@@ -616,13 +674,17 @@ def _filters(
 async def list_quotes(
     db: AsyncSession,
     *,
+    agency_id: UUID,
+    now: datetime | None = None,
     status_: str | None = None,
     client_id: UUID | None = None,
     enquiry_id: UUID | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> QuoteList:
-    """Newest first; `min_sell_minor` is the cheapest option of the current version."""
+    """Newest first; `min_sell_minor` is the cheapest option of the current version. Overdue
+    quotes are expired first, so the caller commits."""
+    await expire_overdue_quotes(db, agency_id, now=now)
     conditions = _filters(status_, client_id, enquiry_id)
     total = await db.scalar(select(func.count()).select_from(Quote).where(*conditions))
     rows = (
@@ -639,8 +701,12 @@ async def list_quotes(
     )
 
 
-async def get_quote(db: AsyncSession, quote_id: UUID) -> QuoteDetail:
-    """The quote with all its versions, newest first. Never includes the share token hash."""
+async def get_quote(
+    db: AsyncSession, quote_id: UUID, *, agency_id: UUID, now: datetime | None = None
+) -> QuoteDetail:
+    """The quote with all its versions, newest first. Never includes the share token hash.
+    Overdue quotes are expired first, so the caller commits."""
+    await expire_overdue_quotes(db, agency_id, now=now)
     row = (await db.execute(_with_details().where(Quote.id == quote_id))).one_or_none()
     if row is None:
         raise QuoteNotFound
@@ -659,6 +725,7 @@ async def get_quote(db: AsyncSession, quote_id: UUID) -> QuoteDetail:
         share_expires_at=quote.share_expires_at,
         first_viewed_at=quote.first_viewed_at,
         decided_at=quote.decided_at,
+        accepted_option=quote.accepted_option,
         versions=[
             QuoteVersionOut(
                 version=v.version,
@@ -688,14 +755,23 @@ async def list_quotes_route(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> QuoteList:
-    return await list_quotes(
+    listed = await list_quotes(
         db,
+        agency_id=current.agency_id,
         status_=status_,
         client_id=client_id,
         enquiry_id=enquiry_id,
         limit=limit,
         offset=offset,
     )
+    await db.commit()  # keep any lazy expiry
+    return listed
+
+
+async def _detail(db: AsyncSession, quote_id: UUID, agency_id: UUID) -> QuoteDetail:
+    detail = await get_quote(db, quote_id, agency_id=agency_id)
+    await db.commit()  # keep any lazy expiry
+    return detail
 
 
 @quotes_router.post("", status_code=status.HTTP_201_CREATED)
@@ -705,13 +781,13 @@ async def create_quote_route(body: QuoteCreate, current: AuthedUser, db: DbSessi
     except WorkspaceError as exc:
         raise http_error(exc) from None
     await db.commit()
-    return await get_quote(db, quote.id)
+    return await _detail(db, quote.id, current.agency_id)
 
 
 @quotes_router.get("/{quote_id}")
 async def get_quote_route(quote_id: UUID, current: AuthedUser, db: DbSession) -> QuoteDetail:
     try:
-        return await get_quote(db, quote_id)
+        return await _detail(db, quote_id, current.agency_id)
     except WorkspaceError as exc:
         raise http_error(exc) from None
 
@@ -730,7 +806,7 @@ async def add_version_route(
     except WorkspaceError as exc:
         raise http_error(exc) from None
     await db.commit()
-    return await get_quote(db, quote_id)
+    return await _detail(db, quote_id, current.agency_id)
 
 
 @quotes_router.post("/{quote_id}/send")
@@ -750,10 +826,13 @@ async def send_quote_route(quote_id: UUID, current: AuthedUser, db: DbSession) -
 async def decide_quote_route(
     quote_id: UUID, body: QuoteDecision, current: AuthedUser, db: DbSession
 ) -> QuoteDetail:
+    # An overdue quote is expired before anyone can mark it accepted or declined.
+    await expire_overdue_quotes(db, current.agency_id)
+    await db.commit()
     try:
         quote = await load_quote(db, quote_id, for_update=True)
         await decide_quote(db, quote, body.status, current.id)
     except WorkspaceError as exc:
         raise http_error(exc) from None
     await db.commit()
-    return await get_quote(db, quote_id)
+    return await _detail(db, quote_id, current.agency_id)
