@@ -25,7 +25,7 @@ export type EnquiryOut = {
   id: string;
   number: string;
   client: { id: string; name: string } | null;
-  source: EnquirySource | (string & {});
+  source: EnquirySource;
   raw_text: string | null;
   origin: string | null;
   destination: string | null;
@@ -34,7 +34,7 @@ export type EnquiryOut = {
   return_date: string | null;
   adults: number;
   children_ages: number[];
-  cabin: Cabin | (string & {});
+  cabin: Cabin;
   budget: Money | null;
   notes: string | null;
   status: EnquiryStatus;

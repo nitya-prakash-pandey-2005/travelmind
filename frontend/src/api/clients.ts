@@ -12,7 +12,7 @@ export type TripRef = { origin: string; destination: string; /** YYYY-MM-DD */ d
 
 export type ClientOut = {
   id: string;
-  kind: ClientKind | (string & {});
+  kind: ClientKind;
   name: string;
   email: string | null;
   phone: string | null;
