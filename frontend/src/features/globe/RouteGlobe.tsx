@@ -8,6 +8,7 @@ import { useReducedMotion } from "../../ui/useReducedMotion";
 import { COUNTRIES, type Country } from "./countries";
 import { useElementSize } from "../../lib/useElementSize";
 import { planeArcs, useFlyingPlanes } from "./flyingPlanes";
+import { useOnScreen } from "./useOnScreen";
 import { routeAltitude, useFlyToActiveRoute } from "./useFlyToActiveRoute";
 
 /** `weight` (default 1) thickens a route with more enquiries on it. */
@@ -99,7 +100,18 @@ const TOOL =
  */
 export default function RouteGlobe({ arcs, showcase = false, compact = false }: RouteGlobeProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
-  const [containerRef, size] = useElementSize<HTMLDivElement>();
+  const [measureRef, size] = useElementSize<HTMLDivElement>();
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const containerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      measureRef(node);
+      setContainer(node);
+    },
+    [measureRef],
+  );
+  // Off screen or in a background tab, the WebGL loop and the planes stop (software rendering in CI and on
+  // GPU-less machines makes every frame expensive).
+  const onScreen = useOnScreen(container);
   // WebGL can't read CSS variables: colours come from the live palette and follow theme switches.
   const palette = useThemePalette();
   const reducedMotion = useReducedMotion();
@@ -140,7 +152,14 @@ export default function RouteGlobe({ arcs, showcase = false, compact = false }: 
     active && (single || compact) ? routeAltitude(active.from, active.to, compact) : undefined,
   );
   const flying = useMemo(() => planeArcs(arcs), [arcs]);
-  useFlyingPlanes(globeRef, flying, palette.ink, ready, reducedMotion, ARC_AUTO_SCALE);
+  useFlyingPlanes(globeRef, flying, palette.ink, ready, reducedMotion, ARC_AUTO_SCALE, !onScreen);
+
+  useEffect(() => {
+    const globe = globeRef.current;
+    if (!ready || !globe) return;
+    if (onScreen) globe.resumeAnimation();
+    else globe.pauseAnimation();
+  }, [onScreen, ready]);
 
   const zoomBy = useCallback(
     (factor: number) => {

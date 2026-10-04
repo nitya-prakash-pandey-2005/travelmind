@@ -126,7 +126,8 @@ export function planeArcs(arcs: GlobeArc[]): GlobeArc[] {
 /**
  * Flies a small plane along each chosen arc, nose along the route. Sprites live in the globe's own scene and
  * are moved in an animation frame loop (no React re-render per frame). With reduced motion the plane rests
- * at the middle of its route.
+ * at the middle of its route. While `paused` (the map is off screen or the tab hidden) there is no loop at all:
+ * the planes are taken out of the scene and come back when the map does.
  */
 export function useFlyingPlanes(
   globeRef: RefObject<GlobeMethods | undefined>,
@@ -135,10 +136,11 @@ export function useFlyingPlanes(
   ready: boolean,
   reducedMotion: boolean,
   altitudeAutoScale: number,
+  paused = false,
 ) {
   useEffect(() => {
     const globe = globeRef.current;
-    if (!ready || !globe || arcs.length === 0) return;
+    if (!ready || paused || !globe || arcs.length === 0) return;
     const scene = globe.scene();
     const camera = globe.camera();
     const texture = planeTexture(color);
@@ -193,5 +195,5 @@ export function useFlyingPlanes(
       }
       texture.dispose();
     };
-  }, [globeRef, arcs, color, ready, reducedMotion, altitudeAutoScale]);
+  }, [globeRef, arcs, color, ready, reducedMotion, altitudeAutoScale, paused]);
 }
