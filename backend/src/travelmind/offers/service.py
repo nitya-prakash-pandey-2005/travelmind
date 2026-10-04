@@ -287,7 +287,8 @@ async def search_flights(
 
     currency = display_currency_for(origin.country_code)
     one_way = request.return_date is None
-    days_out = (request.departure_date - datetime.now(UTC).date()).days
+    # Never negative: a departure "today" west of UTC can be UTC's yesterday.
+    days_out = max((request.departure_date - datetime.now(UTC).date()).days, 0)
     # Sandbox fares are never compared with (or mixed into) the market's history.
     family: Family = "market" if any(o.provenance == "LIVE" for o in offers) else "sandbox"
 

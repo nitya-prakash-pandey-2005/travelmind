@@ -84,7 +84,7 @@ def test_search_request_normalises_codes():
     ("changes", "message"),
     [
         ({"destination": "DEL"}, "must be different airports"),
-        ({"departure_date": future(-1)}, "in the past"),
+        ({"departure_date": future(-2)}, "in the past"),
         ({"departure_date": future(400)}, "days ahead"),
         ({"return_date": future(5)}, "before the departure date"),
         ({"adults": 8, "children_ages": [5, 7]}, "at most 9 passengers"),
@@ -94,6 +94,19 @@ def test_search_request_rejects_impossible_trips(changes, message):
     fields = {"origin": "DEL", "destination": "BOM", "departure_date": future(10)} | changes
     with pytest.raises(ValidationError, match=message):
         FlightSearchRequest(**fields)
+
+
+def test_today_anywhere_on_earth_is_not_in_the_past():
+    from travelmind.offers.models import earliest_trip_date
+
+    # 03:00 UTC on 5 Oct is still 4 Oct west of UTC-3, so 4 Oct can still be travelled.
+    assert earliest_trip_date(datetime(2026, 10, 5, 3, 0, tzinfo=UTC)) == date(2026, 10, 4)
+    assert earliest_trip_date(datetime(2026, 10, 5, 13, 0, tzinfo=UTC)) == date(2026, 10, 5)
+    base = {"origin": "DEL", "destination": "BOM"}
+    earliest = earliest_trip_date()
+    assert FlightSearchRequest(**base, departure_date=earliest).departure_date == earliest
+    with pytest.raises(ValidationError, match="in the past"):
+        FlightSearchRequest(**base, departure_date=earliest - timedelta(days=1))
 
 
 def test_search_request_bounds_passenger_fields():
