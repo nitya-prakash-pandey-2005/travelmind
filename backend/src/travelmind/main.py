@@ -22,6 +22,7 @@ from travelmind.health import router as health_router
 from travelmind.hotels.router import hotels_router
 from travelmind.http import close_http_clients
 from travelmind.identity.router import auth_router, invitations_router, team_router
+from travelmind.identity.sessioncache import listen_for_evictions
 from travelmind.jobs import close_job_queue
 from travelmind.metrics import MetricsMiddleware, metrics_router
 from travelmind.middleware import (
@@ -47,18 +48,22 @@ from travelmind.workspace.timelines import timelines_router
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Run the demo cleanup at startup and then every interval (not under tests, and not where a
-    worker owns the schedules), and close the process-wide clients on shutdown."""
+    worker owns the schedules), listen for session evictions, and close the process-wide clients
+    on shutdown."""
     settings = get_settings()
     cleanup: asyncio.Task[None] | None = None
     if settings.environment != "test" and settings.run_scheduler:
         cleanup = asyncio.create_task(demo_cleanup_loop(settings.demo_cleanup_interval_seconds))
+    # Other processes' logouts reach this process's session cache through Redis.
+    evictions = asyncio.create_task(listen_for_evictions())
     try:
         yield
     finally:
-        if cleanup is not None:
-            cleanup.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await cleanup
+        for task in (cleanup, evictions):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
         # Each close runs even if an earlier one fails.
         try:
             await close_http_clients()

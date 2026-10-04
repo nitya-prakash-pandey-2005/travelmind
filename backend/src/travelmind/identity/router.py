@@ -28,6 +28,8 @@ from travelmind.identity.schemas import (
     TeamMember,
     UserOut,
 )
+from travelmind.identity.sessioncache import evict_and_publish
+from travelmind.identity.tokens import hash_token
 from travelmind.readcache import InvalidatesAgencyCache
 
 auth_router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -125,10 +127,11 @@ async def login_route(
 
 
 @auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout_route(request: Request, db: DbSession) -> Response:
+async def logout_route(request: Request, db: DbSession, redis: RedisClient) -> Response:
     token = request.cookies.get(get_settings().session_cookie_name)
     if token:
         await service.revoke_session(db, token)
+        await evict_and_publish(redis, "token", hash_token(token))
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     clear_session_cookie(response)
     return response

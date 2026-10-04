@@ -236,20 +236,55 @@ async def login(
     return user, agency, token
 
 
-async def get_user_for_session_token(db: AsyncSession, token: str) -> User | None:
-    return await db.scalar(
-        select(User)
-        .join(UserSession, UserSession.user_id == User.id)
-        .where(
-            UserSession.token_hash == hash_token(token),
-            UserSession.revoked_at.is_(None),
-            UserSession.expires_at > datetime.now(UTC),
-            User.is_active.is_(True),
+@dataclass(frozen=True)
+class SessionUser:
+    """The active user a live session belongs to, and when the session expires."""
+
+    id: UUID
+    agency_id: UUID
+    email: str
+    full_name: str
+    role: str
+    expires_at: datetime
+
+
+async def find_session_user(db: AsyncSession, token_hash: str) -> SessionUser | None:
+    """The session's user, if the session is live (not revoked, not expired) and the user is
+    active. Takes the token's hash (`hash_token`)."""
+    row = (
+        await db.execute(
+            select(
+                User.id,
+                User.agency_id,
+                User.email,
+                User.full_name,
+                User.role,
+                UserSession.expires_at,
+            )
+            .join(UserSession, UserSession.user_id == User.id)
+            .where(
+                UserSession.token_hash == token_hash,
+                UserSession.revoked_at.is_(None),
+                UserSession.expires_at > datetime.now(UTC),
+                User.is_active.is_(True),
+            )
         )
+    ).one_or_none()
+    if row is None:
+        return None
+    return SessionUser(
+        id=row.id,
+        agency_id=row.agency_id,
+        email=row.email,
+        full_name=row.full_name,
+        role=row.role,
+        expires_at=row.expires_at,
     )
 
 
 async def revoke_session(db: AsyncSession, token: str) -> None:
+    """Revoke the session and commit. Callers then evict it from the session cache
+    (`sessioncache.evict_and_publish`)."""
     await db.execute(
         update(UserSession)
         .where(UserSession.token_hash == hash_token(token), UserSession.revoked_at.is_(None))
