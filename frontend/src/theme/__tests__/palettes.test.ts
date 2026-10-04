@@ -7,25 +7,25 @@ const HEX = /^#[0-9A-F]{6}$/;
 const HEX_TOKENS: PaletteToken[] = [
   "bg", "surface", "surface2", "line", "lineStrong", "ink", "dim", "faint", "primary", "primaryInk", "primaryHover", "primaryActive", "accent2",
   "ok", "warn", "danger", "info", "ai", "chart1", "chart2", "chart3", "chart4", "chart5", "chart6", "chartAxis",
-  "globeLand", "globeOcean",
+  "globeLand", "globeOcean", "grad1", "grad2", "grad3",
 ];
 
 const label = (choice: ThemeChoice) => `${choice.theme}/${choice.mode}${choice.contrast ? "/high-contrast" : ""}`;
 
 test("six themes in switcher order, each with a name, tagline, four-colour swatch and mode rule", () => {
-  expect(THEMES.map((theme) => theme.id)).toEqual(["orbital", "nebula", "ember", "clearsky", "terminal", "contrast"]);
-  expect(THEMES.map((theme) => theme.name)).toEqual(["Orbital", "Nebula", "Ember", "Clearsky", "Terminal", "Contrast"]);
+  expect(THEMES.map((theme) => theme.id)).toEqual(["aurora", "ocean", "ember", "forest", "clearsky", "contrast"]);
+  expect(THEMES.map((theme) => theme.name)).toEqual(["Aurora", "Ocean", "Ember", "Forest", "Clearsky", "Contrast"]);
   for (const theme of THEMES) {
     expect(theme.tagline.length).toBeGreaterThan(10);
     expect(theme.swatch).toHaveLength(4);
     for (const colour of theme.swatch) expect(colour).toMatch(HEX);
   }
   expect(Object.fromEntries(THEMES.map((theme) => [theme.id, theme.modes]))).toEqual({
-    orbital: "toggle",
-    nebula: "toggle",
+    aurora: "toggle",
+    ocean: "toggle",
     ember: "toggle",
+    forest: "toggle",
     clearsky: "fixed-light",
-    terminal: "fixed-dark",
     contrast: "fixed-dark",
   });
 });
@@ -38,10 +38,10 @@ test("swatches come from each theme's default look: bg, surface, primary, accent
 });
 
 test("every theme x mode x contrast resolves to a distinct, already-coerced choice", () => {
-  // 3 toggle themes x 2 modes x 2 contrast settings + 3 fixed looks.
-  expect(ALL_CHOICES).toHaveLength(15);
+  // 4 toggle themes x 2 modes x 2 contrast settings + 2 fixed looks.
+  expect(ALL_CHOICES).toHaveLength(18);
   for (const choice of ALL_CHOICES) expect(coerceChoice(choice)).toEqual(choice);
-  expect(new Set(ALL_CHOICES.map(label)).size).toBe(15);
+  expect(new Set(ALL_CHOICES.map(label)).size).toBe(18);
 });
 
 describe.each(ALL_CHOICES.map((choice) => [label(choice), choice] as const))("%s", (_name, choice) => {
@@ -85,43 +85,48 @@ test("each token has its own --tm-* property and the names the components alread
 
 test("fixed themes coerce mode and contrast; toggle themes keep them", () => {
   expect(coerceChoice({ theme: "clearsky", mode: "dark", contrast: true })).toEqual({ theme: "clearsky", mode: "light", contrast: false });
-  expect(coerceChoice({ theme: "terminal", mode: "light", contrast: true })).toEqual({ theme: "terminal", mode: "dark", contrast: false });
   expect(coerceChoice({ theme: "contrast", mode: "light", contrast: true })).toEqual({ theme: "contrast", mode: "dark", contrast: false });
   expect(coerceChoice({ theme: "ember", mode: "light", contrast: true })).toEqual({ theme: "ember", mode: "light", contrast: true });
 });
 
-test("palettes carry the spec's anchor colours", () => {
-  expect(resolvePalette({ theme: "orbital", mode: "dark", contrast: false })).toMatchObject({ bg: "#0A0C10", primary: "#3CC6F0", accent2: "#F0B429" });
-  // Light primaries sit a step darker than the spec's values so primary text clears 4.5:1 on hover and selected fills.
-  expect(resolvePalette({ theme: "orbital", mode: "light", contrast: false })).toMatchObject({ bg: "#F6F7F9", ink: "#0E131B", primary: "#076CA1" });
-  expect(resolvePalette({ theme: "nebula", mode: "dark", contrast: false })).toMatchObject({ bg: "#070619", primary: "#8EF3FF", accent2: "#C9A7FF" });
-  expect(resolvePalette({ theme: "nebula", mode: "light", contrast: false })).toMatchObject({ primary: "#0A6A7E", accent2: "#6B3FC9" });
-  expect(resolvePalette({ theme: "ember", mode: "dark", contrast: false })).toMatchObject({ bg: "#080B1C", primary: "#FF9933", accent2: "#3FB950" });
-  expect(resolvePalette({ theme: "ember", mode: "light", contrast: false })).toMatchObject({ ink: "#14213D", primary: "#9F4F00" });
-  expect(resolvePalette({ theme: "clearsky", mode: "light", contrast: false })).toMatchObject({ bg: "#FFFFFF", primary: "#0B57D0" });
-  expect(resolvePalette({ theme: "terminal", mode: "dark", contrast: false })).toMatchObject({ ink: "#FFB000", primary: "#FFD27A" });
+test("the kit themes carry the kit's tokens in their dark looks", () => {
+  expect(resolvePalette({ theme: "aurora", mode: "dark", contrast: false })).toMatchObject({
+    bg: "#05060F", surface: "#0D1024", surface2: "#11152D", ink: "#E9ECF8", dim: "#B7BDD8", primary: "#FF4D9D",
+    grad1: "#FF4D9D", grad2: "#A855F7", grad3: "#22D3EE", ok: "#34D399", warn: "#FBBF24", danger: "#FB7185", info: "#22D3EE",
+  });
+  expect(resolvePalette({ theme: "ocean", mode: "dark", contrast: false })).toMatchObject({ bg: "#04080F", surface: "#0A1626", primary: "#38BDF8", grad3: "#2DD4BF" });
+  expect(resolvePalette({ theme: "ember", mode: "dark", contrast: false })).toMatchObject({ bg: "#0B0605", surface: "#1A0E0B", primary: "#FB923C", grad2: "#F43F5E" });
+  expect(resolvePalette({ theme: "forest", mode: "dark", contrast: false })).toMatchObject({ bg: "#040A07", surface: "#0A1810", primary: "#34D399", grad2: "#84CC16" });
+  const aurora = resolvePalette({ theme: "aurora", mode: "dark", contrast: false });
+  expect(aurora.grad).toBe("linear-gradient(135deg, #FF4D9D 0%, #A855F7 50%, #22D3EE 100%)");
+  expect(aurora.card).toBe("rgb(255 255 255 / 0.035)");
+  expect(aurora.card2).toBe("rgb(255 255 255 / 0.06)");
+  expect(aurora.ambient1).toBe("rgb(255 77 157 / 0.16)");
+  expect(aurora.hudGrid).toBe("rgb(255 255 255 / 0.025)");
+  expect(aurora).toMatchObject({ radiusControl: "12px", radiusPanel: "22px" });
+});
+
+test("the accessibility looks keep their anchors", () => {
+  expect(resolvePalette({ theme: "clearsky", mode: "light", contrast: false })).toMatchObject({ bg: "#FFFFFF", primary: "#0B57D0", ok: "#0F6B0F", danger: "#B3261E" });
   expect(resolvePalette({ theme: "contrast", mode: "dark", contrast: false })).toMatchObject({ bg: "#000000", ink: "#FFFFFF", primary: "#FFE600" });
-  expect(resolvePalette({ theme: "nebula", mode: "dark", contrast: true })).toMatchObject({ bg: "#000000", ink: "#FFFFFF", primary: "#8EF3FF" });
+  expect(resolvePalette({ theme: "ocean", mode: "dark", contrast: true })).toMatchObject({ bg: "#000000", ink: "#FFFFFF", primary: "#38BDF8" });
   expect(resolvePalette({ theme: "ember", mode: "light", contrast: true })).toMatchObject({ bg: "#FFFFFF", ink: "#000000" });
-  expect(resolvePalette({ theme: "orbital", mode: "dark", contrast: false })).toMatchObject({ ok: "#3FB950", danger: "#FF6B6B" });
-  expect(resolvePalette({ theme: "clearsky", mode: "light", contrast: false })).toMatchObject({ ok: "#0F6B0F", danger: "#B3261E" });
 });
 
 test("resolving the same look twice returns the same object (stable for memoised consumers)", () => {
-  const a = resolvePalette({ theme: "nebula", mode: "light", contrast: false });
-  expect(resolvePalette({ theme: "nebula", mode: "light", contrast: false })).toBe(a);
+  const a = resolvePalette({ theme: "ocean", mode: "light", contrast: false });
+  expect(resolvePalette({ theme: "ocean", mode: "light", contrast: false })).toBe(a);
   // A fixed theme resolves to its one look whatever mode was asked for.
-  expect(resolvePalette({ theme: "terminal", mode: "light", contrast: true })).toBe(resolvePalette({ theme: "terminal", mode: "dark", contrast: false }));
+  expect(resolvePalette({ theme: "contrast", mode: "light", contrast: true })).toBe(resolvePalette({ theme: "contrast", mode: "dark", contrast: false }));
 });
 
-test("theme fonts: Terminal is monospace throughout, Ember titles use Fraunces, Nebula uses Sora", () => {
-  const terminal = resolvePalette({ theme: "terminal", mode: "dark", contrast: false });
-  expect(terminal.fontSans).toMatch(/^"IBM Plex Mono"/);
-  expect(terminal.fontDisplay).toMatch(/^"IBM Plex Mono"/);
-  expect(terminal.radiusControl).toBe("0px");
-  expect(resolvePalette({ theme: "ember", mode: "dark", contrast: false }).fontDisplay).toMatch(/^"Fraunces"/);
-  expect(resolvePalette({ theme: "nebula", mode: "dark", contrast: false }).fontSans).toMatch(/^"Sora Variable"/);
-  expect(resolvePalette({ theme: "orbital", mode: "dark", contrast: false }).fontMono).toMatch(/^"JetBrains Mono"/);
+test("every look uses the kit's faces: Space Grotesk titles, Inter interface, JetBrains Mono data", () => {
+  for (const choice of ALL_CHOICES) {
+    const palette = resolvePalette(choice);
+    expect(palette.fontDisplay, label(choice)).toMatch(/^"Space Grotesk Variable"/);
+    expect(palette.fontSans, label(choice)).toMatch(/^"Inter Variable"/);
+    expect(palette.fontMono, label(choice)).toMatch(/^"JetBrains Mono Variable"/);
+  }
 });
 
 test("Contrast and high-contrast looks drop shadows, glow and translucent tints", () => {
@@ -132,5 +137,12 @@ test("Contrast and high-contrast looks drop shadows, glow and translucent tints"
     expect(palette.shadowRaise, label(choice)).toBe(NO_SHADOW);
     expect(palette.glow, label(choice)).toBe("transparent");
     expect(palette.tintFill, label(choice)).toBe("0%");
+    // No see-through glass or ambient glow: cards are the opaque surfaces and the page is plain.
+    expect(palette.card, label(choice)).toMatch(HEX);
+    expect(palette.card2, label(choice)).toMatch(HEX);
+    expect(palette.chrome, label(choice)).toBe(palette.bg);
+    for (const token of ["ambient1", "ambient2", "ambient3", "hudGrid", "dot"] as const) {
+      expect(palette[token], `${label(choice)} ${token}`).toBe("transparent");
+    }
   }
 });

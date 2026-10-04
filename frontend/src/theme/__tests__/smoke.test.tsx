@@ -71,12 +71,12 @@ test("the user menu's theme entry opens the theme list in a dialog (the phone ro
   mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: false })));
   const { user } = renderApp("/app");
   await user.click(await screen.findByRole("button", { name: ME_OWNER.user.full_name }));
-  await user.click(screen.getByRole("menuitem", { name: "Theme: Orbital" }));
+  await user.click(screen.getByRole("menuitem", { name: "Theme: Aurora" }));
   const dialog = screen.getByRole("dialog", { name: "Theme" });
   const list = within(dialog).getByRole("listbox", { name: "Theme" });
   expect(list).toHaveFocus();
   await user.keyboard("{ArrowDown}{Enter}");
-  expect(document.documentElement.dataset.theme).toBe("nebula");
+  expect(document.documentElement.dataset.theme).toBe("ocean");
   await user.click(within(dialog).getByRole("button", { name: "Done" }));
   expect(screen.queryByRole("dialog", { name: "Theme" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: ME_OWNER.user.full_name })).toHaveFocus();

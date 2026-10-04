@@ -3,8 +3,8 @@ import { contrastRatio, resolvePalette } from "../../theme";
 import { brandAccent } from "../publicQuote/brandAccent";
 import { MIN_ACCENT_CONTRAST, MIN_TEXT_CONTRAST, brandChecks, isBrandColor, normaliseBrandInput } from "./brandContrast";
 
-const DARK = resolvePalette({ theme: "orbital", mode: "dark", contrast: false });
-const LIGHT = resolvePalette({ theme: "orbital", mode: "light", contrast: false });
+const DARK = resolvePalette({ theme: "aurora", mode: "dark", contrast: false });
+const LIGHT = resolvePalette({ theme: "aurora", mode: "light", contrast: false });
 
 test("a brand colour is exactly # and six lower-case hex digits", () => {
   expect(isBrandColor("#0b84c6")).toBe(true);

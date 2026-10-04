@@ -41,7 +41,7 @@ test("the design gallery documents every token and component family", () => {
   expect(screen.getByRole("group", { name: "Metric C" })).toHaveAttribute("aria-busy", "true");
   // One preview per theme, each with a button that applies it.
   expect(within(screen.getByRole("list", { name: "Theme previews" })).getAllByRole("listitem")).toHaveLength(6);
-  expect(screen.getByRole("button", { name: "Use Orbital" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Use Aurora" })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("a theme preview applies its theme", async () => {
@@ -51,7 +51,7 @@ test("a theme preview applies its theme", async () => {
       <DesignGallery />
     </ToastProvider>,
   );
-  await user.click(screen.getByRole("button", { name: "Use Terminal" }));
-  expect(document.documentElement.dataset.theme).toBe("terminal");
-  expect(screen.getByRole("button", { name: "Use Terminal" })).toHaveAttribute("aria-pressed", "true");
+  await user.click(screen.getByRole("button", { name: "Use Contrast" }));
+  expect(document.documentElement.dataset.theme).toBe("contrast");
+  expect(screen.getByRole("button", { name: "Use Contrast" })).toHaveAttribute("aria-pressed", "true");
 });

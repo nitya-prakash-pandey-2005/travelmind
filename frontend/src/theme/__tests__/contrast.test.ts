@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { compositeOver, contrastRatio } from "../contrast";
-import { ALL_CHOICES, CRT, resolvePalette } from "../palettes";
+import { ALL_CHOICES, resolvePalette } from "../palettes";
 import type { Palette, PaletteToken, ThemeChoice } from "../types";
 
 test("contrastRatio matches WCAG reference values", () => {
@@ -67,20 +67,8 @@ function failures(palette: Palette): string[] {
     check(palette.lineStrong, palette[bg], GRAPHIC, `line-strong on ${bg}`);
   }
 
-  // CRT overlays (Terminal): text darkened by a scanline row and the vignette's darkest corner, against the
-  // plain background (the strictest pairing).
-  const scanline = translucent(palette.scanline);
-  const vignette = translucent(palette.vignette);
-  if (scanline || vignette) {
-    for (const bg of BACKGROUNDS) {
-      for (const text of TEXT) {
-        let seen = palette[text];
-        if (scanline) seen = compositeOver(scanline.hex, seen, scanline.alpha);
-        if (vignette) seen = compositeOver(vignette.hex, seen, vignette.alpha);
-        check(seen, palette[bg], BODY, `${text} under CRT overlays on ${bg}`);
-      }
-    }
-  }
+  // Primary actions are painted with the accent gradient: their label reads on every stop.
+  for (const stop of ["grad1", "grad2", "grad3"] as const) check(palette.primaryInk, palette[stop], BODY, `primary-ink on ${stop}`);
   return found;
 }
 
@@ -99,16 +87,5 @@ test("high-contrast looks clear 7:1 (AAA) for body and secondary text", () => {
       expect(contrastRatio(palette.ink, palette[bg]), label(choice)).toBeGreaterThanOrEqual(7);
       expect(contrastRatio(palette.dim, palette[bg]), label(choice)).toBeGreaterThanOrEqual(7);
     }
-  }
-});
-
-test("Terminal's CRT overlays stay light and exist only in Terminal", () => {
-  expect(CRT.scanline).toBeLessThanOrEqual(0.12);
-  expect(CRT.vignette).toBeLessThanOrEqual(0.15);
-  const terminal = resolvePalette({ theme: "terminal", mode: "dark", contrast: false });
-  expect(translucent(terminal.scanline)?.alpha).toBe(CRT.scanline);
-  for (const choice of ALL_CHOICES.filter((c) => c.theme !== "terminal")) {
-    expect(resolvePalette(choice).scanline, label(choice)).toBe("transparent");
-    expect(resolvePalette(choice).vignette, label(choice)).toBe("transparent");
   }
 });

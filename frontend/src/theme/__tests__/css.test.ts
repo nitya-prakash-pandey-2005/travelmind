@@ -10,10 +10,10 @@ describe("generated theme stylesheet", () => {
     await expect(buildThemeCss()).toMatchFileSnapshot("../../styles/themes.generated.css");
   });
 
-  test("the bare :root (no script, unknown theme) is Orbital dark", () => {
+  test("the bare :root (no script, unknown theme) is Aurora dark", () => {
     const css = buildThemeCss();
     const root = css.slice(css.indexOf(":root {"), css.indexOf("}", css.indexOf(":root {")));
-    expect(root).toContain(`--tm-bg: ${resolvePalette({ theme: "orbital", mode: "dark", contrast: false }).bg};`);
+    expect(root).toContain(`--tm-bg: ${resolvePalette({ theme: "aurora", mode: "dark", contrast: false }).bg};`);
     expect(root).toContain("color-scheme: dark;");
   });
 
@@ -21,7 +21,7 @@ describe("generated theme stylesheet", () => {
     const css = buildThemeCss();
     for (const choice of ALL_CHOICES) {
       const selector =
-        choice.theme === "orbital" || choice.theme === "nebula" || choice.theme === "ember"
+        ["aurora", "ocean", "ember", "forest"].includes(choice.theme)
           ? `:root[data-theme="${choice.theme}"][data-mode="${choice.mode}"][data-contrast="${choice.contrast ? "high" : "normal"}"]`
           : `:root[data-theme="${choice.theme}"]`;
       const start = css.indexOf(`${selector} {`);
@@ -60,40 +60,53 @@ describe("pre-paint script", () => {
     expect(at).toBeLessThan(indexHtml.indexOf('<script type="module"'));
     expect(at).toBeLessThan(indexHtml.indexOf("</head>"));
     // The markup itself also carries the default look, for when scripts are off.
-    expect(indexHtml).toMatch(/<html lang="en" data-theme="orbital" data-mode="dark" data-contrast="normal">/);
+    expect(indexHtml).toMatch(/<html lang="en" data-theme="aurora" data-mode="dark" data-contrast="normal">/);
   });
 
   test("stays tiny", () => {
-    expect(PREPAINT_SCRIPT.length).toBeLessThan(700);
+    expect(PREPAINT_SCRIPT.length).toBeLessThan(800);
   });
 
   test("applies a saved choice, including the colour scheme", () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "nebula", mode: "light", contrast: true }));
-    expect(runPrepaint()).toEqual({ theme: "nebula", mode: "light", contrast: "high" });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "ocean", mode: "light", contrast: true }));
+    expect(runPrepaint()).toEqual({ theme: "ocean", mode: "light", contrast: "high" });
     expect(html.style.colorScheme).toBe("light");
   });
 
   test("coerces fixed themes", () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "terminal", mode: "light", contrast: true }));
-    expect(runPrepaint()).toEqual({ theme: "terminal", mode: "dark", contrast: "normal" });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "contrast", mode: "light", contrast: true }));
+    expect(runPrepaint()).toEqual({ theme: "contrast", mode: "dark", contrast: "normal" });
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "clearsky", mode: "dark", contrast: false }));
     expect(runPrepaint()).toEqual({ theme: "clearsky", mode: "light", contrast: "normal" });
   });
 
   test("honours the old daylight value", () => {
     window.localStorage.setItem(LEGACY_STORAGE_KEY, "daylight");
-    expect(runPrepaint()).toEqual({ theme: "orbital", mode: "light", contrast: "normal" });
+    expect(runPrepaint()).toEqual({ theme: "aurora", mode: "light", contrast: "normal" });
   });
 
-  test("falls back to Orbital dark for junk, nothing saved, or blocked storage", () => {
-    expect(runPrepaint()).toEqual({ theme: "orbital", mode: "dark", contrast: "normal" });
+  test("moves retired themes to their replacements, as the store does", () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "orbital", mode: "light", contrast: true }));
+    expect(runPrepaint()).toEqual({ theme: "aurora", mode: "light", contrast: "high" });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "nebula", mode: "dark", contrast: false }));
+    expect(runPrepaint()).toEqual({ theme: "aurora", mode: "dark", contrast: "normal" });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "terminal", mode: "light", contrast: false }));
+    expect(runPrepaint()).toEqual({ theme: "forest", mode: "dark", contrast: "normal" });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "ember", mode: "light", contrast: false }));
+    expect(runPrepaint()).toEqual({ theme: "ember", mode: "light", contrast: "normal" });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "toString" }));
+    expect(runPrepaint()).toEqual({ theme: "aurora", mode: "dark", contrast: "normal" });
+  });
+
+  test("falls back to Aurora dark for junk, nothing saved, or blocked storage", () => {
+    expect(runPrepaint()).toEqual({ theme: "aurora", mode: "dark", contrast: "normal" });
     window.localStorage.setItem(STORAGE_KEY, "{oops");
-    expect(runPrepaint()).toEqual({ theme: "orbital", mode: "dark", contrast: "normal" });
+    expect(runPrepaint()).toEqual({ theme: "aurora", mode: "dark", contrast: "normal" });
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "neon" }));
-    expect(runPrepaint()).toEqual({ theme: "orbital", mode: "dark", contrast: "normal" });
+    expect(runPrepaint()).toEqual({ theme: "aurora", mode: "dark", contrast: "normal" });
     vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
       throw new Error("SecurityError");
     });
-    expect(runPrepaint()).toEqual({ theme: "orbital", mode: "dark", contrast: "normal" });
+    expect(runPrepaint()).toEqual({ theme: "aurora", mode: "dark", contrast: "normal" });
   });
 });

@@ -16,7 +16,7 @@ export function ThemeSwatch({ theme, className }: { theme: ThemeMeta; className?
   return (
     <span
       aria-hidden="true"
-      className={cn("inline-grid h-5 w-7 shrink-0 grid-cols-4 overflow-hidden rounded-[4px] border border-line-strong", className)}
+      className={cn("inline-grid h-5 w-7 shrink-0 grid-cols-4 overflow-hidden rounded-[6px] border border-line-strong", className)}
     >
       {theme.swatch.map((colour, index) => (
         <span key={index} style={{ backgroundColor: colour }} />
@@ -35,7 +35,7 @@ type ThemePanelProps = {
 
 /**
  * The theme list (a listbox: Arrow keys, Home and End move, Enter or Space picks) with the mode and high-contrast
- * controls under it. Picking applies at once and is saved. Fixed themes (Clearsky, Terminal, Contrast) disable
+ * controls under it. Picking applies at once and is saved. Fixed themes (Clearsky, Contrast) disable
  * the two controls and say why.
  */
 export function ThemePanel({ onEscape, autoFocusList = false, className }: ThemePanelProps) {
@@ -192,20 +192,9 @@ function ContrastSwitch({
         aria-describedby={describedBy}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={cn(
-          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors duration-150 ease-tm",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-          checked ? "border-primary bg-primary" : "border-line-strong bg-surface-2",
-        )}
-      >
-        <span
-          aria-hidden="true"
-          className={cn(
-            "inline-block h-3.5 w-3.5 rounded-full transition-transform duration-150 ease-tm",
-            checked ? "translate-x-[1.05rem] bg-primary-ink" : "translate-x-0.5 bg-dim",
-          )}
-        />
-      </button>
+        // The kit's toggle: gradient track and ink knob when on (styles/kit/components.css).
+        className={cn("toggle", checked && "on")}
+      />
     </div>
   );
 }

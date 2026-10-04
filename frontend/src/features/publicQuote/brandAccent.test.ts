@@ -3,7 +3,7 @@ import { contrastRatio, resolvePalette } from "../../theme";
 import { brandAccent, printCss, printPalette } from "./brandAccent";
 
 const LIGHT = resolvePalette({ theme: "clearsky", mode: "light", contrast: false });
-const DARK = resolvePalette({ theme: "orbital", mode: "dark", contrast: false });
+const DARK = resolvePalette({ theme: "aurora", mode: "dark", contrast: false });
 
 test("a brand colour that stands out from the page is used, with readable text on it", () => {
   const accent = brandAccent("#0F766E", LIGHT);

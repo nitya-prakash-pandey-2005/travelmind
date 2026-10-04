@@ -146,7 +146,7 @@ test("a saved colour the client page can't use is never put into a style, and th
   settings(ME_OWNER, {}, profileOf(ME_OWNER, { brand_color: "teal; background: url(x)" }));
   const form = await profileForm();
   expect(within(form).getByLabelText("Brand colour hex")).toHaveValue("");
-  expect(within(form).getByLabelText("Brand colour picker")).toHaveValue("#3cc6f0");
+  expect(within(form).getByLabelText("Brand colour picker")).toHaveValue("#ff4d9d");
   expect(within(form).queryByRole("list", { name: "Contrast check" })).not.toBeInTheDocument();
   expect(document.body.innerHTML).not.toContain("url(x)");
   const preview = screen.getByRole("group", { name: "Client quote preview" });

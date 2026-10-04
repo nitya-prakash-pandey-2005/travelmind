@@ -7,9 +7,24 @@ beforeEach(() => {
 });
 
 describe("readChoice", () => {
-  test("defaults to Orbital dark when nothing is saved", () => {
-    expect(readChoice()).toEqual({ theme: "orbital", mode: "dark", contrast: false });
-    expect(DEFAULT_CHOICE).toEqual({ theme: "orbital", mode: "dark", contrast: false });
+  test("defaults to Aurora dark when nothing is saved", () => {
+    expect(readChoice()).toEqual({ theme: "aurora", mode: "dark", contrast: false });
+    expect(DEFAULT_CHOICE).toEqual({ theme: "aurora", mode: "dark", contrast: false });
+  });
+
+  test("moves a retired theme to its replacement and saves the move", () => {
+    for (const [stored, expected] of [
+      [{ theme: "orbital", mode: "light", contrast: true }, { theme: "aurora", mode: "light", contrast: true }],
+      [{ theme: "nebula", mode: "dark", contrast: false }, { theme: "aurora", mode: "dark", contrast: false }],
+      [{ theme: "terminal", mode: "light", contrast: true }, { theme: "forest", mode: "dark", contrast: true }],
+    ] as const) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+      expect(readChoice()).toEqual(expected);
+      expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual(expected);
+    }
+    // The old Ember id is the kit's Ember now: same id, nothing to move.
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "ember", mode: "light", contrast: false }));
+    expect(readChoice()).toEqual({ theme: "ember", mode: "light", contrast: false });
   });
 
   test("reads a saved choice", () => {
@@ -18,8 +33,8 @@ describe("readChoice", () => {
   });
 
   test("repairs bad fields and ignores junk", () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "nebula", mode: "sepia", contrast: "yes" }));
-    expect(readChoice()).toEqual({ theme: "nebula", mode: "dark", contrast: false });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "ocean", mode: "sepia", contrast: "yes" }));
+    expect(readChoice()).toEqual({ theme: "ocean", mode: "dark", contrast: false });
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "neon", mode: "light" }));
     expect(readChoice()).toEqual(DEFAULT_CHOICE);
     window.localStorage.setItem(STORAGE_KEY, "{not json");
@@ -28,22 +43,22 @@ describe("readChoice", () => {
     expect(readChoice()).toEqual(DEFAULT_CHOICE);
   });
 
-  test("migrates the old dark/daylight value to Orbital and drops the old key", () => {
+  test("migrates the old dark/daylight value to Aurora and drops the old key", () => {
     window.localStorage.setItem(LEGACY_STORAGE_KEY, "daylight");
-    expect(readChoice()).toEqual({ theme: "orbital", mode: "light", contrast: false });
-    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({ theme: "orbital", mode: "light", contrast: false });
+    expect(readChoice()).toEqual({ theme: "aurora", mode: "light", contrast: false });
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({ theme: "aurora", mode: "light", contrast: false });
     expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
 
     window.localStorage.clear();
     window.localStorage.setItem(LEGACY_STORAGE_KEY, "dark");
-    expect(readChoice()).toEqual({ theme: "orbital", mode: "dark", contrast: false });
+    expect(readChoice()).toEqual({ theme: "aurora", mode: "dark", contrast: false });
     expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
   });
 
   test("a saved new-style choice wins over a leftover old value", () => {
     window.localStorage.setItem(LEGACY_STORAGE_KEY, "daylight");
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "nebula", mode: "dark", contrast: false }));
-    expect(readChoice()).toEqual({ theme: "nebula", mode: "dark", contrast: false });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "ocean", mode: "dark", contrast: false }));
+    expect(readChoice()).toEqual({ theme: "ocean", mode: "dark", contrast: false });
     expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
   });
 
@@ -70,14 +85,14 @@ describe("blocked storage", () => {
       throw new Error("SecurityError");
     });
     expect(readChoice()).toEqual(DEFAULT_CHOICE);
-    expect(() => writeChoice({ theme: "nebula", mode: "dark", contrast: false })).not.toThrow();
+    expect(() => writeChoice({ theme: "ocean", mode: "dark", contrast: false })).not.toThrow();
   });
 
   test("writing swallows quota and privacy errors", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("QuotaExceededError");
     });
-    expect(() => writeChoice({ theme: "nebula", mode: "dark", contrast: false })).not.toThrow();
+    expect(() => writeChoice({ theme: "ocean", mode: "dark", contrast: false })).not.toThrow();
   });
 
   test("the theme still switches for this session when storage throws", () => {
@@ -97,10 +112,10 @@ describe("theme store", () => {
   });
 
   test("initTheme applies the saved choice to <html>", () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "nebula", mode: "light", contrast: true }));
-    expect(initTheme()).toEqual({ theme: "nebula", mode: "light", contrast: true });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "ocean", mode: "light", contrast: true }));
+    expect(initTheme()).toEqual({ theme: "ocean", mode: "light", contrast: true });
     const { dataset } = document.documentElement;
-    expect([dataset.theme, dataset.mode, dataset.contrast]).toEqual(["nebula", "light", "high"]);
+    expect([dataset.theme, dataset.mode, dataset.contrast]).toEqual(["ocean", "light", "high"]);
   });
 
   test("a change is applied and remembered across reloads", () => {
@@ -111,10 +126,10 @@ describe("theme store", () => {
   });
 
   test("fixed themes ignore mode and contrast changes", () => {
-    setThemeChoice({ theme: "terminal" });
-    expect(getThemeChoice()).toEqual({ theme: "terminal", mode: "dark", contrast: false });
+    setThemeChoice({ theme: "contrast" });
+    expect(getThemeChoice()).toEqual({ theme: "contrast", mode: "dark", contrast: false });
     setThemeChoice({ mode: "light", contrast: true });
-    expect(getThemeChoice()).toEqual({ theme: "terminal", mode: "dark", contrast: false });
+    expect(getThemeChoice()).toEqual({ theme: "contrast", mode: "dark", contrast: false });
     expect(document.documentElement.dataset.mode).toBe("dark");
     expect(document.documentElement.dataset.contrast).toBe("normal");
 
@@ -123,11 +138,11 @@ describe("theme store", () => {
   });
 
   test("leaving a fixed theme restores the viewer's own mode and contrast", () => {
-    setThemeChoice({ theme: "orbital", mode: "dark", contrast: true });
+    setThemeChoice({ theme: "aurora", mode: "dark", contrast: true });
     setThemeChoice({ theme: "clearsky" });
     expect(getThemeChoice().mode).toBe("light");
-    setThemeChoice({ theme: "nebula" });
-    expect(getThemeChoice()).toEqual({ theme: "nebula", mode: "dark", contrast: true });
+    setThemeChoice({ theme: "ocean" });
+    expect(getThemeChoice()).toEqual({ theme: "ocean", mode: "dark", contrast: true });
   });
 
   test("a saved fixed theme loads in its own look", () => {

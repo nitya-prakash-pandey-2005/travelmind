@@ -31,14 +31,16 @@ const ALLOWED_LINES: readonly [file: string, fragment: string, reason: string][]
   // Masks: black and transparent here are alpha stops, not colours anyone sees.
   ["/src/styles/index.css", "mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 100%);", "mask alpha"],
   ["/src/features/landing/ProductTour.tsx", "[mask-image:linear-gradient(to_bottom,black,transparent)]", "mask alpha"],
+  ["/src/styles/kit/base.css", "radial-gradient(ellipse at 50% 30%, black 30%, transparent 80%)", "mask alpha (HUD grid fade)"],
+  ["/src/styles/kit/components.css", "-webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);", "mask alpha (gradient edge)"],
   // Token mixes: theme tokens (or currentColor) faded towards transparent, or one token over another.
   ["/src/styles/index.css", "background: color-mix(in oklab, var(--tm-primary) 30%, transparent);", "token mix"],
   ["/src/styles/index.css", "background-color: color-mix(in oklab, currentColor var(--tm-tint-fill), transparent);", "token mix"],
   ["/src/styles/index.css", "border-color: color-mix(in oklab, currentColor var(--tm-tint-edge), transparent);", "token mix"],
+  ["/src/styles/kit/components.css", "background-color: color-mix(in oklab, currentColor var(--tm-tint-fill), transparent);", "token mix (kit tones)"],
+  ["/src/styles/kit/components.css", "border-color: color-mix(in oklab, currentColor var(--tm-tint-edge), transparent);", "token mix (kit tones)"],
   ["/src/styles/index.css", "background-color: color-mix(in oklab, var(--tm-brand) 18%, var(--tm-surface));", "token mix"],
   ["/src/styles/index.css", "border: 1px solid color-mix(in oklab, var(--tm-brand) 45%, transparent);", "token mix"],
-  ["/src/styles/index.css", "linear-gradient(90deg, color-mix(in oklab, var(--tm-primary) 7%, transparent), transparent 60%)", "token mix"],
-  ["/src/styles/index.css", "text-shadow: 0 0 8px color-mix(in srgb, var(--tm-text) 35%, transparent);", "token mix"],
   ["/src/auth/AuthFrame.tsx", "color-mix(in oklab, var(--tm-primary) 13%, transparent)", "token mix"],
   ["/src/features/landing/ClosingCall.tsx", "color-mix(in oklab, var(--tm-primary) 14%, transparent)", "token mix"],
   ["/src/features/landing/Hero.tsx", "color-mix(in oklab, var(--tm-primary) 15%, transparent)", "token mix"],
