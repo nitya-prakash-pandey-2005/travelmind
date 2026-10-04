@@ -23,16 +23,22 @@ const PENDING = {
   expires_at: "2026-10-06T10:00:00Z",
 };
 
-test("the members table lists everyone with their role", async () => {
-  mockApi(withSession(ME_OWNER, { "GET /api/v1/team": { status: 200, body: TEAM }, "GET /api/v1/invitations": { status: 200, body: [] } }));
-  renderApp("/app/team");
-  const table = await screen.findByRole("table", { name: "Team members" });
-  await within(table).findByText("Asha Rao");
-  const rows = within(table).getAllByRole("row");
+test("the members list shows everyone with their role, owners first, and sorts by name", async () => {
+  const team = [...TEAM, { id: "u-admin", email: "zoya@alphatravels.in", full_name: "Zoya Khan", role: "admin" }].reverse();
+  mockApi(withSession(ME_OWNER, { "GET /api/v1/team": { status: 200, body: team }, "GET /api/v1/invitations": { status: 200, body: [] } }));
+  const { user } = renderApp("/app/team");
+  const list = await screen.findByRole("list", { name: "Team members" });
+  await within(list).findByText("Asha Rao");
+  const names = () => within(list).getAllByRole("listitem").map((row) => row.textContent ?? "");
+  const rows = within(list).getAllByRole("listitem");
   expect(rows).toHaveLength(3);
-  expect(within(rows[1]!).getByText("Asha Rao")).toBeInTheDocument();
-  expect(within(rows[1]!).getByText("You")).toBeInTheDocument();
+  expect(within(rows[0]!).getByText("Asha Rao")).toBeInTheDocument();
+  expect(within(rows[0]!).getByText("You")).toBeInTheDocument();
+  expect(within(rows[1]!).getByText("admin")).toBeInTheDocument();
   expect(within(rows[2]!).getByText("agent")).toBeInTheDocument();
+  await user.click(within(screen.getByRole("group", { name: "Sort members" })).getByRole("button", { name: "Name" }));
+  expect(within(screen.getByRole("group", { name: "Sort members" })).getByRole("button", { name: "Name" })).toHaveAttribute("aria-pressed", "true");
+  expect(names().map((text) => text.match(/Asha Rao|Ravi Kumar|Zoya Khan/)?.[0])).toEqual(["Asha Rao", "Ravi Kumar", "Zoya Khan"]);
 });
 
 test("an owner invites a teammate and gets a one-time link", async () => {
@@ -92,7 +98,7 @@ test("inviting someone who already has an account explains why it failed", async
 test("agents see the members but no invitation controls", async () => {
   const { calls } = mockApi(withSession(ME_AGENT, { "GET /api/v1/team": { status: 200, body: TEAM } }));
   renderApp("/app/team");
-  await screen.findByRole("table", { name: "Team members" });
+  await screen.findByRole("list", { name: "Team members" });
   expect(screen.queryByRole("button", { name: "Invite teammate" })).not.toBeInTheDocument();
   expect(screen.getByText(/ask an agency owner or admin/i)).toBeInTheDocument();
   expect(calls.some((c) => c.path === "/api/v1/invitations")).toBe(false);
@@ -101,7 +107,7 @@ test("agents see the members but no invitation controls", async () => {
 test("a demo workspace shows the members but can't invite anyone", async () => {
   const { calls } = mockApi(withSession(ME_DEMO, { "GET /api/v1/team": { status: 200, body: TEAM } }));
   renderApp("/app/team");
-  await screen.findByRole("table", { name: "Team members" });
+  await screen.findByRole("list", { name: "Team members" });
   expect(screen.queryByRole("button", { name: "Invite teammate" })).not.toBeInTheDocument();
   expect(screen.getByText("Demo workspaces can't invite people. Create your own workspace to add teammates.")).toBeInTheDocument();
   expect(calls.some((c) => c.path === "/api/v1/invitations")).toBe(false);
@@ -176,7 +182,7 @@ test("after the session expires, the next agency to sign in never sees the previ
   expect(screen.getByText("Loading members…")).toBeInTheDocument();
 
   releaseBetaTeam();
-  const table = await screen.findByRole("table", { name: "Team members" });
+  const table = await screen.findByRole("list", { name: "Team members" });
   expect(await within(table).findByText("Meera Iyer")).toBeInTheDocument();
   expect(within(table).queryByText("Ravi Kumar")).not.toBeInTheDocument();
 });
@@ -196,7 +202,7 @@ test("a failed members load shows the server's message and trace ID instead of a
   const alert = await within(members).findByRole("alert");
   expect(alert).toHaveTextContent("Something went wrong on our side. Please try again.");
   expect(alert).toHaveTextContent("Trace ID: trace-team-1");
-  expect(screen.queryByRole("table", { name: "Team members" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("list", { name: "Team members" })).not.toBeInTheDocument();
 });
 
 test("a failed invitations load shows the server's message and never claims nothing is pending", async () => {
@@ -296,12 +302,14 @@ test("each member shows enquiries, quotes sent and won value for the last 30 day
     }),
   );
   renderApp("/app/team");
-  const table = await screen.findByRole("table", { name: "Team members" });
-  const ravi = await within(table).findByRole("row", { name: /Ravi Kumar/ });
+  const list = await screen.findByRole("list", { name: "Team members" });
+  const member = (name: string) => within(list).getByText(name).closest("li") as HTMLElement;
+  await within(list).findByText("Ravi Kumar");
+  const ravi = member("Ravi Kumar");
   await within(ravi).findByText("₹42,000");
   expect(within(ravi).getByText("6")).toBeInTheDocument();
   expect(within(ravi).getByText("5")).toBeInTheDocument();
-  const asha = within(table).getByRole("row", { name: /Asha Rao/ });
+  const asha = member("Asha Rao");
   expect(within(asha).getByText("9")).toBeInTheDocument();
   expect(within(asha).getAllByText("—")).toHaveLength(1);
   expect(calls.find((c) => c.path === "/api/v1/dashboard/team")?.search.get("range")).toBe("30d");

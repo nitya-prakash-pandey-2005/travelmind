@@ -21,6 +21,21 @@ export const MODE: Record<NonNullable<SupplierStatus["mode"]>, { tone: BadgeTone
   sandbox: { tone: "warn", label: "Sandbox" },
 };
 
+/** The API process's circuit breaker for a supplier (the status endpoint sends it; older servers may not). */
+export type BreakerState = "closed" | "open" | "half_open";
+
+export const BREAKER: Record<BreakerState, { tone: BadgeTone; label: string }> = {
+  closed: { tone: "neutral", label: "Breaker closed" },
+  half_open: { tone: "warn", label: "Breaker half-open" },
+  open: { tone: "danger", label: "Breaker open" },
+};
+
+/** The breaker state, when the server sent one. */
+export function breakerOf(s: SupplierStatus): BreakerState | null {
+  const value = (s as SupplierStatus & { breaker?: unknown }).breaker;
+  return value === "closed" || value === "open" || value === "half_open" ? value : null;
+}
+
 /** Sources that answer searches with offers; the rest add data to results. */
 export const isBooking = (s: SupplierStatus) => s.kind === "flights" || s.kind === "hotels";
 

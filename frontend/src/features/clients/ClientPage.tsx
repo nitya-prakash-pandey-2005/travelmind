@@ -13,6 +13,7 @@ import { Avatar } from "../../ui/Avatar";
 import { Badge } from "../../ui/Badge";
 import { Button, buttonClasses } from "../../ui/Button";
 import { KpiStrip, KpiTile } from "../../ui/charts";
+import { cn } from "../../ui/cn";
 import { DataTable, type DataTableColumn } from "../../ui/DataTable";
 import { Dialog } from "../../ui/Dialog";
 import { EmptyState } from "../../ui/EmptyState";
@@ -22,7 +23,9 @@ import { Skeleton } from "../../ui/Skeleton";
 import { StatusPill } from "../../ui/StatusPill";
 import { useToast } from "../../ui/toast/useToast";
 import { NewEnquiryDialog } from "../command/NewEnquiryDialog";
+import { Avatar as KitAvatar } from "../../kit";
 import { PanelError } from "../command/PanelError";
+import { TABLE_INSET } from "../quotes/kitClasses";
 import { TimelinePanel } from "../enquiries/EnquiryTimeline";
 import { routeLabel, travellersLabel, tripDates } from "../pipeline/enquiryFacts";
 import { ClientFormDrawer } from "./ClientFormDrawer";
@@ -36,6 +39,10 @@ const OPEN_ENQUIRY = new Set(["new", "quoting", "quoted"]);
 /** A link inside a clickable row: it navigates on its own, so the row's click must not fire as well. */
 const stop = (event: { stopPropagation: () => void }) => event.stopPropagation();
 const RECORD_LINK = "font-mono text-[13px] text-primary underline-offset-2 hover:underline";
+/** A column of the page's 12-column grid; at 1180px and below (where the kit grid goes single column) it dissolves. */
+const COLUMN = "flex min-w-0 flex-col gap-4 max-[1180.98px]:contents";
+/** A card placed straight on the grid once its column dissolves: full width, ordered by the caller. */
+const STACKED = "max-[1180.98px]:col-span-full";
 
 /** The client's enquiries, newest first, filtered by the server on the client id. */
 function useClientEnquiries(client: ClientOut) {
@@ -57,12 +64,19 @@ function Fact({ label, children, muted = false }: { label: string; children: Rea
   );
 }
 
-function ContactPanel({ client, now }: { client: ClientOut; now: Date }) {
+function ContactPanel({ client, now, className }: { client: ClientOut; now: Date; className?: string }) {
   const airport = useAirport(client.home_airport);
   const place = airportPlace(airport);
   const tel = client.phone ? telHref(client.phone) : null;
   return (
-    <Panel title="Contact" description={`${kindLabel(client.kind)} client`}>
+    <Panel title="Contact" className={className}>
+      <div className="mb-4 flex min-w-0 items-center gap-3 border-b border-line pb-4">
+        <KitAvatar name={client.name} size="lg" />
+        <div className="min-w-0">
+          <p className="truncate font-display text-[17px] font-semibold leading-6 text-ink">{client.name}</p>
+          <p className="text-xs leading-4 text-dim">{`${kindLabel(client.kind)} client`}</p>
+        </div>
+      </div>
       <dl className="flex flex-col gap-3">
         <Fact label="Email" muted={!client.email}>
           {client.email ? (
@@ -106,7 +120,7 @@ function ContactPanel({ client, now }: { client: ClientOut; now: Date }) {
           {client.tags.length > 0 ? (
             <span className="flex flex-wrap gap-1">
               {client.tags.map((tag) => (
-                <span key={tag} className="inline-flex h-5 items-center rounded-[4px] border border-line bg-surface-2 px-1.5 text-[11px] leading-none text-dim">
+                <span key={tag} className="badge px-2 py-0 text-[11px] font-medium leading-[18px]">
                   {tag}
                 </span>
               ))}
@@ -167,12 +181,14 @@ function EnquiriesPanel({
   rows,
   onCreate,
   now,
+  className,
 }: {
   client: ClientOut;
   query: ReturnType<typeof useClientEnquiries>["query"];
   rows: readonly EnquiryOut[];
   onCreate: () => void;
   now: Date;
+  className?: string;
 }) {
   const navigate = useNavigate();
   const columns: DataTableColumn<EnquiryOut>[] = [
@@ -217,22 +233,19 @@ function EnquiriesPanel({
       title="Enquiries"
       description={query.data ? `${formatNumber(query.data.total)} for ${client.name} · newest first` : "Trip requests from this client"}
       flush
+      className={className}
     >
       {query.isError ? (
-        <div className="px-4 pb-4">
+        <div className="px-[18px] pb-[18px]">
           <PanelError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} />
         </div>
       ) : (
         <>
           {!query.isPending && rows.length > 0 && (
-            <ul aria-label={`Enquiries for ${client.name}`} className="flex flex-col border-t border-line sm:hidden">
+            <ul aria-label={`Enquiries for ${client.name}`} className="list border-t border-line px-2 py-1 sm:hidden">
               {rows.map((e) => (
-                <li key={e.id} className="border-b border-line last:border-b-0">
-                  <Link
-                    to="/app/enquiries/$enquiryId"
-                    params={{ enquiryId: e.id }}
-                    className="flex flex-col gap-1 px-4 py-2.5 transition-colors duration-150 ease-tm hover:bg-hover"
-                  >
+                <li key={e.id}>
+                  <Link to="/app/enquiries/$enquiryId" params={{ enquiryId: e.id }} className="li flex-col items-stretch gap-1">
                     <span className="flex items-center gap-2">
                       <span className="font-mono text-[13px] text-ink">{e.number}</span>
                       <span className="font-mono text-[13px] font-medium text-ink">{routeLabel(e)}</span>
@@ -247,7 +260,7 @@ function EnquiriesPanel({
             </ul>
           )}
           <DataTable
-            className={rows.length > 0 ? "max-sm:hidden" : undefined}
+            className={cn(TABLE_INSET, rows.length > 0 && "max-sm:hidden")}
             caption={`Enquiries for ${client.name}`}
             columns={columns}
             rows={rows}
@@ -265,7 +278,7 @@ function EnquiriesPanel({
             }
           />
           {query.data && query.data.total > query.data.items.length && (
-            <p className="border-t border-line px-4 py-2 text-xs text-dim">
+            <p className="border-t border-line px-[18px] py-2.5 text-xs text-dim">
               Showing the {formatNumber(query.data.items.length)} newest of {formatNumber(query.data.total)} enquiries.
             </p>
           )}
@@ -285,11 +298,13 @@ function QuotesPanel({
   query,
   rows,
   now,
+  className,
 }: {
   client: ClientOut;
   query: ReturnType<typeof useClientQuotes>["query"];
   rows: readonly QuoteSummary[];
   now: Date;
+  className?: string;
 }) {
   const navigate = useNavigate();
   const columns: DataTableColumn<QuoteSummary>[] = [
@@ -345,22 +360,19 @@ function QuotesPanel({
       title="Quotes"
       description={query.data ? `${formatNumber(query.data.total)} for ${client.name} · values are each quote's cheapest option` : "Built and sent for this client"}
       flush
+      className={className}
     >
       {query.isError ? (
-        <div className="px-4 pb-4">
+        <div className="px-[18px] pb-[18px]">
           <PanelError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} />
         </div>
       ) : (
         <>
           {!query.isPending && rows.length > 0 && (
-            <ul aria-label={`Quotes for ${client.name}`} className="flex flex-col border-t border-line sm:hidden">
+            <ul aria-label={`Quotes for ${client.name}`} className="list border-t border-line px-2 py-1 sm:hidden">
               {rows.map((q) => (
-                <li key={q.id} className="border-b border-line last:border-b-0">
-                  <Link
-                    to="/app/quotes/$quoteId"
-                    params={{ quoteId: q.id }}
-                    className="flex flex-col gap-1 px-4 py-2.5 transition-colors duration-150 ease-tm hover:bg-hover"
-                  >
+                <li key={q.id}>
+                  <Link to="/app/quotes/$quoteId" params={{ quoteId: q.id }} className="li flex-col items-stretch gap-1">
                     <span className="flex items-center gap-2">
                       <span className="font-mono text-[13px] text-ink">{q.number}</span>
                       <StatusPill status={q.status} />
@@ -378,7 +390,7 @@ function QuotesPanel({
             </ul>
           )}
           <DataTable
-            className={rows.length > 0 ? "max-sm:hidden" : undefined}
+            className={cn(TABLE_INSET, rows.length > 0 && "max-sm:hidden")}
             caption={`Quotes for ${client.name}`}
             columns={columns}
             rows={rows}
@@ -441,7 +453,7 @@ function DeleteClientDialog({ client, onClose }: { client: ClientOut; onClose: (
           {client.quote_count > 0 && " A client with quotes can't be deleted, so their quote history stays complete."}
         </p>
         {error && (
-          <p role="alert" className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-ink">
+          <p role="alert" className="card alert tight rounded-[14px] text-ink">
             {error.message}
           </p>
         )}
@@ -521,17 +533,27 @@ function ClientView({ client }: { client: ClientOut }) {
         enquiries={enquiries.query.data ? enquiries.items : null}
         quotes={quotes.query.data ? quotes.items : null}
       />
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(19rem,1fr)]">
-        <div className="flex min-w-0 flex-col gap-4">
-          <EnquiriesPanel client={client} query={enquiries.query} rows={enquiries.items} onCreate={() => setEnquiring(true)} now={now} />
-          <QuotesPanel client={client} query={quotes.query} rows={quotes.items} now={now} />
+      {/* The kit's list + detail: the client's enquiries and quotes in span-8, the contact card and timeline in
+          span-4. At 1180px and below the contact card comes first, then the lists, then the timeline. */}
+      <div className="grid g-12 items-start">
+        <div className={cn(COLUMN, "span-8")}>
+          <EnquiriesPanel
+            client={client}
+            query={enquiries.query}
+            rows={enquiries.items}
+            onCreate={() => setEnquiring(true)}
+            now={now}
+            className={cn(STACKED, "max-[1180.98px]:order-2")}
+          />
+          <QuotesPanel client={client} query={quotes.query} rows={quotes.items} now={now} className={cn(STACKED, "max-[1180.98px]:order-3")} />
         </div>
-        <div className="flex min-w-0 flex-col gap-4">
-          <ContactPanel client={client} now={now} />
+        <div className={cn(COLUMN, "span-4")}>
+          <ContactPanel client={client} now={now} className={cn(STACKED, "max-[1180.98px]:order-1")} />
           <TimelinePanel
             timeline={timeline}
             intro="Changes, enquiries, quotes and client views"
             emptyDescription="Edits, enquiries and quotes for this client will be listed here as they happen."
+            className={cn(STACKED, "max-[1180.98px]:order-4")}
           />
         </div>
       </div>
@@ -549,10 +571,14 @@ function ClientView({ client }: { client: ClientOut }) {
 function LoadingClient() {
   return (
     <>
-      <PageHeader breadcrumb={[...CRUMBS, { label: "Client" }]} title="Client" description={<Skeleton className="mt-1 h-3.5 w-72" />} />
-      <div aria-busy="true" className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(19rem,1fr)]">
+      <PageHeader
+        breadcrumb={[...CRUMBS, { label: "Client" }]}
+        title="Client"
+        description={<span aria-hidden="true" className="tm-shimmer mt-1 inline-block h-3.5 w-72 max-w-full rounded-[8px] align-middle" />}
+      />
+      <div aria-busy="true" className="grid g-12 items-start">
         <span className="sr-only">Loading client…</span>
-        <div className="flex flex-col gap-4">
+        <div className="span-8 flex flex-col gap-4">
           <Panel title="Enquiries">
             <Skeleton lines={3} />
           </Panel>
@@ -560,7 +586,7 @@ function LoadingClient() {
             <Skeleton lines={3} />
           </Panel>
         </div>
-        <Panel title="Contact">
+        <Panel title="Contact" className="span-4">
           <Skeleton lines={6} />
         </Panel>
       </div>
@@ -580,7 +606,7 @@ export function ClientPage() {
       <>
         <PageHeader breadcrumb={[...CRUMBS, { label: "Client" }]} title="Client" />
         {error.status === 404 ? (
-          <div className="rounded-lg border border-line bg-surface">
+          <div className="card p-0">
             <EmptyState
               icon={SearchX}
               title="Client not found"

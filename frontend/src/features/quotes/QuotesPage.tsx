@@ -15,8 +15,9 @@ import { EmptyState } from "../../ui/EmptyState";
 import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { STATUS_PILL, StatusPill } from "../../ui/StatusPill";
-import { Tabs } from "../../ui/Tabs";
 import { PanelError } from "../command/PanelError";
+import { ChipTabs } from "./ChipTabs";
+import { SEARCH_INPUT, TABLE_INSET } from "./kitClasses";
 import { NewQuoteDialog } from "./NewQuoteDialog";
 import { routeLabel } from "../pipeline/enquiryFacts";
 
@@ -24,11 +25,6 @@ import { routeLabel } from "../pipeline/enquiryFacts";
 const LIST_LIMIT = 200;
 const STATUSES: readonly QuoteStatus[] = ["draft", "sent", "viewed", "accepted", "declined", "expired"];
 type Tab = QuoteStatus | "all";
-
-const SEARCH_INPUT = cn(
-  "h-8 w-full rounded-md border border-line-strong bg-surface-2 pl-8 pr-2.5 text-[13px] text-ink placeholder:text-faint",
-  "transition-colors duration-150 ease-tm hover:border-faint focus:border-primary",
-);
 
 /** "v3 · sent v2", "v1", or "—" before the first version. */
 function versionsLabel(quote: Pick<QuoteSummary, "current_version" | "sent_version">): string {
@@ -158,7 +154,7 @@ function HowQuotingWorks() {
           <li key={title} className="flex gap-3">
             <span
               aria-hidden="true"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-line bg-surface-2 text-dim"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-card-2 text-dim"
             >
               <Icon size={15} strokeWidth={1.75} />
             </span>
@@ -176,32 +172,31 @@ function HowQuotingWorks() {
   );
 }
 
-/** Phones: each quote as a two-line row instead of the wide table. */
+/** Phones: each quote as a kit list row (`.list > .li`) instead of the wide table. */
 function QuoteCards({ rows, now }: { rows: readonly QuoteSummary[]; now: Date }) {
   return (
-    <ul aria-label="Quotes" className="flex flex-col sm:hidden">
+    <ul aria-label="Quotes" className="list px-2 py-1 sm:hidden">
       {rows.map((q) => (
-        <li key={q.id} className="border-b border-line last:border-b-0">
-          <Link
-            to="/app/quotes/$quoteId"
-            params={{ quoteId: q.id }}
-            className="flex flex-col gap-1 px-3 py-2.5 transition-colors duration-150 ease-tm hover:bg-hover"
-          >
-            <span className="flex items-center gap-2">
-              <span className="font-mono text-[13px] text-ink">{q.number}</span>
-              <StatusPill status={q.status} />
-              <span className="ml-auto font-mono text-[13px] tabular-nums text-ink">
-                {q.value_minor !== null ? formatWholeMoney(q.value_minor, q.currency) : "—"}
+        <li key={q.id}>
+          <Link to="/app/quotes/$quoteId" params={{ quoteId: q.id }} className="li items-start gap-3">
+            <span className="flex min-w-0 grow flex-col gap-1">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="font-mono text-[13px] font-semibold text-ink">{q.number}</span>
+                <span className={cn("truncate text-[13px]", q.client ? "text-ink" : "text-faint")}>{q.client?.name ?? "No client"}</span>
+              </span>
+              <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-dim">
+                <span className="font-mono">{routeLabel(q.enquiry)}</span>
+                <span aria-hidden="true">·</span>
+                <span>{versionsLabel(q)}</span>
+                <span aria-hidden="true">·</span>
+                <span>{q.sent_at ? `Sent ${formatRelativeTime(q.sent_at, now)}` : "Not sent"}</span>
               </span>
             </span>
-            <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-dim">
-              <span className={q.client ? "text-ink" : "text-faint"}>{q.client?.name ?? "No client"}</span>
-              <span aria-hidden="true">·</span>
-              <span className="font-mono">{routeLabel(q.enquiry)}</span>
-              <span aria-hidden="true">·</span>
-              <span>{versionsLabel(q)}</span>
-              <span aria-hidden="true">·</span>
-              <span>{q.sent_at ? `Sent ${formatRelativeTime(q.sent_at, now)}` : "Not sent"}</span>
+            <span className="flex shrink-0 flex-col items-end gap-1.5">
+              <span className="font-mono text-[13px] font-semibold tabular-nums text-ink">
+                {q.value_minor !== null ? formatWholeMoney(q.value_minor, q.currency) : "—"}
+              </span>
+              <StatusPill status={q.status} />
             </span>
           </Link>
         </li>
@@ -232,10 +227,11 @@ export function QuotesPage() {
   const nothingYet = !all.isPending && !all.isError && total === 0;
 
   const tabs = [
-    { id: "all", label: `All ${all.data ? formatNumber(total) : ""}`.trim() },
+    { id: "all", label: "All", count: all.data ? formatNumber(total) : undefined },
     ...STATUSES.map((status) => ({
       id: status,
-      label: `${STATUS_PILL[status].label} ${all.data ? figures.counts[status] : ""}`.trim(),
+      label: STATUS_PILL[status].label,
+      count: all.data ? figures.counts[status] : undefined,
     })),
   ];
 
@@ -346,7 +342,7 @@ export function QuotesPage() {
         <PanelError error={all.error} onRetry={() => void all.refetch()} retrying={all.isFetching} />
       ) : nothingYet ? (
         <div className="flex flex-col gap-4">
-          <div className="rounded-lg border border-line bg-surface">
+          <div className="card p-0">
             <EmptyState
               icon={FileText}
               title="No quotes yet"
@@ -357,11 +353,11 @@ export function QuotesPage() {
           <HowQuotingWorks />
         </div>
       ) : (
-        <section aria-label="Quote list" className="rounded-lg border border-line bg-surface">
-          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b border-line px-3 pt-1">
-            <Tabs tabs={tabs} value={tab} onChange={(id) => setTab(id as Tab)} label="Quote status" className="-mb-px border-b-0" />
-            <div className="flex w-full items-center gap-3 pb-2 sm:w-auto">
-              <div className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+        <section aria-label="Quote list" className="card flush">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-line px-[18px] py-3.5">
+            <ChipTabs tabs={tabs} value={tab} onChange={(id) => setTab(id as Tab)} label="Quote status" />
+            <div className="flex w-full items-center gap-3 lg:w-auto">
+              <div className="relative min-w-0 flex-1 lg:w-60 lg:flex-none">
                 <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
                 <input
                   type="search"
@@ -383,14 +379,14 @@ export function QuotesPage() {
             </div>
           </div>
           {source.isError ? (
-            <div className="p-3">
+            <div className="p-[18px]">
               <PanelError error={source.error} onRetry={() => void source.refetch()} retrying={source.isFetching} />
             </div>
           ) : (
             <>
             {!source.isPending && rows.length > 0 && <QuoteCards rows={rows} now={now} />}
             <DataTable
-              className={rows.length > 0 ? "max-sm:hidden" : undefined}
+              className={cn(TABLE_INSET, rows.length > 0 && "max-sm:hidden")}
               caption="Quotes"
               columns={columns}
               rows={rows}
@@ -402,12 +398,12 @@ export function QuotesPage() {
             </>
           )}
           {total > (all.data?.items.length ?? 0) && (
-            <p className="border-t border-line px-3 py-2 text-xs text-dim">
+            <p className="border-t border-line px-[18px] py-2.5 text-xs text-dim">
               Showing the {formatNumber(all.data?.items.length ?? 0)} newest of {formatNumber(total)} quotes. Search looks
               through these rows only; a status tab loads the newest {formatNumber(LIST_LIMIT)} with that status.
             </p>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-3 py-2 text-xs text-dim">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-[18px] py-2.5 text-xs text-dim">
             <span>
               Values are the option the client accepted, else the cheapest option they were sent (or of the draft), in whole{" "}
               {currencies.length === 1 ? currencies[0] : "units of each quote's own currency"}.

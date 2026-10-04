@@ -61,7 +61,6 @@ export function VersionHistory({
     <Panel
       title="Versions"
       description={versions.length > 0 ? `${versions.length} saved · newest first · select one to preview` : "Each save keeps a priced copy"}
-      flush
       className={className}
     >
       {versions.length === 0 ? (
@@ -69,27 +68,23 @@ export function VersionHistory({
           icon={FileClock}
           title="No versions yet"
           description="Each version you save is kept here with its prices, so you can compare and re-send."
-          className="pb-6 pt-2"
+          className="pb-3 pt-0"
         />
       ) : (
-        <ol className="flex flex-col border-t border-line">
+        <ol className="list -mx-2 -mb-2">
           {versions.map((version, index) => {
             const selected = version.version === previewing;
             const sent = version.version === quote.sent_version;
             const author = version.created_by ? names.get(version.created_by) : undefined;
             return (
-              <li key={version.version} className="border-b border-line last:border-b-0">
+              <li key={version.version}>
                 <button
                   type="button"
                   aria-pressed={selected}
                   onClick={() => onPreview(version.version)}
-                  className={cn(
-                    "relative flex w-full flex-col gap-1 px-4 py-2.5 text-left transition-colors duration-150 ease-tm hover:bg-hover",
-                    "focus-visible:-outline-offset-2",
-                    selected && "bg-surface-2",
-                  )}
+                  className={cn("li relative flex-col items-stretch gap-1 focus-visible:-outline-offset-2", selected && "bg-surface-2")}
                 >
-                  {selected && <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.5 bg-primary" />}
+                  {selected && <span aria-hidden="true" className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary bg-(image:--tm-grad)" />}
                   <span className="flex w-full flex-wrap items-center gap-2">
                     <span className="font-mono text-[13px] font-semibold text-ink">v{version.version}</span>
                     {index === 0 && <Badge tone="neutral">Latest</Badge>}

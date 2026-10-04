@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Info, RotateCcw, Save } from "lucide-react";
+import { Building2, Info, Palette, RotateCcw, Save } from "lucide-react";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { AGENCY_NAME_MAX, AGENCY_NAME_MIN, useUpdateAgency, type AgencyUpdate } from "../../api/agency";
 import { asApiError, needsGeneralError } from "../../api/client";
@@ -117,13 +117,13 @@ function ProfileForm({ profile, me, update }: { profile: AgencyProfile; me: Me; 
   return (
     <form aria-label="Agency profile" noValidate onSubmit={submit} className="flex min-w-0 flex-col gap-4">
       {locked && (
-        <p className="flex items-start gap-2.5 rounded-md border border-info/30 bg-info/5 px-3 py-2.5 text-[13px] leading-5 text-ink">
+        <p className="callout leading-5 text-ink">
           <Info size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-info" />
           <span>{locked}</span>
         </p>
       )}
       <fieldset disabled={Boolean(locked)} className="flex min-w-0 flex-col gap-4">
-        <Panel title="Agency profile" description="How your agency is named and when its day starts">
+        <Panel title="Agency profile" description="How your agency is named and when its day starts" icon={Building2}>
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField
               label="Agency name"
@@ -159,7 +159,7 @@ function ProfileForm({ profile, me, update }: { profile: AgencyProfile; me: Me; 
           </p>
         </Panel>
 
-        <Panel title="Branding" description="Your colour on client quote pages, checked for contrast before it's saved">
+        <Panel title="Branding" description="Your colour on client quote pages, checked for contrast before it's saved" icon={Palette}>
           <BrandColourField
             agencyName={name.trim() || profile.name}
             text={hex}
@@ -177,7 +177,7 @@ function ProfileForm({ profile, me, update }: { profile: AgencyProfile; me: Me; 
       {serverError && needsGeneralError(serverError, FORM_FIELDS) && <FormError error={serverError} />}
 
       {!locked && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3">
+        <div className="card tight flex flex-wrap items-center justify-between gap-3 px-[18px]">
           <p className="text-xs leading-4 text-dim">
             {dirty ? "Unsaved changes. They apply to the whole workspace once saved." : "No unsaved changes."}
           </p>
@@ -199,11 +199,12 @@ function ProfileForm({ profile, me, update }: { profile: AgencyProfile; me: Me; 
   );
 }
 
+/** The kit's form recipe on a 12-column grid: the form in span-7, the side panels as cards in span-5. */
 function SettingsLayout({ main, side }: { main: ReactNode; side: ReactNode }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
-      <div className="flex min-w-0 flex-col gap-4">{main}</div>
-      <div className="flex min-w-0 flex-col gap-4">{side}</div>
+    <div className="grid g-12 items-start">
+      <div className="span-7 flex min-w-0 flex-col gap-4">{main}</div>
+      <div className="span-5 flex min-w-0 flex-col gap-4">{side}</div>
     </div>
   );
 }

@@ -216,7 +216,7 @@ export function QuoteBuilder({ quote, picks, onPicksChange, lockedReason, onSave
     >
       <div className="flex flex-col gap-4">
         {lockedReason && (
-          <p role="note" className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/5 px-3 py-2 text-[13px] leading-5 text-warn">
+          <p role="note" className="card warn tight flex items-start gap-2 rounded-[14px] text-[13px] leading-5 text-warn">
             <CircleAlert size={15} aria-hidden="true" className="mt-0.5 shrink-0" />
             {lockedReason}
           </p>

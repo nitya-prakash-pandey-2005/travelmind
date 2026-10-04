@@ -1,8 +1,11 @@
-import { Check, Minus } from "lucide-react";
+import { Check, Minus, ShieldCheck } from "lucide-react";
 import type { Role } from "../../api/types";
-import { Badge } from "../../ui/Badge";
+import { Badge, type BadgeTone } from "../../ui/Badge";
 import { cn } from "../../ui/cn";
 import { Panel } from "../../ui/Panel";
+
+/** The same tones as the members list's role badges. */
+const ROLE_TONE: Record<Role, BadgeTone> = { owner: "primary", admin: "info", agent: "neutral" };
 
 const ROLES: { role: Role; label: string; about: string }[] = [
   { role: "owner", label: "Owner", about: "Created the workspace. Same rights as an admin." },
@@ -40,24 +43,24 @@ function Mark({ yes }: { yes: boolean }) {
 }
 
 /** Roles and permissions: one line per role, then a capability matrix; the viewer's own role is marked. */
-export function RolesPanel({ role: mine }: { role: Role }) {
+export function RolesPanel({ role: mine, className }: { role: Role; className?: string }) {
   return (
-    <Panel title="Roles and permissions" description="What each role can do in TravelMind today">
-      <ul aria-label="Roles" className="flex flex-col gap-2.5">
+    <Panel title="Roles and permissions" description="What each role can do in TravelMind today" icon={ShieldCheck} className={className}>
+      <ul aria-label="Roles" className="list">
         {ROLES.map(({ role, label, about }) => (
-          <li key={role} className="flex flex-col gap-0.5">
-            <span className="flex items-center gap-2 text-[13px] font-medium text-ink">
-              {label}
+          <li key={role} className="li flex-col items-start gap-1.5 px-0 py-2.5">
+            <span className="flex items-center gap-2">
+              <Badge tone={ROLE_TONE[role]}>{label}</Badge>
               {role === mine && <Badge tone="ok">You</Badge>}
             </span>
             <span className="text-xs leading-4 text-dim">{about}</span>
           </li>
         ))}
       </ul>
-      <table className="mt-4 w-full border-t border-line text-xs">
+      <table className="mt-3 w-full border-t border-line text-xs">
         <caption className="sr-only">Permissions by role</caption>
         <thead>
-          <tr className="text-faint">
+          <tr className="hud">
             <th scope="col" className="py-2 text-left font-medium">
               <span className="sr-only">Capability</span>
             </th>

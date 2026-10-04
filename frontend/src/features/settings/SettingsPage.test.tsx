@@ -240,7 +240,18 @@ test("the side panels show the workspace, the team, appearance and data handling
   expect(within(team).getByRole("link", { name: /Manage team/ })).toHaveAttribute("href", "/app/team");
 
   const appearance = screen.getByRole("region", { name: "Appearance" });
-  expect(within(appearance).getByRole("listbox")).toBeInTheDocument();
+  const themes = within(appearance).getByRole("radiogroup", { name: "Theme" });
+  expect(within(themes).getAllByRole("radio").map((radio) => radio.textContent)).toEqual([
+    expect.stringContaining("Aurora"),
+    expect.stringContaining("Ocean"),
+    expect.stringContaining("Ember"),
+    expect.stringContaining("Forest"),
+    expect.stringContaining("Clearsky"),
+    expect.stringContaining("Contrast"),
+  ]);
+  expect(within(themes).getByRole("radio", { name: /Aurora/ })).toBeChecked();
+  expect(within(appearance).getByRole("radiogroup", { name: "Mode" })).toBeInTheDocument();
+  expect(within(appearance).getByRole("switch", { name: "High contrast" })).toBeInTheDocument();
 
   const privacy = screen.getByRole("region", { name: "Data and privacy" });
   expect(within(privacy).getAllByRole("listitem").length).toBeGreaterThanOrEqual(3);

@@ -44,11 +44,11 @@ function OptionCard({ option, index, accepted, adultsOnly }: { option: QuoteOpti
   const markupShare = offer.total.amount_minor > 0 ? (option.markup_minor / offer.total.amount_minor) * 100 : null;
   const travellers = offer.passenger_count;
   return (
-    <li className={cn("rounded-md border bg-surface", accepted ? "border-ok/60" : "border-line")}>
+    <li className={cn("@container rounded-[16px] border bg-card-2", accepted ? "border-ok/60" : "border-line")}>
       <div className="flex flex-wrap items-start gap-3 p-3">
         <span
           aria-hidden="true"
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-line bg-surface-2 font-mono text-xs font-semibold text-ink"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-line bg-surface font-mono text-xs font-semibold text-ink"
         >
           {offer.owner_carrier}
         </span>
@@ -90,7 +90,8 @@ function OptionCard({ option, index, accepted, adultsOnly }: { option: QuoteOpti
           </p>
         </div>
       </div>
-      <dl className="grid grid-cols-2 divide-line border-t border-line sm:grid-cols-4 sm:divide-x">
+      {/* Sized by the card, not the screen: four across when the card is wide, two by two in the narrow column. */}
+      <dl className="grid grid-cols-2 divide-line border-t border-line @lg:grid-cols-4 @lg:divide-x">
         <Figure label="Supplier fare" value={formatMoney(offer.total)} />
         <Figure label="Markup" value={formatMoney({ amount_minor: option.markup_minor, currency: option.sell.currency })} hint={markupShare !== null ? `${PERCENT.format(markupShare)}%` : undefined} />
         <Figure label="Sell" value={formatMoney(option.sell)} strong />
@@ -165,7 +166,7 @@ export function VersionPreview({
             />
           ))}
         </ol>
-        <div className="flex flex-col gap-1 rounded-md border border-line bg-surface-2 px-3 py-2">
+        <div className="callout flex-col gap-1">
           <p className="tm-micro">Message</p>
           {version.message ? (
             <p className="whitespace-pre-wrap text-[13px] leading-5 text-ink">{version.message}</p>

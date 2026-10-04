@@ -36,9 +36,9 @@ function open(me = ME_OWNER, extra: Record<string, MockHandler> = {}) {
 
 test("booking suppliers and data services are listed separately, each with status and mode", async () => {
   open();
-  const booking = await screen.findByRole("table", { name: "Booking suppliers" });
+  const booking = await screen.findByRole("list", { name: "Booking suppliers" });
   await within(booking).findByText("Duffel");
-  const rows = within(booking).getAllByRole("row").slice(1);
+  const rows = within(booking).getAllByRole("listitem");
   expect(rows).toHaveLength(3);
   expect(rows[0]).toHaveTextContent("Duffel");
   expect(rows[0]).toHaveTextContent("Flights");
@@ -47,8 +47,8 @@ test("booking suppliers and data services are listed separately, each with statu
   expect(rows[2]).toHaveTextContent("Not connected");
   expect(rows[2]).toHaveTextContent("Set TM_LITEAPI_KEY.");
 
-  const data = screen.getByRole("table", { name: "Data services" });
-  const services = within(data).getAllByRole("row").slice(1);
+  const data = screen.getByRole("list", { name: "Data services" });
+  const services = within(data).getAllByRole("listitem");
   expect(services.map((r) => r.textContent)).toEqual([
     expect.stringContaining("Google Travel Impact Model"),
     expect.stringContaining("Travelpayouts"),
@@ -62,15 +62,28 @@ test("booking suppliers and data services are listed separately, each with statu
 
 test("each booking supplier shows its health over the last 24 hours, or that it had no calls", async () => {
   open();
-  const booking = await screen.findByRole("table", { name: "Booking suppliers" });
-  const sandbox = await within(booking).findByRole("row", { name: /Sandbox inventory/ });
+  const booking = await screen.findByRole("list", { name: "Booking suppliers" });
+  const sandbox = await within(booking).findByRole("listitem", { name: /Sandbox inventory/ });
   await within(sandbox).findByText("Healthy");
   expect(sandbox).toHaveTextContent("42 calls · 95.2% ok");
-  expect(sandbox).toHaveTextContent("p50 180 ms · p95 420 ms");
-  const duffel = within(booking).getByRole("row", { name: /Duffel/ });
+  expect(within(sandbox).getByRole("img", { name: "95.2% of calls succeeded" })).toBeInTheDocument();
+  expect(sandbox).toHaveTextContent("180ms");
+  expect(sandbox).toHaveTextContent("p50 latency");
+  expect(sandbox).toHaveTextContent("420ms");
+  const duffel = within(booking).getByRole("listitem", { name: /Duffel/ });
   expect(duffel).toHaveTextContent("Degraded");
-  expect(duffel).toHaveTextContent("p95 2,100 ms");
-  expect(within(booking).getByRole("row", { name: /LiteAPI/ })).toHaveTextContent("No calls in the last 24 h");
+  expect(duffel).toHaveTextContent("2,100ms");
+  expect(duffel).toHaveTextContent("p95 latency");
+  expect(within(booking).getByRole("listitem", { name: /LiteAPI/ })).toHaveTextContent("No calls in the last 24 h");
+});
+
+test("each connection shows the API's circuit breaker when the server reports it", async () => {
+  open(ME_OWNER, {
+    "GET /api/v1/suppliers": { status: 200, body: SUPPLIERS.map((s) => ({ ...s, breaker: s.code === "duffel" ? "open" : "closed" })) },
+  });
+  const booking = await screen.findByRole("list", { name: "Booking suppliers" });
+  expect(await within(booking).findByRole("listitem", { name: /Duffel/ })).toHaveTextContent("Breaker open");
+  expect(within(booking).getByRole("listitem", { name: /Sandbox inventory/ })).toHaveTextContent("Breaker closed");
 });
 
 test("the overview sums calls and success over the last 24 hours", async () => {
@@ -82,18 +95,18 @@ test("the overview sums calls and success over the last 24 hours", async () => {
   expect(within(overview).getByRole("group", { name: /Data services: 2 of 3 connected/ })).toBeInTheDocument();
 });
 
-test("without health data the tables still load and say so", async () => {
+test("without health data the cards still load and say so", async () => {
   open(ME_OWNER, { "GET /api/v1/dashboard/supplier-health": { status: 503, body: { detail: "Unavailable." } } });
-  const booking = await screen.findByRole("table", { name: "Booking suppliers" });
-  const sandbox = await within(booking).findByRole("row", { name: /Sandbox inventory/ });
+  const booking = await screen.findByRole("list", { name: "Booking suppliers" });
+  const sandbox = await within(booking).findByRole("listitem", { name: /Sandbox inventory/ });
   expect(await within(sandbox).findByText("Health unavailable")).toBeInTheDocument();
   expect(screen.getByRole("group", { name: "Success rate, 24 h: —" })).toBeInTheDocument();
 });
 
-test("the sandbox row is findable by name and says it is connected", async () => {
+test("the sandbox card is findable by name and says it is connected", async () => {
   open(ME_AGENT);
-  const table = await screen.findByRole("table", { name: "Booking suppliers" });
-  const sandbox = await within(table).findByRole("row", { name: /Sandbox inventory/ });
+  const list = await screen.findByRole("list", { name: "Booking suppliers" });
+  const sandbox = await within(list).findByRole("listitem", { name: /Sandbox inventory/ });
   expect(sandbox).toHaveTextContent("Connected");
   expect(sandbox).toHaveTextContent("Sandbox");
 });
@@ -105,13 +118,13 @@ test("a failed supplier check shows the reason", async () => {
 
 test("each connection shows how to set it up and links to the provider's docs", async () => {
   open();
-  const table = await screen.findByRole("table", { name: "Booking suppliers" });
-  const duffel = await within(table).findByRole("row", { name: /Duffel/ });
+  const list = await screen.findByRole("list", { name: "Booking suppliers" });
+  const duffel = await within(list).findByRole("listitem", { name: /Duffel/ });
   expect(within(duffel).getByText("TM_DUFFEL_TOKEN")).toBeInTheDocument();
   expect(within(duffel).getByRole("link", { name: /Duffel docs/ })).toHaveAttribute("href", "https://duffel.com/docs");
-  const sandbox = within(table).getByRole("row", { name: /Sandbox inventory/ });
+  const sandbox = within(list).getByRole("listitem", { name: /Sandbox inventory/ });
   expect(within(sandbox).getByText("TM_SANDBOX_SUPPLIER")).toBeInTheDocument();
-  const ecb = within(screen.getByRole("table", { name: "Data services" })).getByRole("row", { name: /ECB reference rates/ });
+  const ecb = within(screen.getByRole("list", { name: "Data services" })).getByRole("listitem", { name: /ECB reference rates/ });
   expect(within(ecb).getByText("TM_FX_ENABLED")).toBeInTheDocument();
 });
 
