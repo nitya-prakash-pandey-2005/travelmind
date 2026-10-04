@@ -14,6 +14,8 @@ import { ErrorPanel } from "./PanelError";
 import { LoadingPanel } from "./panelParts";
 
 const TITLE = "Route map";
+/** Icon chip in the card head. */
+const ICON = Route;
 const DESCRIPTION = "Routes from your enquiries; won and plotted routes highlighted";
 const LISTED_ROUTES = 6;
 /** Arcs drawn at most: the busiest routes (each needs its airports looked up). */
@@ -44,11 +46,12 @@ export function RouteMapPanel({ onNewEnquiry, className }: { onNewEnquiry: () =>
   const airports = useAirports(codes);
   const arcs = useMemo(() => routeArcs(drawn, airports, selection), [drawn, airports, selection]);
 
-  if (enquiries.isPending) return <LoadingPanel title={TITLE} description={DESCRIPTION} rows={8} className={className} />;
+  if (enquiries.isPending) return <LoadingPanel title={TITLE} icon={ICON} description={DESCRIPTION} rows={8} className={className} />;
   if (enquiries.isError) {
     return (
       <ErrorPanel
         title={TITLE}
+        icon={ICON}
         description={DESCRIPTION}
         error={enquiries.error}
         onRetry={() => void enquiries.refetch()}

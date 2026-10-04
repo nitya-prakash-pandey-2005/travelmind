@@ -14,6 +14,8 @@ import { ErrorPanel } from "./PanelError";
 import { FooterLink, LoadingPanel } from "./panelParts";
 
 const TITLE = "Team performance";
+/** Icon chip in the card head. */
+const ICON = Users;
 const RANGE_WORDS: Record<DashboardRange, string> = { "7d": "last 7 days", "30d": "last 30 days", "90d": "last 90 days" };
 
 type Ranked = TeamStats & { rank: number };
@@ -23,11 +25,12 @@ export function TeamPanel({ range, className }: { range: DashboardRange; classNa
   const team = useQuery(teamStatsQueryOptions(range));
   const description = `Ranked by won value, ${RANGE_WORDS[range]}`;
 
-  if (team.isPending) return <LoadingPanel title={TITLE} description={description} rows={3} className={className} />;
+  if (team.isPending) return <LoadingPanel title={TITLE} icon={ICON} description={description} rows={3} className={className} />;
   if (team.isError && !team.data) {
     return (
       <ErrorPanel
         title={TITLE}
+        icon={ICON}
         description={description}
         error={team.error}
         onRetry={() => void team.refetch()}
@@ -100,6 +103,7 @@ export function TeamPanel({ range, className }: { range: DashboardRange; classNa
   return (
     <Panel
       title={TITLE}
+      icon={ICON}
       description={description}
       busy={team.isPlaceholderData}
       flush

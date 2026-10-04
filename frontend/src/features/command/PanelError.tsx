@@ -1,4 +1,4 @@
-import { CircleAlert, RotateCw } from "lucide-react";
+import { CircleAlert, RotateCw, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { asApiError } from "../../api/client";
 import { Button } from "../../ui/Button";
@@ -44,6 +44,7 @@ export function PanelError({
 export function ErrorPanel({
   title,
   description,
+  icon,
   error,
   onRetry,
   retrying,
@@ -52,6 +53,8 @@ export function ErrorPanel({
 }: {
   title: string;
   description?: ReactNode;
+  /** The card head's icon chip. */
+  icon?: LucideIcon;
   error: unknown;
   onRetry: () => void;
   retrying?: boolean;
@@ -60,7 +63,7 @@ export function ErrorPanel({
   actions?: ReactNode;
 }) {
   return (
-    <Panel title={title} description={description} className={className} actions={actions}>
+    <Panel title={title} description={description} icon={icon} className={className} actions={actions}>
       <PanelError error={error} onRetry={onRetry} retrying={retrying} />
     </Panel>
   );

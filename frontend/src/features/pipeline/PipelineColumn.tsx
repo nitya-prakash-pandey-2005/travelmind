@@ -28,6 +28,9 @@ const TONE_DOT: Record<string, string> = {
   ai: "bg-ai",
 };
 
+/** The kit column card's stage rule: a short bar along the top edge, inside the rounded corners. */
+const TOP_RULE = "before:absolute before:inset-x-6 before:-top-px before:h-0.5 before:rounded-full";
+
 /** What an empty stage is for, and how enquiries get there. */
 const EMPTY: Record<EnquiryStatus, { icon: LucideIcon; title: string; body: string }> = {
   new: { icon: Inbox, title: "No new enquiries", body: "Capture a trip request with New enquiry, or from the command palette." },
@@ -92,8 +95,8 @@ export function PipelineColumn({ status, count, value, note, drop, onDropCard, o
       }}
       onDrop={onDrop}
       className={cn(
-        "relative flex min-w-0 flex-col rounded-lg border bg-surface-2/40",
-        "before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg",
+        "card flex min-w-0 flex-col p-0",
+        TOP_RULE,
         TONE_RULE[tone],
         "transition-[border-color,background-color,opacity] duration-150 ease-tm",
         drop === "idle" && "border-line",
@@ -102,15 +105,15 @@ export function PipelineColumn({ status, count, value, note, drop, onDropCard, o
         hiddenOnSmall && "max-lg:hidden",
       )}
     >
-      <header className="flex flex-col gap-0.5 border-b border-line px-3 pb-2.5 pt-3">
+      <header className="flex flex-col gap-1 border-b border-line px-3.5 pb-3 pt-3.5">
         <div className="flex items-center justify-between gap-2">
-          <h2 id={headingId} className="flex min-w-0 items-center gap-2 text-[13px] font-semibold leading-5 text-ink">
+          <h2 id={headingId} className="flex min-w-0 items-center gap-2 font-display text-sm font-semibold leading-5 text-ink">
             <span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-full", TONE_DOT[tone])} />
             <span className="truncate">{label}</span>
           </h2>
           <span
             data-testid="stage-count"
-            className="inline-flex h-5 min-w-6 items-center justify-center rounded-full border border-line bg-surface px-1.5 font-mono text-[11px] font-medium tabular-nums text-ink"
+            className="inline-flex h-5 min-w-6 items-center justify-center rounded-full border border-line bg-card-2 px-1.5 font-mono text-[11px] font-medium tabular-nums text-ink"
           >
             {formatNumber(count)}
             <span className="sr-only"> {count === 1 ? "enquiry" : "enquiries"}</span>
@@ -133,16 +136,16 @@ export function PipelineColumn({ status, count, value, note, drop, onDropCard, o
       <ul
         role="list"
         aria-label={`${label} enquiries`}
-        className="flex min-h-40 flex-1 flex-col gap-2 p-2"
+        className="flex min-h-40 flex-1 flex-col gap-2 p-2.5"
       >
         {children}
         {count === 0 && (
-          <li className="flex flex-1 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-line px-3 py-6 text-center">
+          <li className="flex flex-1 flex-col items-center justify-center gap-2 rounded-[14px] border border-dashed border-line px-3 py-6 text-center">
             {drop === "allowed" ? (
               <p className="text-[13px] font-medium text-primary">Drop to move here</p>
             ) : (
               <>
-                <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-md border border-line bg-surface text-faint">
+                <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-[10px] bg-card-2 text-dim">
                   <Icon size={15} strokeWidth={1.75} />
                 </span>
                 <p className="text-[13px] font-medium text-ink">{empty.title}</p>
@@ -169,22 +172,22 @@ export function PipelineColumnSkeleton({ status, cards, hiddenOnSmall }: { statu
     <div
       aria-hidden="true"
       className={cn(
-        "relative flex min-w-0 flex-col rounded-lg border border-line bg-surface-2/40",
-        "before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg",
+        "card flex min-w-0 flex-col p-0",
+        TOP_RULE,
         TONE_RULE[tone],
         hiddenOnSmall && "max-lg:hidden",
       )}
     >
-      <div className="flex flex-col gap-2 border-b border-line px-3 pb-2.5 pt-3">
+      <div className="flex flex-col gap-2 border-b border-line px-3.5 pb-3 pt-3.5">
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-semibold text-ink">{stageLabel(status)}</span>
           <Skeleton className="h-5 w-6 rounded-full" />
         </div>
         <Skeleton className="h-3.5 w-20" />
       </div>
-      <div className="flex min-h-40 flex-col gap-2 p-2">
+      <div className="flex min-h-40 flex-col gap-2 p-2.5">
         {Array.from({ length: cards }, (_, index) => (
-          <div key={index} className="flex flex-col gap-2.5 rounded-md border border-line bg-surface p-3">
+          <div key={index} className="flex flex-col gap-2.5 rounded-[14px] border border-line bg-card-2 p-3">
             <Skeleton className="h-3 w-16" />
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-3 w-3/4" />

@@ -11,6 +11,8 @@ import { ErrorPanel } from "./PanelError";
 import { FIGURE, LoadingPanel } from "./panelParts";
 
 const TITLE = "Pipeline";
+/** Icon chip in the card head. */
+const ICON = GitBranch;
 const DESCRIPTION = "Open enquiries by stage, with quoted value";
 /** The stages an enquiry moves through on its way to a booking, in order. */
 const STAGES = ["new", "quoting", "quoted", "won"] as const;
@@ -65,11 +67,12 @@ function StageRow({ row, top, previous, money, index }: { row: Row; top: number;
 export function PipelinePanel({ onNewEnquiry, className }: { onNewEnquiry: () => void; className?: string }) {
   const pipeline = useQuery(pipelineQueryOptions);
 
-  if (pipeline.isPending) return <LoadingPanel title={TITLE} description={DESCRIPTION} className={className} />;
+  if (pipeline.isPending) return <LoadingPanel title={TITLE} icon={ICON} description={DESCRIPTION} className={className} />;
   if (pipeline.isError) {
     return (
       <ErrorPanel
         title={TITLE}
+        icon={ICON}
         description={DESCRIPTION}
         error={pipeline.error}
         onRetry={() => void pipeline.refetch()}
@@ -96,6 +99,7 @@ export function PipelinePanel({ onNewEnquiry, className }: { onNewEnquiry: () =>
   return (
     <Panel
       title={TITLE}
+      icon={ICON}
       description={DESCRIPTION}
       className={className}
       actions={

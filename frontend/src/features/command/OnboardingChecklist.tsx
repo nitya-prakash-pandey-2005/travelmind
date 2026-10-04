@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, type LinkProps } from "@tanstack/react-router";
-import { ArrowRight, Circle, CircleCheck, X } from "lucide-react";
+import { ArrowRight, Circle, CircleCheck, ListChecks, X } from "lucide-react";
 import { useState } from "react";
 import { onboardingQueryOptions, type OnboardingItem, type OnboardingKey } from "../../api/workspace";
 import { APP_HOME } from "../../app/paths";
@@ -86,7 +86,7 @@ export function OnboardingChecklist({ agencyId, onNewEnquiry }: { agencyId: stri
   if (dismissed) return null;
   if (onboarding.isPending) {
     return (
-      <Panel title={TITLE} dense busy>
+      <Panel title={TITLE} icon={ListChecks} dense busy>
         <span className="sr-only">Loading setup steps…</span>
         <div aria-hidden="true" className="flex flex-wrap gap-1.5">
           {["w-36", "w-44", "w-32", "w-40"].map((width) => (
@@ -98,7 +98,7 @@ export function OnboardingChecklist({ agencyId, onNewEnquiry }: { agencyId: stri
   }
   if (onboarding.isError) {
     return (
-      <Panel title={TITLE} dense>
+      <Panel title={TITLE} icon={ListChecks} dense>
         <PanelError error={onboarding.error} onRetry={() => void onboarding.refetch()} retrying={onboarding.isFetching} />
       </Panel>
     );
@@ -112,6 +112,7 @@ export function OnboardingChecklist({ agencyId, onNewEnquiry }: { agencyId: stri
   return (
     <Panel
       title={TITLE}
+      icon={ListChecks}
       dense
       actions={
         <div className="flex items-center gap-3">

@@ -109,7 +109,7 @@ export function EnquiryCard({
       onDragStart={movable ? startDrag : undefined}
       onDragEnd={movable ? onDragEnd : undefined}
       className={cn(
-        "group/card relative flex flex-col gap-2 rounded-md border border-line bg-surface p-3 shadow-raise",
+        "group/card relative flex flex-col gap-2 rounded-[14px] border border-line bg-card-2 p-3",
         "transition-[border-color,opacity,background-color] duration-150 ease-tm hover:border-line-strong",
         "has-[a:focus-visible]:border-primary",
         movable && "cursor-grab active:cursor-grabbing",
@@ -140,7 +140,7 @@ export function EnquiryCard({
           draggable={false}
           className={cn(
             "truncate rounded-[4px] font-mono text-sm font-semibold tracking-[0.02em] text-ink",
-            "after:absolute after:inset-0 after:rounded-md focus-visible:outline-none",
+            "after:absolute after:inset-0 after:rounded-[14px] focus-visible:outline-none",
           )}
         >
           {routeLabel(enquiry)}
