@@ -18,14 +18,30 @@ terminal status, after a final read so no step is left behind, and after MAX_STR
 Wire format: a step is `id: <seq>`, `event: step`, `data: <StepOut JSON>`; a status is
 `event: status`, `data: <RunOut JSON>` with no id (the browser's last event id stays the last
 step's); a heartbeat is the comment line `: heartbeat`.
+
+Bounded:
+- One Redis subscription per process (`_Hub`): a single PubSub connection, subscribed to a
+  run's channel while at least one stream in this process watches that run (reference counted),
+  whose reader fans each message out to the streams' own queues. A slow stream whose queue is
+  full misses messages, sees the gap in seqs and re-reads the database. If the connection fails,
+  every stream is told and falls back to polling the database, backing off from POLL_FIRST_S to
+  POLL_MAX_S with jitter (`poll_delay`), heartbeats unchanged.
+- At most STREAMS_PER_USER open streams per user and STREAMS_PER_AGENCY per agency, across
+  processes (`open_stream`: Redis semaphores keyed by a per-stream holder, held for
+  STREAM_SLOT_TTL_S and refreshed on every heartbeat; fails open like the other limits). Past a
+  cap the API answers 429 (TOO_MANY_STREAMS). A stream whose response never started (the client
+  went away first) holds its slots until their TTL lapses.
+- Each heartbeat also re-checks the session (`StreamLease.alive`): a stream whose session was
+  revoked (logout) or expired closes.
 """
 
 import asyncio
 import contextlib
 import json
-from collections.abc import AsyncIterator
+import random
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from redis.asyncio import Redis
@@ -38,13 +54,21 @@ from travelmind.agent.schemas import RunOut, run_out, step_out
 from travelmind.config import get_settings
 from travelmind.db import bind_tenant, get_sessionmaker
 from travelmind.metrics import AGENT_STEPS
+from travelmind.semaphore import refresh_slot, release_slot, take_slot
 
 log = structlog.get_logger()
 
 HEARTBEAT_S = 15.0
 MAX_STREAM_S = 600.0
-POLL_WITHOUT_PUBSUB_S = 1.0  # how often a stream without a subscription re-reads the database
+POLL_FIRST_S = 1.0  # a stream without a subscription re-reads the database this often at first,
+POLL_MAX_S = 5.0  # backing off to this
 PUBSUB_HEALTH_CHECK_S = 30
+HUB_READ_TIMEOUT_S = 1.0
+STREAM_QUEUE_SIZE = 256
+STREAMS_PER_USER = 4
+STREAMS_PER_AGENCY = 20
+STREAM_SLOT_TTL_S = 60.0  # > 3 heartbeats: refreshed on each
+TOO_MANY_STREAMS = "Too many live plan views are open. Close one and try again."
 
 
 def channel(run_id: UUID | str) -> str:
@@ -138,22 +162,227 @@ async def _snapshot(
     return shown, out
 
 
-async def _subscribe(run_id: UUID) -> tuple[Redis, Any]:
-    settings = get_settings()
-    client = Redis.from_url(
-        settings.redis_url,
-        socket_connect_timeout=settings.redis_socket_timeout_s,
-        health_check_interval=PUBSUB_HEALTH_CHECK_S,
-    )
-    pubsub = client.pubsub(ignore_subscribe_messages=True)
-    try:
-        await pubsub.subscribe(channel(run_id))
-    except BaseException:
-        with contextlib.suppress(Exception):
-            await pubsub.aclose()
-            await client.aclose()
-        raise
-    return client, pubsub
+def poll_delay(attempt: int) -> float:
+    """The wait before a stream's `attempt`-th database read without a subscription: 1 s,
+    doubling up to 5 s, each ±20%."""
+    base = min(POLL_MAX_S, POLL_FIRST_S * 2**attempt)
+    return base * random.uniform(0.8, 1.2)
+
+
+# The hub's message telling a stream its subscription is gone (it polls the database instead).
+LOST: dict[str, Any] = {"type": "lost"}
+
+
+class _Hub:
+    """The process's one Redis subscription, shared by its streams (see the module docstring).
+    Belongs to one event loop."""
+
+    def __init__(self) -> None:
+        self.client: Redis | None = None
+        self.pubsub: Any = None
+        self.reader: asyncio.Task[None] | None = None
+        self.queues: dict[str, set[asyncio.Queue[dict[str, Any]]]] = {}
+        self.lock = asyncio.Lock()
+
+    def listeners(self, name: str) -> int:
+        return len(self.queues.get(name, ()))
+
+    async def subscribe(self, name: str) -> asyncio.Queue[dict[str, Any]]:
+        """A queue that receives the channel's messages until `unsubscribe`."""
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=STREAM_QUEUE_SIZE)
+        async with self.lock:
+            if self.pubsub is None:
+                settings = get_settings()
+                self.client = Redis.from_url(
+                    settings.redis_url,
+                    socket_connect_timeout=settings.redis_socket_timeout_s,
+                    health_check_interval=PUBSUB_HEALTH_CHECK_S,
+                )
+                self.pubsub = self.client.pubsub(ignore_subscribe_messages=True)
+            if name not in self.queues:
+                try:
+                    await self.pubsub.subscribe(name)
+                except BaseException:
+                    if not self.queues:
+                        await self._close()
+                    raise
+                self.queues[name] = set()
+            self.queues[name].add(queue)
+            if self.reader is None or self.reader.done():
+                self.reader = asyncio.create_task(self._read())
+        return queue
+
+    async def unsubscribe(self, name: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        async with self.lock:
+            listeners = self.queues.get(name)
+            if listeners is None or queue not in listeners:
+                return  # the hub dropped it already (a failed connection)
+            listeners.discard(queue)
+            if listeners:
+                return
+            del self.queues[name]
+            if not self.queues:  # nobody listens: no connection held
+                await self._close()
+            elif self.pubsub is not None:
+                with contextlib.suppress(Exception):
+                    await self.pubsub.unsubscribe(name)
+
+    async def _read(self) -> None:
+        try:
+            while self.queues and self.pubsub is not None:
+                raw = await self.pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=HUB_READ_TIMEOUT_S
+                )
+                if not isinstance(raw, dict):
+                    continue
+                name = raw.get("channel")
+                if isinstance(name, bytes):
+                    name = name.decode()
+                message = _decode(raw)
+                if message is None or not isinstance(name, str):
+                    continue
+                for queue in list(self.queues.get(name, ())):
+                    with contextlib.suppress(asyncio.QueueFull):  # a gap: it re-reads the DB
+                        queue.put_nowait(message)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("agent_stream_hub_failed", error_type=type(exc).__name__)
+            await self._fail()
+
+    async def _fail(self) -> None:
+        """The connection broke: every stream falls back to the database; the next subscribe
+        opens a fresh connection."""
+        async with self.lock:
+            for listeners in self.queues.values():
+                for queue in listeners:
+                    _put_last(queue, LOST)
+            self.queues.clear()
+            await self._close()
+
+    async def _close(self) -> None:
+        reader, self.reader = self.reader, None
+        if reader is not None and reader is not asyncio.current_task():
+            reader.cancel()
+            with contextlib.suppress(BaseException):
+                await reader
+        pubsub, client = self.pubsub, self.client
+        self.pubsub = self.client = None
+        if pubsub is not None:
+            with contextlib.suppress(Exception):
+                await pubsub.aclose()
+        if client is not None:
+            with contextlib.suppress(Exception):
+                await client.aclose()
+
+
+def _put_last(queue: asyncio.Queue[dict[str, Any]], message: dict[str, Any]) -> None:
+    """Put `message` on the queue, dropping the oldest item if it is full."""
+    with contextlib.suppress(asyncio.QueueEmpty):
+        if queue.full():
+            queue.get_nowait()
+    with contextlib.suppress(asyncio.QueueFull):
+        queue.put_nowait(message)
+
+
+_hubs: dict[asyncio.AbstractEventLoop, _Hub] = {}
+
+
+def _hub() -> _Hub:
+    """This event loop's hub (a hub's tasks and connection belong to one loop)."""
+    loop = asyncio.get_running_loop()
+    for other in [known for known in _hubs if known.is_closed()]:
+        del _hubs[other]
+    return _hubs.setdefault(loop, _Hub())
+
+
+def listeners(name: str) -> int:
+    """How many of this process's streams watch the channel (tests, metrics)."""
+    return _hub().listeners(name)
+
+
+async def close_hub() -> None:
+    """Close this loop's hub (shutdown); open streams fall back to the database."""
+    hub = _hubs.pop(asyncio.get_running_loop(), None)
+    if hub is not None:
+        async with hub.lock:
+            for queues in hub.queues.values():
+                for queue in queues:
+                    _put_last(queue, LOST)
+            hub.queues.clear()
+            await hub._close()
+
+
+# --- how many streams --------------------------------------------------------------------------
+
+
+class TooManyStreams(Exception):
+    def __init__(self) -> None:
+        super().__init__(TOO_MANY_STREAMS)
+        self.message = TOO_MANY_STREAMS
+
+
+def stream_user_key(user_id: UUID) -> str:
+    return f"tm:sem:agent-stream:user:{user_id}"
+
+
+def stream_agency_key(agency_id: UUID) -> str:
+    return f"tm:sem:agent-stream:agency:{agency_id}"
+
+
+class StreamLease:
+    """One open stream's slots (per user and per agency) and its session check."""
+
+    def __init__(
+        self,
+        redis: Redis,
+        user_id: UUID,
+        agency_id: UUID,
+        holder: str,
+        alive: Callable[[], Awaitable[bool]] | None,
+    ) -> None:
+        self.redis = redis
+        self.keys = (stream_user_key(user_id), stream_agency_key(agency_id))
+        self.holder = holder
+        self.alive = alive
+
+    async def beat(self) -> bool:
+        """On a heartbeat: keep the slots and check the session; False closes the stream."""
+        for key in self.keys:
+            await refresh_slot(self.redis, key, self.holder, ttl_s=STREAM_SLOT_TTL_S)
+        return True if self.alive is None else await self.alive()
+
+    async def close(self) -> None:
+        for key in self.keys:
+            await release_slot(self.redis, key, self.holder)
+
+
+async def open_stream(
+    redis: Redis,
+    user_id: UUID,
+    agency_id: UUID,
+    *,
+    alive: Callable[[], Awaitable[bool]] | None = None,
+) -> StreamLease:
+    """Take a stream slot for the user and one for the agency, or raise TooManyStreams."""
+    lease = StreamLease(redis, user_id, agency_id, uuid4().hex, alive)
+    user_key, agency_key = lease.keys
+    if (
+        await take_slot(
+            redis, user_key, lease.holder, limit=STREAMS_PER_USER, ttl_s=STREAM_SLOT_TTL_S
+        )
+        is False
+    ):
+        raise TooManyStreams
+    if (
+        await take_slot(
+            redis, agency_key, lease.holder, limit=STREAMS_PER_AGENCY, ttl_s=STREAM_SLOT_TTL_S
+        )
+        is False
+    ):
+        await release_slot(redis, user_key, lease.holder)
+        raise TooManyStreams
+    return lease
 
 
 class _Stream:
@@ -208,16 +437,19 @@ def _decode(raw: Any) -> dict[str, Any] | None:
     return message if isinstance(message, dict) else None
 
 
-async def stream_run(run_id: UUID, agency_id: UUID, last_event_id: int) -> AsyncIterator[str]:
-    """The run's events as SSE text (see the module docstring)."""
+async def stream_run(
+    run_id: UUID, agency_id: UUID, last_event_id: int, *, lease: StreamLease | None = None
+) -> AsyncIterator[str]:
+    """The run's events as SSE text (see the module docstring). `lease` (the stream's slots and
+    session check) is released when the stream ends."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + MAX_STREAM_S
     stream = _Stream(run_id, agency_id, last_event_id)
-    client: Redis | None = None
-    pubsub: Any = None
+    hub, name = _hub(), channel(run_id)
+    queue: asyncio.Queue[dict[str, Any]] | None = None
     try:
         try:
-            client, pubsub = await _subscribe(run_id)
+            queue = await hub.subscribe(name)
         except Exception as exc:  # Redis away: the stream polls the database instead
             log.warning("agent_stream_subscribe_failed", error_type=type(exc).__name__)
         run, steps = await _snapshot(run_id, agency_id, stream.last)
@@ -228,35 +460,39 @@ async def stream_run(run_id: UUID, agency_id: UUID, last_event_id: int) -> Async
         yield sse("status", run.model_dump(mode="json"))
         if run.status in TERMINAL_STATUSES:
             return
-        beat = loop.time()
+        beat, polls = loop.time(), 0
         while loop.time() < deadline:
-            raw = None
-            if pubsub is not None:
+            events: list[str] = []
+            if queue is not None:
+                message: dict[str, Any] | None = None
                 try:
-                    raw = await pubsub.get_message(
-                        ignore_subscribe_messages=True, timeout=HEARTBEAT_S
-                    )
-                except Exception as exc:
-                    log.warning("agent_stream_pubsub_failed", error_type=type(exc).__name__)
-                    pubsub = None
+                    wait = max(0.0, beat + HEARTBEAT_S - loop.time())
+                    message = await asyncio.wait_for(queue.get(), timeout=wait)
+                except TimeoutError:
+                    pass
+                if message is LOST:
+                    queue = None  # the hub dropped this stream: poll from now on
+                elif message is not None:
+                    events = await stream.handle(message)
             else:
-                await asyncio.sleep(min(HEARTBEAT_S, POLL_WITHOUT_PUBSUB_S))
-            message = _decode(raw)
-            if message is not None:
-                events = await stream.handle(message)
-            else:
+                await asyncio.sleep(min(poll_delay(polls), max(0.0, deadline - loop.time())))
+                polls += 1
                 events = await stream.catch_up()
-                if loop.time() - beat >= HEARTBEAT_S or pubsub is not None:
-                    beat = loop.time()
-                    events.insert(0, HEARTBEAT)
+            if not stream.done and loop.time() - beat >= HEARTBEAT_S:
+                beat = loop.time()
+                if lease is not None and not await lease.beat():
+                    return  # the session is gone: nothing more for this browser
+                if queue is not None:
+                    events += await stream.catch_up()  # a missed publish still arrives
+                events.insert(0, HEARTBEAT)
             for event in events:
                 yield event
             if stream.done:
                 return
     finally:
-        if pubsub is not None:
+        if queue is not None:
             with contextlib.suppress(Exception):
-                await pubsub.aclose()
-        if client is not None:
+                await asyncio.shield(hub.unsubscribe(name, queue))
+        if lease is not None:
             with contextlib.suppress(Exception):
-                await client.aclose()
+                await asyncio.shield(lease.close())

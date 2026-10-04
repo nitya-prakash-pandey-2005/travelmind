@@ -9,10 +9,11 @@ change cached data (create_enquiry, draft_quote) bump the agency's cache themsel
 job runs them.
 """
 
+from functools import partial
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 
 from travelmind.agent import budget, events, service
@@ -32,7 +33,8 @@ from travelmind.agent.schemas import (
 from travelmind.cache import RedisClient
 from travelmind.config import get_settings
 from travelmind.db import DbSession
-from travelmind.identity.deps import AuthedUser
+from travelmind.identity.deps import AuthedUser, session_is_live
+from travelmind.identity.tokens import hash_token
 
 agent_router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
@@ -123,22 +125,33 @@ def _last_event_id(header: str | None, query: str | None) -> int:
 @agent_router.get("/runs/{run_id}/events")
 async def run_events_route(
     run_id: UUID,
+    request: Request,
     current: AuthedUser,
     db: DbSession,
+    redis: RedisClient,
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
     last_event_id_query: Annotated[str | None, Query(alias="last_event_id", max_length=12)] = None,
 ) -> StreamingResponse:
     """Server-Sent Events: the stored steps after Last-Event-ID (the header, or the
     `last_event_id` query parameter for a first connection, which can't set headers), then the
-    live ones, a heartbeat comment every 15 s, closing on a final status (`agent.events`)."""
+    live ones, a heartbeat comment every 15 s, closing on a final status (`agent.events`).
+    At most `events.STREAMS_PER_USER` open streams per user and `STREAMS_PER_AGENCY` per agency
+    (429 past them); a stream closes when its session is revoked."""
     try:
         await service.get_run(db, current.agency_id, run_id)
     except service.RunNotFound as exc:
         raise _http(exc) from None
     await db.close()  # the stream reads with its own short sessions
+    token = request.cookies.get(get_settings().session_cookie_name) or ""
+    try:
+        lease = await events.open_stream(
+            redis, current.id, current.agency_id, alive=partial(session_is_live, hash_token(token))
+        )
+    except events.TooManyStreams as exc:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, exc.message) from None
     after = _last_event_id(last_event_id, last_event_id_query)
     return StreamingResponse(
-        events.stream_run(run_id, current.agency_id, after),
+        events.stream_run(run_id, current.agency_id, after, lease=lease),
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )

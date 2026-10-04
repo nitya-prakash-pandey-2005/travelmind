@@ -488,6 +488,104 @@ async def test_the_stream_heartbeats_and_picks_up_steps_without_pubsub(monkeypat
     assert parse_sse(response.text)[-1]["data"]["status"] == "cancelled"
 
 
+async def _waiting_run(client, monkeypatch) -> str:
+    use(monkeypatch, FakeProvider([gen(None, ToolCall("a1", "ask_user", {"question": "Who?"}))]))
+    run_id = (await client.post(RUNS, json={"prompt": "Plan"})).json()["run_id"]
+    await wait_for(client, run_id, "waiting_for_user")
+    return run_id
+
+
+async def _until_subscribed(run_id: str, count: int = 1) -> None:
+    for _ in range(500):
+        if await _subscribers(run_id) >= count:
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError("the stream never subscribed")
+
+
+async def _cancel_via(client, run_id: str) -> None:
+    assert (await client.post(f"{RUNS}/{run_id}/cancel")).status_code == 200
+
+
+@pytest.mark.parametrize("cap", ["STREAMS_PER_USER", "STREAMS_PER_AGENCY"])
+async def test_live_streams_are_capped_per_user_and_per_agency(client, monkeypatch, cap):
+    await signup(client)
+    run_id = await _waiting_run(client, monkeypatch)
+    monkeypatch.setattr(events, "STREAMS_PER_USER", 5)
+    monkeypatch.setattr(events, "STREAMS_PER_AGENCY", 5)
+    monkeypatch.setattr(events, cap, 1)
+    first = asyncio.create_task(client.get(f"{RUNS}/{run_id}/events"))
+    await _until_subscribed(run_id)
+    refused = await client.get(f"{RUNS}/{run_id}/events")
+    assert refused.status_code == 429
+    assert refused.json()["detail"] == events.TOO_MANY_STREAMS
+    await _cancel_via(client, run_id)
+    assert (await asyncio.wait_for(first, 10)).status_code == 200
+    # The first stream's slots went back when it closed.
+    again = await client.get(f"{RUNS}/{run_id}/events")
+    assert again.status_code == 200
+
+
+async def test_two_streams_on_one_run_share_one_subscription(client, monkeypatch):
+    await signup(client)
+    gate = asyncio.Event()
+
+    async def held(messages):
+        await gate.wait()
+        return gen(None, ToolCall("l2", "lookup_airport", {"query": "Mumbai"}))
+
+    use(
+        monkeypatch,
+        FakeProvider(
+            [gen(None, ToolCall("l1", "lookup_airport", {"query": "Delhi"})), held, gen("Done.")]
+        ),
+    )
+    run_id = (await client.post(RUNS, json={"prompt": "Plan"})).json()["run_id"]
+    for _ in range(500):
+        if len((await client.get(f"{RUNS}/{run_id}")).json()["steps"]) >= 2:
+            break
+        await asyncio.sleep(0.02)
+    streams = [
+        asyncio.create_task(client.get(f"{RUNS}/{run_id}/events", headers={"Last-Event-ID": "1"}))
+        for _ in range(2)
+    ]
+    for _ in range(500):  # both streams listening (each sent its replay and status)
+        if events.listeners(events.channel(run_id)) == 2:
+            break
+        await asyncio.sleep(0.02)
+    assert events.listeners(events.channel(run_id)) == 2
+    assert await _subscribers(run_id) == 1  # one Redis subscription for the process
+    gate.set()
+    sent = [parse_sse((await asyncio.wait_for(task, 15)).text) for task in streams]
+    seqs = [[e["data"]["seq"] for e in one if e["event"] == "step"] for one in sent]
+    assert seqs[0] == seqs[1] and seqs[0] == list(range(2, 2 + len(seqs[0])))
+    assert all(one[-1]["data"]["status"] == "done" for one in sent)
+    assert events.listeners(events.channel(run_id)) == 0
+    assert await _subscribers(run_id) == 0  # unsubscribed once the last stream closed
+
+
+async def test_a_revoked_session_closes_its_stream(client, monkeypatch):
+    await signup(client)
+    run_id = await _waiting_run(client, monkeypatch)
+    monkeypatch.setattr(events, "HEARTBEAT_S", 0.05)
+    stream = asyncio.create_task(client.get(f"{RUNS}/{run_id}/events"))
+    await _until_subscribed(run_id)
+    assert (await client.post("/api/v1/auth/logout")).status_code == 204
+    response = await asyncio.wait_for(stream, 10)
+    sent = parse_sse(response.text)
+    assert [e["data"]["status"] for e in sent if e["event"] == "status"] == ["waiting_for_user"]
+    assert await _subscribers(run_id) == 0
+
+
+async def test_without_pubsub_the_stream_backs_off_its_database_reads(monkeypatch):
+    """Redis down: the stream polls the database, 1 s growing to 5 s (with jitter)."""
+    delays = [events.poll_delay(n) for n in range(6)]
+    assert 0.8 <= delays[0] <= 1.2
+    assert all(later >= earlier * 0.8 for earlier, later in zip(delays, delays[1:], strict=False))
+    assert all(d <= events.POLL_MAX_S * 1.2 for d in delays)
+    assert delays[-1] >= events.POLL_MAX_S * 0.8
+
+
 # --- the worker and shutdown ----------------------------------------------------------------
 
 

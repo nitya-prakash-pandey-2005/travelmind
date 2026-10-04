@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request, status
 
 from travelmind.config import get_settings
-from travelmind.db import DbSession, bind_tenant
+from travelmind.db import DbSession, bind_tenant, get_sessionmaker
 from travelmind.identity import service
 from travelmind.identity.sessioncache import session_cache
 from travelmind.identity.tokens import hash_token
@@ -59,6 +59,21 @@ async def get_current_user(request: Request, db: DbSession) -> CurrentUser:
 
 
 AuthedUser = Annotated[CurrentUser, Depends(get_current_user)]
+
+
+async def session_is_live(token_hash: str) -> bool:
+    """Whether the session is still live (not revoked or expired, its user active): from the
+    session cache, else the database. For long requests (an event stream) that check again
+    while they run. A database error counts as live: the next check decides."""
+    if isinstance(session_cache().get(token_hash), CurrentUser):
+        return True
+    try:
+        async with get_sessionmaker()() as db:
+            found = await service.find_session_user(db, token_hash)
+            await db.commit()
+    except Exception:
+        return True
+    return found is not None
 
 
 def require_role(*roles: str) -> Callable[..., Awaitable[CurrentUser]]:

@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
+from travelmind.agent import events as agent_events
 from travelmind.agent import service as agent_service
 from travelmind.agent.router import agent_router
 from travelmind.agent.service import stuck_runs_loop as stuck_agent_runs_loop
@@ -88,6 +89,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Inline agent runs (development) stop and are marked interrupted.
         with contextlib.suppress(Exception):
             await agent_service.drain_inline_runs(cancel=True)
+        with contextlib.suppress(Exception):
+            await agent_events.close_hub()  # the agent streams' shared subscription
         # Each close runs even if an earlier one fails.
         try:
             await close_model_clients()
