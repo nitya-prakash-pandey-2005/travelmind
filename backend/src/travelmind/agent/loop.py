@@ -27,7 +27,10 @@ Limits, each ending the run with a clear status:
 
 The answer goes through the grounding guard (`agent.grounding`): an answer with values that are
 not in the results is re-prompted once, then replaced by the plan's own summary (grounded=false).
-Interim text with unverified values is not shown in the trace.
+What is checked: the prose, the plan block's summary and next steps, and the itinerary the board
+would show (its days' titles, notes and dates are the model's words: `plan.itinerary_text`); on
+a fallback the itinerary keeps only its dates and items. Interim text with unverified values is
+not shown in the trace.
 """
 
 import asyncio
@@ -45,7 +48,7 @@ from travelmind.agent.context import RunContext
 from travelmind.agent.facts import GroundFacts, facts_of
 from travelmind.agent.grounding import Violation, find_violations, reprompt_text, stated_facts
 from travelmind.agent.models import AgentRun
-from travelmind.agent.plan import build_result, fallback_summary, split_answer
+from travelmind.agent.plan import build_result, fallback_summary, itinerary_text, split_answer
 from travelmind.agent.prompts import system_prompt
 from travelmind.agent.provider import (
     Generation,
@@ -374,7 +377,9 @@ class _Loop:
 
     # --- the guard ------------------------------------------------------------------------
 
-    async def _violations(self, text: str) -> list[Violation]:
+    async def _violations(self, text: str, *, within_trip: bool = False) -> list[Violation]:
+        if not text.strip():
+            return []
         index = await get_airport_index(self.ctx.db)
         await release_connection(self.ctx.db)
         today = self.ctx.today()
@@ -385,6 +390,7 @@ class _Loop:
             facts_of(self.state.results()),
             user,
             is_airport=lambda code: index.get(code) is not None,
+            within_trip=within_trip,
         )
 
     async def _thinking(self, text: str, took: int) -> None:
@@ -398,7 +404,13 @@ class _Loop:
         checked = "\n".join(
             [prose, (plan.summary or "") if plan else "", *(plan.next_steps if plan else [])]
         )
-        violations = await self._violations(checked) if text else []
+        summary = prose or ((plan.summary or "") if plan else "")
+        memory, results = self.ctx.memory, self.state.results()
+        draft = build_result(memory, results, plan, summary=summary, fallback=False)
+        violations: list[Violation] = []
+        if text:  # the prose, and the itinerary the board would show (the model's words too)
+            violations = await self._violations(checked)
+            violations += await self._violations(itinerary_text(draft.itinerary), within_trip=True)
         said = Message(role="model", text=generation.text, text_signature=generation.text_signature)
         if violations and not self.state.reprompted:
             await self.emit(
@@ -421,11 +433,9 @@ class _Loop:
                 "violations": [v.to_json() for v in violations],
             },
         )
-        summary = prose or ((plan.summary or "") if plan else "")
-        result = build_result(
-            self.ctx.memory, self.state.results(), plan, summary=summary, fallback=fallback
-        )
+        result = draft
         if fallback:
+            result = build_result(memory, results, plan, summary=summary, fallback=True)
             result.summary = fallback_summary(result)
         self.state.messages.append(said)
         await self.emit(

@@ -6,6 +6,16 @@ provided: money (minor units with their currency, and the formatted text, with a
 (ISO and displayed forms, as calendar days: trip dates, departures, rates' dates), airport codes,
 and hotel, place, airport and city names. `facts_of(results)` is the union over a run.
 
+Money is also tagged by what it is for, so "₹6,172 per person" can't pass on a total of ₹6,172:
+`per_traveller_amounts` are one traveller's share (`per_traveller_*` fields, and fare history's
+per-traveller fares), `total_amounts` every amount that isn't a per-something rate (per
+traveller, per night). `amounts` keeps them all.
+
+A searched trip's span is kept apart (`trip_days`): each day between a trip block's start and
+end (`depart_date`/`return_date`, `check_in`/`check_out`; at most MAX_TRIP_DAYS). Only an
+itinerary's days are checked against it ("Day 3, 14 Dec" in a 12-16 Dec trip is grounded); in
+prose, "leave on 14 Dec" must still be a date a tool returned.
+
 It never collects text the model wrote and a tool merely echoed back: `MODEL_AUTHORED_PATHS`
 lists those fields per tool (build_itinerary's day titles, notes and dates; ask_user's
 question), and an error result (whose message may repeat the model's ids or names) carries no
@@ -40,6 +50,10 @@ _CODE = re.compile(r"[A-Z]{3}")
 _CODE_KEYS = frozenset({"origin", "destination", "code", "home_airport"})
 _DATE_KEYS = frozenset({"date", "check_in", "check_out", "departs_at", "arrives_at", "fx_as_of"})
 _NAME_KEYS = frozenset({"name", "city", "origin_city", "destination_city"})
+_TRIP_SPANS = (("depart_date", "return_date"), ("check_in", "check_out"))
+MAX_TRIP_DAYS = 62
+# Fare history's fares are per traveller (fare_insight's `baseline`).
+_PER_TRAVELLER_PATHS = ("baseline.",)
 
 
 @dataclass(frozen=True)
@@ -47,9 +61,12 @@ class GroundFacts:
     """Values the run's tools returned, in the forms the guard compares."""
 
     amounts: frozenset[tuple[str, int]] = frozenset()  # (currency, minor units)
+    per_traveller_amounts: frozenset[tuple[str, int]] = frozenset()  # one traveller's share
+    total_amounts: frozenset[tuple[str, int]] = frozenset()  # not a per-traveller/night rate
     money_text: frozenset[str] = frozenset()  # as formatted: "₹2,16,804", "≈ ₹8,331", "$30"
     flight_numbers: frozenset[str] = frozenset()  # carrier + number, no space: "AI101"
     dates: frozenset[date] = frozenset()
+    trip_days: frozenset[date] = frozenset()  # every day of a searched trip (itineraries only)
     iata_codes: frozenset[str] = frozenset()
     names: frozenset[str] = frozenset()  # hotels, places, airports, cities
 
@@ -86,9 +103,12 @@ class _Collector:
     def __init__(self, skipped: frozenset[str]) -> None:
         self.skipped = skipped
         self.amounts: set[tuple[str, int]] = set()
+        self.per_traveller: set[tuple[str, int]] = set()
+        self.totals: set[tuple[str, int]] = set()
         self.money_text: set[str] = set()
         self.flight_numbers: set[str] = set()
         self.dates: set[date] = set()
+        self.trip_days: set[date] = set()
         self.iata_codes: set[str] = set()
         self.names: set[str] = set()
 
@@ -101,22 +121,45 @@ class _Collector:
             return
         own = node.get("currency")
         currency = own if isinstance(own, str) else currency
+        self.span(node, path)
         for key, value in node.items():
             where = f"{path}.{key}" if path else str(key)
             if where in self.skipped:
                 continue
-            self.field(node, str(key), value, currency)
+            self.field(node, str(key), value, currency, where)
             if isinstance(value, dict | list):
                 self.walk(value, where, currency)
 
-    def field(self, node: dict[str, Any], key: str, value: Any, currency: str | None) -> None:
+    def span(self, node: dict[str, Any], path: str) -> None:
+        """Every day of a trip block's span (see the module docstring)."""
+        for start_key, end_key in _TRIP_SPANS:
+            keys = [f"{path}.{k}" if path else k for k in (start_key, end_key)]
+            if any(key in self.skipped for key in keys):
+                continue
+            start, end = node.get(start_key), node.get(end_key)
+            if not (isinstance(start, str) and isinstance(end, str)):
+                continue
+            first, last = _iso_day(start), _iso_day(end)
+            if first is None or last is None or not 0 <= (last - first).days <= MAX_TRIP_DAYS:
+                continue
+            days = range(first.toordinal(), last.toordinal() + 1)
+            self.trip_days.update(date.fromordinal(n) for n in days)
+
+    def field(
+        self, node: dict[str, Any], key: str, value: Any, currency: str | None, where: str
+    ) -> None:
         if isinstance(value, bool):
             return
         if key.endswith("_minor") and isinstance(value, int):
             prefix = key.removesuffix("_minor")
             given = node.get(f"{prefix}_currency") or node.get("total_currency") or currency
             if isinstance(given, str):
-                self.amounts.add((given, value))
+                amount = (given, value)
+                self.amounts.add(amount)
+                if prefix.startswith("per_traveller") or where.startswith(_PER_TRAVELLER_PATHS):
+                    self.per_traveller.add(amount)
+                if not prefix.startswith("per_"):
+                    self.totals.add(amount)
         elif not isinstance(value, str):
             if key == "flight_numbers" and isinstance(value, list):
                 self.flight_numbers.update(flight_key(n) for n in value if isinstance(n, str))
@@ -137,9 +180,12 @@ class _Collector:
     def facts(self) -> GroundFacts:
         return GroundFacts(
             amounts=frozenset(self.amounts),
+            per_traveller_amounts=frozenset(self.per_traveller),
+            total_amounts=frozenset(self.totals),
             money_text=frozenset(self.money_text),
             flight_numbers=frozenset(self.flight_numbers),
             dates=frozenset(self.dates),
+            trip_days=frozenset(self.trip_days),
             iata_codes=frozenset(self.iata_codes),
             names=frozenset(self.names),
         )

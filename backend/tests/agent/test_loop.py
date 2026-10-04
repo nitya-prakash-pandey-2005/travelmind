@@ -222,6 +222,50 @@ async def test_guard_falls_back_after_second_violation(agency, airports):
     assert steps[-1].kind == "answer" and steps[-1].payload["fallback"] is True
 
 
+def _itinerary(notes: str):
+    def build(messages):
+        day_one = {"date": day(30), "title": "Arrive", "items": ["F1"], "notes": notes}
+        return gen(None, tc("build_itinerary", days=[day_one]))
+
+    return build
+
+
+async def test_invented_values_in_itinerary_notes_fail_the_guard_and_are_dropped(agency, airports):
+    _, run, steps = await run_script(
+        agency,
+        [
+            gen(None, tc("search_flights", **flights_args())),
+            _itinerary("Fly AI 999 for ₹3,000"),
+            grounded_answer,
+            grounded_answer,
+        ],
+    )
+    assert run.status == "done" and run.grounded is False
+    guards = [s.payload for s in steps if s.kind == "guard"]
+    assert [g["action"] for g in guards] == ["reprompt", "fallback"]
+    assert {"AI 999", "₹3,000"} <= {v["text"] for v in guards[0]["violations"]}
+    result = run.result
+    assert result is not None and result["fallback"] is True
+    first = result["itinerary"][0]
+    assert first["notes"] is None and first["title"] is None
+    assert first["date"] == day(30) and first["items"][0]["id"] == "F1"
+    assert "AI 999" not in json.dumps(result)
+
+
+async def test_a_grounded_itinerary_keeps_its_notes(agency, airports):
+    _, run, _ = await run_script(
+        agency,
+        [
+            gen(None, tc("search_flights", **flights_args())),
+            _itinerary("Check in online the day before."),
+            grounded_answer,
+        ],
+    )
+    assert run.grounded is True
+    assert run.result is not None
+    assert run.result["itinerary"][0]["notes"] == "Check in online the day before."
+
+
 async def test_unverified_interim_text_is_not_shown(agency):
     _, _, steps = await run_script(
         agency,

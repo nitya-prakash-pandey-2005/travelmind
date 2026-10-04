@@ -8,6 +8,10 @@ model: `build_result` resolves the ids through the run memory into the cards the
 from the latest results of the tools that produce them. Without a plan block, the latest
 searches' first options fill the board.
 
+The itinerary's day titles, notes and dates are the model's own words (build_itinerary echoes
+them), so the guard checks them too (`itinerary_text`), like the prose. On a fallback the board
+keeps each day's date and items and drops its title and notes.
+
 `fallback_summary` writes a short summary from that plan alone: what the guard shows instead of
 an answer that still had ungrounded values after its one re-prompt.
 """
@@ -119,6 +123,22 @@ def _ids(data: dict[str, Any] | None, key: str, id_field: str, limit: int) -> li
     ]
 
 
+def itinerary_text(days: Sequence[dict[str, Any]]) -> str:
+    """The model-written text of the itinerary's days (title, notes, displayed date), one line
+    each, for the guard."""
+    lines = []
+    for day in days:
+        for key in ("date_display", "title", "notes"):
+            value = day.get(key) if isinstance(day, dict) else None
+            if isinstance(value, str) and value.strip():
+                lines.append(value)
+    return "\n".join(lines)
+
+
+def _without_model_text(day: dict[str, Any]) -> dict[str, Any]:
+    return day | {"title": None, "notes": None} if isinstance(day, dict) else day
+
+
 def build_result(
     memory: RunMemory,
     results: Sequence[ToolResult],
@@ -142,13 +162,16 @@ def build_result(
     weather = latest.get("weather_forecast")
     itinerary = latest.get("build_itinerary")
     next_steps = [] if fallback or plan is None else plan.next_steps[:MAX_NEXT_STEPS]
+    days = list((itinerary or {}).get("days") or [])
+    if fallback:  # the guard didn't pass: the days keep their dates and items only
+        days = [_without_model_text(day) for day in days]
     return PlanResult(
         summary=summary,
         trip=trip if isinstance(trip, dict) else None,
         flights=_cards(memory, "flight", flight_refs),
         hotels=_cards(memory, "hotel", hotel_refs),
         places=_cards(memory, "place", place_refs),
-        itinerary=list((itinerary or {}).get("days") or []),
+        itinerary=days,
         budget=latest.get("estimate_budget"),
         weather=(
             {k: weather.get(k) for k in ("place", "label", "note", "units", "days", "attribution")}

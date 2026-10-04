@@ -233,3 +233,223 @@ def test_the_fallback_summary_passes_the_guard(with_offer):
     assert find_violations(summary, facts_of(results), EMPTY, is_airport=is_airport) == []
     if with_offer:
         assert "AI 101" in summary and "₹12,345" in summary
+
+
+# --- review probes: extraction gaps ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("prose", "found"),
+    [
+        ("About Rupees 9,999 all in.", [("money", "Rupees 9,999")]),
+        ("About 9,999 rupees all in.", [("money", "9,999 rupees")]),
+        ("That's 500 dollars.", [("money", "500 dollars")]),
+        ("Roughly 200 dirhams.", [("money", "200 dirhams")]),
+        ("Around 90 euros, or 80 pounds.", [("money", "90 euros"), ("money", "80 pounds")]),
+        ("It is rs 9999.", [("money", "rs 9999")]),
+        ("It is inr 9,999.", [("money", "inr 9,999")]),
+        ("It is ₹ 9,999.", [("money", "₹ 9,999")]),
+        ("It is $ 30.", [("money", "$ 30")]),
+    ],
+)
+def test_currency_words_lower_case_codes_and_spaced_symbols_are_money(prose, found):
+    assert kinds(prose) == found
+
+
+def test_currency_words_and_lower_case_codes_still_match_the_results():
+    assert kinds("It is rs 12345, INR 12,345 or 12,345 rupees.") == []
+    assert kinds("It is ₹ 12,345 for the pair.") == []
+
+
+@pytest.mark.parametrize(
+    ("prose", "found"),
+    [
+        ("Fares run ₹12,345–15,000.", [("money", "15,000")]),
+        ("Fares run ₹12,345 - 15,000.", [("money", "15,000")]),
+        ("Fares run ₹12,345 to 15,000.", [("money", "15,000")]),
+        ("Fares run between ₹12,345 and 15,000.", [("money", "15,000")]),
+        ("Fares run ₹1–1.5 lakh.", [("money", "₹1"), ("money", "1.5 lakh")]),
+    ],
+)
+def test_a_range_carries_its_currency_to_the_second_amount(prose, found):
+    assert kinds(prose) == found
+
+
+def test_a_range_tail_is_not_a_count_and_and_needs_between():
+    assert kinds("₹12,345 to 2 adults, and ₹12,345 and 4 nights.") == []
+    lakh = facts_of([flights_result(total_minor=15000000, total_formatted="₹1,50,000")])
+    assert kinds("Between ₹1.5 lakh and 1.5 lakh.", lakh) == []
+
+
+@pytest.mark.parametrize(
+    ("prose", "found"),
+    [
+        ("It costs 9,999 in all.", [("money", "9,999")]),
+        ("It costs 2,16,804 in all.", [("money", "2,16,804")]),
+        ("It costs 12,345 in all.", []),  # matches ₹12,345: the currency is unknown
+    ],
+)
+def test_bare_grouped_numbers_are_money_in_any_currency(prose, found):
+    assert kinds(prose) == found
+
+
+def test_hyphenated_flight_numbers_are_flights():
+    assert kinds("Take AI-999 or 6E-2134.") == [("flight", "AI-999"), ("flight", "6E-2134")]
+    assert kinds("Take AI-101.") == []
+
+
+@pytest.mark.parametrize(
+    ("prose", "found"),
+    [
+        ("Leave 12.12.2026.", []),
+        ("Leave 13.12.2026.", [("date", "13.12.2026")]),
+        ("Leave 13-12-2026.", [("date", "13-12-2026")]),
+        ("Leave 2026/12/12.", []),
+        ("Leave 2026/12/13.", [("date", "2026/12/13")]),
+    ],
+)
+def test_dotted_dashed_and_year_first_dates_are_checked(prose, found):
+    assert kinds(prose) == found
+
+
+# --- per person vs total ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("prose", "found"),
+    [
+        ("₹6,172 per person.", []),
+        ("₹6,172 pp.", []),
+        ("₹6,172.50 each.", []),
+        ("₹6,172 per traveller.", []),
+        ("₹12,345 per person.", [("money", "₹12,345")]),  # that is the total
+        ("₹12,345 in total.", []),
+        ("Total ₹12,345.", []),
+        ("₹6,172 in total.", [("money", "₹6,172")]),  # that is one traveller's share
+        ("A total of ₹6,172.", [("money", "₹6,172")]),
+        ("₹6,172 or ₹12,345.", []),  # unqualified: either
+    ],
+)
+def test_a_per_person_amount_must_be_a_per_traveller_one_and_a_total_a_total(prose, found):
+    assert kinds(prose) == found
+
+
+def test_an_amount_the_user_typed_matches_either_way():
+    user = stated_facts(["Budget ₹40,000 per person"], today=date(2026, 10, 4), currency="INR")
+    assert kinds("Your ₹40,000 per person, ₹40,000 in total.", FACTS, user) == []
+
+
+# --- false positives ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "Support is open 24/7.",
+        "Rated 4/5 by guests.",
+        "It scores 4.2/5.",
+        "Guests give it 4/5 stars.",
+        "Plan a 1/2 day tour.",
+        "Allow 3/4 of an hour.",
+    ],
+)
+def test_fractions_and_ratings_are_not_dates(prose):
+    assert kinds(prose) == []
+
+
+def test_a_day_month_date_needs_a_date_context():
+    assert kinds("Leave on 13/12.") == [("date", "13/12")]
+    assert kinds("Pick 13/12 of the seats.") == []  # no date context: not read as a date
+    assert kinds("Return on 31/13.") == []  # no month 13
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "An A320 or an A321neo, a B787 or an E190; an ATR 72 on the short hop.",
+        "The A220 is quiet.",
+        "UV 9 at noon, PM2.5 is fine.",
+        "Board at Gate B12 or gate A7.",
+    ],
+)
+def test_aircraft_uv_pm_and_gates_are_not_flights(prose):
+    assert kinds(prose) == []
+
+
+def test_common_words_that_spell_codes_are_not_checked():
+    def everything(code: str) -> bool:
+        return True
+
+    prose = (
+        "Times in IST, prices with GST; your PNR and OTP by text. No EMI, ATM nearby, gate TBA, "
+        "see the FAQ. USA visa, CEO and VIP lounges."
+    )
+    assert find_violations(prose, FACTS, EMPTY, is_airport=everything) == []
+    assert kinds("The room has AC 2 units, a TV 55 inch, ID 1234 needed.") == []
+
+
+def test_a_common_word_code_in_the_results_is_checked_like_any_other():
+    istanbul = flights_result()
+    istanbul.data["trip"]["destination"] = "IST"
+
+    def everything(code: str) -> bool:
+        return True
+
+    facts = facts_of([istanbul])
+    assert find_violations("DEL → IST", facts, EMPTY, is_airport=everything) == []
+    flights = facts_of([flights_result(flight_numbers=["AC 101"])])
+    assert kinds("AC 101 or AC 999.", flights) == [("flight", "AC 999")]
+
+
+# --- itinerary days ---------------------------------------------------------------------------
+
+
+def test_a_day_inside_the_searched_trip_is_grounded_in_an_itinerary_only():
+    def itinerary(prose: str) -> list[tuple[str, str]]:
+        found = find_violations(prose, FACTS, EMPTY, is_airport=is_airport, within_trip=True)
+        return [(v.kind, v.text) for v in found]
+
+    assert itinerary("Day 3 is 14 Dec 2026.") == []
+    assert itinerary("Day 9 is 20 Dec 2026.") == [("date", "20 Dec 2026")]
+    assert kinds("Leave on 14 Dec 2026.") == [("date", "14 Dec 2026")]  # prose: a returned date
+
+
+def test_the_itinerary_text_on_the_board_is_checked_and_dropped_on_fallback():
+    from travelmind.agent.plan import itinerary_text
+
+    days = [
+        {"day": 1, "date_display": "12 Dec 2026", "title": "Arrive", "notes": "Fly AI 999",
+         "items": [{"id": "F1"}]},
+        {"day": 2, "date_display": None, "title": None, "notes": "₹3,000 dinner", "items": []},
+    ]  # fmt: skip
+    text = itinerary_text(days)
+    assert "Fly AI 999" in text and "₹3,000" in text and "12 Dec 2026" in text and "Arrive" in text
+    itinerary = ToolResult("c2", "build_itinerary", {"days": days})
+    result = build_result(RunMemory(), [itinerary], None, summary="", fallback=True)
+    assert [(d["title"], d["notes"]) for d in result.itinerary] == [(None, None), (None, None)]
+    assert result.itinerary[0]["date_display"] == "12 Dec 2026"
+    assert result.itinerary[0]["items"] == [{"id": "F1"}]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "₹" + " " * 20_000 + "x",
+        "rupees" + " " * 20_000 + "x",
+        "₹1" + " -" * 10_000,
+        "₹1 to" * 4_000,
+        "1/" * 10_000,
+        "on 1/2 " * 3_000,
+        "AI-" * 7_000,
+        "1,000," * 4_000,
+        "12.12." * 4_000,
+        "between ₹1 and " * 2_000,
+    ],
+    ids=lambda text: repr(text[:12]),
+)
+def test_the_guard_is_fast_on_long_adversarial_text(text):
+    import time
+
+    started = time.perf_counter()
+    find_violations(text, FACTS, EMPTY, is_airport=is_airport)
+    assert time.perf_counter() - started < 1.0
