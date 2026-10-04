@@ -59,8 +59,3 @@ select = ["E", "F", "I", "B", "UP", "ASYNC"]
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
 ignore_missing_imports = true
-
-[tool.uv]
-# google-genai caps websockets below 17, which only its Live (streaming audio) client uses; the
-# engine calls generate_content over HTTP. Keep the websockets uvicorn already runs on.
-override-dependencies = ["websockets>=17.1"]
