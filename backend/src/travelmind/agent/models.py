@@ -4,7 +4,9 @@ All three are tenant data under forced RLS (migration 0012_agent_runs). Steps ar
 the application role: a run's trace is written once, step by step, in `seq` order. A step
 references its run by (run_id, agency_id), so it belongs to a run of its own agency, and that key
 restricts deletes: a run goes only with its agency (whose delete cascades to runs and steps);
-the application role can't delete runs (migration 0013_agent_steps_integrity).
+the application role can't delete runs (migration 0013_agent_steps_integrity). A run keeps its
+working state in `state` (migration 0014_agent_run_state), so a run that waits for the user can be
+resumed by any worker process.
 """
 
 from datetime import date, datetime
@@ -46,7 +48,16 @@ RUN_STATUSES = (
     "budget_exceeded",
 )
 TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled", "budget_exceeded"})
-STEP_KINDS = ("thinking", "tool_call", "tool_result", "ask_user", "answer", "guard", "error")
+STEP_KINDS = (
+    "thinking",
+    "tool_call",
+    "tool_result",
+    "ask_user",
+    "user",
+    "answer",
+    "guard",
+    "error",
+)
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -77,6 +88,9 @@ class AgentRun(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     grounded: Mapped[bool | None] = mapped_column(Boolean)
+    # The engine's working state (conversation, run memory, pending question): internal, never
+    # in an API response (it holds supplier ids). See agent.state.RunState.
+    state: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(_TS, default=utcnow, server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(_TS)
     finished_at: Mapped[datetime | None] = mapped_column(_TS)

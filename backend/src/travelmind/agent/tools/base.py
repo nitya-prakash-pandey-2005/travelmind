@@ -53,6 +53,11 @@ class Tool(Protocol):
     confirm: bool  # needs the user's confirmation before running (write tools)
     ends_turn: bool  # the run waits for the user after it (ask_user)
 
+    def parse(self, args: dict[str, Any]) -> Any:
+        """The validated arguments, or ToolError("invalid_arguments"): what the engine checks
+        before it asks the user to confirm a call."""
+        ...
+
     async def run(self, ctx: RunContext, args: dict[str, Any]) -> dict[str, Any]: ...
 
 
@@ -134,8 +139,11 @@ class TypedTool[A: BaseModel]:
         self._args = args
         self._handler = handler
 
+    def parse(self, args: dict[str, Any]) -> A:
+        return validate(self._args, args)
+
     async def run(self, ctx: RunContext, args: dict[str, Any]) -> dict[str, Any]:
-        return await self._handler(ctx, validate(self._args, args))
+        return await self._handler(ctx, self.parse(args))
 
     def __repr__(self) -> str:
         return f"<tool {self.spec.name}>"

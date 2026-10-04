@@ -1,0 +1,530 @@
+"""The agent API: creating runs (inline in development and tests, queued otherwise), reading them,
+the live event stream, replies, confirmations, cancellation, limits and tenancy."""
+
+import asyncio
+import json
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+import pytest
+from sqlalchemy import select
+
+from tests.agent.conftest import open_meteo_archive
+from tests.helpers import exec_as_tenant, make_client, signup
+from travelmind.agent import events, service
+from travelmind.agent.fake import FakeProvider
+from travelmind.agent.models import AgentStep
+from travelmind.agent.provider import AgentUnavailable, Generation, ToolCall
+from travelmind.agent.tools.weather import ARCHIVE_URL
+from travelmind.cache import get_shared_redis
+from travelmind.config import Settings, get_settings
+from travelmind.db import bind_tenant, get_sessionmaker
+
+RUNS = "/api/v1/agent/runs"
+TODAY = datetime.now(UTC).date()
+RUN_KEYS = {
+    "id",
+    "kind",
+    "status",
+    "prompt",
+    "provider",
+    "model",
+    "demo",
+    "prompt_version",
+    "grounded",
+    "error",
+    "result",
+    "pending",
+    "input_tokens",
+    "output_tokens",
+    "created_at",
+    "started_at",
+    "finished_at",
+}
+STEP_KEYS = {"seq", "kind", "payload", "duration_ms", "created_at"}
+
+
+def day(offset: int) -> str:
+    return (TODAY + timedelta(days=offset)).isoformat()
+
+
+def gen(text: str | None = None, *calls: ToolCall) -> Generation:
+    return Generation(text=text, calls=calls, input_tokens=3, output_tokens=2)
+
+
+@pytest.fixture(autouse=True)
+async def drain_inline_runs():
+    yield
+    await service.drain_inline_runs()
+
+
+@pytest.fixture(autouse=True)
+def sandbox_on(monkeypatch):
+    monkeypatch.setattr(get_settings(), "sandbox_supplier", True)
+
+
+def use(monkeypatch, provider) -> None:
+    monkeypatch.setattr(service, "get_provider", lambda settings: provider)
+
+
+async def wait_for(client, run_id: str, *statuses: str, within_s: float = 15.0) -> dict[str, Any]:
+    wanted = set(statuses) or {"done", "failed", "cancelled", "budget_exceeded", "waiting_for_user"}
+    deadline = asyncio.get_running_loop().time() + within_s
+    while True:
+        body = (await client.get(f"{RUNS}/{run_id}")).json()
+        if body["status"] in wanted:
+            return body
+        assert asyncio.get_running_loop().time() < deadline, body
+        await asyncio.sleep(0.02)
+
+
+def parse_sse(raw: str) -> list[dict[str, Any]]:
+    events_: list[dict[str, Any]] = []
+    for block in raw.split("\n\n"):
+        fields: dict[str, Any] = {}
+        for line in block.splitlines():
+            if line.startswith(":"):
+                continue
+            name, _, value = line.partition(": ")
+            fields[name] = value
+        if "data" in fields:
+            fields["data"] = json.loads(fields["data"])
+            events_.append(fields)
+    return events_
+
+
+# --- creating and reading runs --------------------------------------------------------------
+
+
+async def test_the_demo_planner_plans_a_grounded_trip_end_to_end(client, airports, respx_mock):
+    respx_mock.get(url__startswith=ARCHIVE_URL).mock(side_effect=open_meteo_archive)
+    await signup(client)
+    prompt = f"Delhi to Mumbai for 2 adults from {day(30)} to {day(33)}"
+    created = await client.post(RUNS, json={"prompt": prompt})
+    assert created.status_code == 202
+    assert set(created.json()) == {"run_id", "status"}
+    run = await wait_for(client, created.json()["run_id"], "done", "failed")
+    assert run["status"] == "done", run
+    assert set(run) == RUN_KEYS | {"steps"}
+    assert run["provider"] == "fake" and run["model"] == "demo-planner" and run["demo"] is True
+    assert run["grounded"] is True
+    result = run["result"]
+    assert result["fallback"] is False
+    assert result["flights"] and result["flights"][0]["offer_id"].startswith("F")
+    assert result["flights"][0]["total_formatted"] in result["summary"]
+    assert result["trip"]["origin"] == "DEL" and result["trip"]["destination"] == "BOM"
+    assert result["weather"]["label"] == "typical"
+    kinds = [s["kind"] for s in run["steps"]]
+    assert kinds[-2:] == ["guard", "answer"]
+    assert [s["seq"] for s in run["steps"]] == list(range(len(kinds)))
+    assert all(set(s) == STEP_KEYS for s in run["steps"])
+    raw = json.dumps(run)
+    assert "source_id" not in raw and "state" not in run
+    listed = (await client.get(RUNS)).json()["items"]
+    assert [r["id"] for r in listed] == [run["id"]]
+    assert "steps" not in listed[0]
+
+
+async def test_prompts_and_replies_are_capped_at_2000_characters(client):
+    await signup(client)
+    assert (await client.post(RUNS, json={"prompt": "x" * 2001})).status_code == 422
+    assert (await client.post(RUNS, json={"prompt": "   "})).status_code == 422
+    fake = "00000000-0000-0000-0000-000000000000"
+    long_reply = await client.post(f"{RUNS}/{fake}/reply", json={"text": "x" * 2001})
+    assert long_reply.status_code == 422
+
+
+async def test_the_agent_says_when_no_model_is_configured(client, monkeypatch):
+    await signup(client)
+
+    def unavailable(settings):
+        raise AgentUnavailable
+
+    monkeypatch.setattr(service, "get_provider", unavailable)
+    response = await client.post(RUNS, json={"prompt": "Plan a trip"})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Agent unavailable — no model configured."
+    assert (await client.get("/api/v1/agent/availability")).json() == {
+        "available": False,
+        "provider": None,
+        "model": None,
+        "demo": False,
+    }
+
+
+async def test_availability_names_the_demo_planner(client):
+    await signup(client)
+    assert (await client.get("/api/v1/agent/availability")).json() == {
+        "available": True,
+        "provider": "fake",
+        "model": "demo-planner",
+        "demo": True,
+    }
+
+
+# --- inline runs vs the queue ---------------------------------------------------------------
+
+
+def test_runs_are_inline_only_in_development_and_test():
+    def inline(environment: str, value: bool | None = None) -> bool:
+        changes: dict[str, Any] = {"environment": environment}
+        if value is not None:
+            changes["agent_inline"] = value
+        return Settings(_env_file=None, **changes).agent_inline_enabled  # type: ignore[arg-type]
+
+    assert inline("development") and inline("test")
+    assert not inline("production")
+    assert not inline("development", False) and inline("production", True)
+
+
+async def test_without_inline_runs_the_job_is_queued(client, monkeypatch):
+    await signup(client)
+    monkeypatch.setattr(get_settings(), "agent_inline", False)
+    queued: list[tuple[Any, ...]] = []
+
+    async def enqueue(name, *args, job_id=None):
+        queued.append((name, *args))
+        return "job-1"
+
+    monkeypatch.setattr(service.jobs, "enqueue", enqueue)
+    created = await client.post(RUNS, json={"prompt": "Plan a trip"})
+    assert created.status_code == 202
+    run_id = created.json()["run_id"]
+    agency = (await client.get("/api/v1/agency")).json()["id"]
+    assert queued == [("run_agent_job", run_id, agency)]
+    assert (await client.get(f"{RUNS}/{run_id}")).json()["status"] == "queued"
+
+
+async def test_a_queue_timeout_is_503_and_frees_the_slot(client, monkeypatch):
+    await signup(client)
+    monkeypatch.setattr(get_settings(), "agent_inline", False)
+    monkeypatch.setattr(get_settings(), "agent_max_concurrent_runs_per_agency", 1)
+
+    async def hung(name, *args, job_id=None):
+        raise TimeoutError
+
+    monkeypatch.setattr(service.jobs, "enqueue", hung)
+    first = await client.post(RUNS, json={"prompt": "Plan a trip"})
+    assert first.status_code == 503
+    assert "try again" in first.json()["detail"].lower()
+    second = await client.post(RUNS, json={"prompt": "Plan a trip"})
+    assert second.status_code == 503  # not 429: the first run gave its slot back
+    runs = (await client.get(RUNS)).json()["items"]
+    assert {r["status"] for r in runs} == {"failed"}
+
+
+# --- limits ---------------------------------------------------------------------------------
+
+
+async def test_concurrent_runs_are_limited_per_agency(client, monkeypatch):
+    await signup(client)
+    monkeypatch.setattr(get_settings(), "agent_inline", False)
+    monkeypatch.setattr(get_settings(), "agent_max_concurrent_runs_per_agency", 1)
+
+    async def enqueue(name, *args, job_id=None):
+        return "job"
+
+    monkeypatch.setattr(service.jobs, "enqueue", enqueue)
+    assert (await client.post(RUNS, json={"prompt": "One"})).status_code == 202
+    second = await client.post(RUNS, json={"prompt": "Two"})
+    assert second.status_code == 429
+    assert second.json()["detail"].startswith("Too many plans are running at once")
+
+
+async def test_run_creation_is_rate_limited_per_agency(client, monkeypatch):
+    await signup(client)
+    monkeypatch.setattr(get_settings(), "agent_runs_per_minute", 1)
+    use(monkeypatch, FakeProvider(responder=lambda messages: gen("Hi.")))
+    assert (await client.post(RUNS, json={"prompt": "One"})).status_code == 202
+    second = await client.post(RUNS, json={"prompt": "Two"})
+    assert second.status_code == 429
+    assert "minute" in second.json()["detail"]
+
+
+async def test_a_spent_monthly_budget_refuses_new_runs(client, monkeypatch):
+    await signup(client)
+    monkeypatch.setattr(get_settings(), "agent_monthly_token_budget", 10)
+    agency = (await client.get("/api/v1/agency")).json()["id"]
+    month = TODAY.replace(day=1)
+    await exec_as_tenant(
+        agency,
+        "INSERT INTO agent_usage_monthly (agency_id, month, input_tokens, output_tokens) "
+        "VALUES (:a, :m, 10, 0)",
+        {"a": agency, "m": month},
+    )
+    response = await client.post(RUNS, json={"prompt": "Plan"})
+    assert response.status_code == 429
+    assert response.json()["detail"] == "This month's agent budget is used up."
+
+
+# --- replies, confirmations, cancellation ---------------------------------------------------
+
+
+async def test_ask_and_reply_through_the_api(client, monkeypatch):
+    await signup(client)
+    use(
+        monkeypatch,
+        FakeProvider(
+            [
+                gen(None, ToolCall("a1", "ask_user", {"question": "How many adults?"})),
+                gen("Planned for 2 adults."),
+            ]
+        ),
+    )
+    run_id = (await client.post(RUNS, json={"prompt": "Plan a trip"})).json()["run_id"]
+    waiting = await wait_for(client, run_id, "waiting_for_user")
+    assert waiting["pending"] == {
+        "kind": "question",
+        "call_id": "a1",
+        "question": "How many adults?",
+        "fields": [],
+    }
+    replied = await client.post(f"{RUNS}/{run_id}/reply", json={"text": "2 adults"})
+    assert replied.status_code == 202 and replied.json()["status"] == "queued"
+    done = await wait_for(client, run_id, "done")
+    assert done["pending"] is None
+    again = await client.post(f"{RUNS}/{run_id}/reply", json={"text": "more"})
+    assert again.status_code == 409
+
+
+async def test_confirm_and_reject_through_the_api(client, monkeypatch):
+    await signup(client)
+    create = ToolCall("w1", "create_enquiry", {"origin": "DEL", "destination": "BOM"})
+    use(monkeypatch, FakeProvider([gen(None, create), gen("Declined, nothing created.")]))
+    run_id = (await client.post(RUNS, json={"prompt": "Make an enquiry"})).json()["run_id"]
+    waiting = await wait_for(client, run_id, "waiting_for_user")
+    assert waiting["pending"]["kind"] == "confirm" and waiting["pending"]["call_id"] == "w1"
+    assert waiting["pending"]["action"].startswith("Create an enquiry DEL → BOM")
+    wrong = await client.post(f"{RUNS}/{run_id}/confirm", json={"call_id": "x", "approve": True})
+    assert wrong.status_code == 409
+    rejected = await client.post(
+        f"{RUNS}/{run_id}/confirm", json={"call_id": "w1", "approve": False}
+    )
+    assert rejected.status_code == 202
+    done = await wait_for(client, run_id, "done")
+    assert (await client.get("/api/v1/enquiries")).json()["total"] == 0
+    assert any(s["kind"] == "user" for s in done["steps"])
+
+
+async def test_cancel_through_the_api(client, monkeypatch):
+    await signup(client)
+    use(monkeypatch, FakeProvider([gen(None, ToolCall("a1", "ask_user", {"question": "Who?"}))]))
+    run_id = (await client.post(RUNS, json={"prompt": "Plan"})).json()["run_id"]
+    await wait_for(client, run_id, "waiting_for_user")
+    cancelled = await client.post(f"{RUNS}/{run_id}/cancel")
+    assert cancelled.status_code == 200 and cancelled.json()["status"] == "cancelled"
+    assert (await client.post(f"{RUNS}/{run_id}/cancel")).status_code == 409
+
+
+# --- tenancy ----------------------------------------------------------------------------------
+
+
+async def test_runs_are_tenant_scoped(client, app, monkeypatch):
+    await signup(client)
+    use(monkeypatch, FakeProvider([gen(None, ToolCall("a1", "ask_user", {"question": "Who?"}))]))
+    run_id = (await client.post(RUNS, json={"prompt": "Plan"})).json()["run_id"]
+    await wait_for(client, run_id, "waiting_for_user")
+    async with make_client(app) as other:
+        await signup(other, email="owner@beta.example", agency_name="Beta Travels")
+        assert (await other.get(f"{RUNS}/{run_id}")).status_code == 404
+        assert (await other.get(f"{RUNS}/{run_id}/events")).status_code == 404
+        reply = await other.post(f"{RUNS}/{run_id}/reply", json={"text": "me"})
+        assert reply.status_code == 404
+        confirm = await other.post(
+            f"{RUNS}/{run_id}/confirm", json={"call_id": "a1", "approve": True}
+        )
+        assert confirm.status_code == 404
+        assert (await other.post(f"{RUNS}/{run_id}/cancel")).status_code == 404
+        assert (await other.get(RUNS)).json() == {"items": []}
+    assert (await client.get(f"{RUNS}/{run_id}")).json()["status"] == "waiting_for_user"
+    assert (await client.get(f"{RUNS}/not-a-uuid")).status_code == 422
+
+
+async def test_the_api_needs_a_session(client):
+    assert (await client.get(RUNS)).status_code == 401
+    assert (await client.post(RUNS, json={"prompt": "x"})).status_code == 401
+
+
+# --- the event stream -------------------------------------------------------------------------
+
+
+async def test_sse_replays_stored_steps_after_the_last_event_id(client, monkeypatch):
+    await signup(client)
+    use(
+        monkeypatch,
+        FakeProvider(
+            [gen(None, ToolCall("l1", "lookup_airport", {"query": "Delhi"})), gen("Done.")]
+        ),
+    )
+    run_id = (await client.post(RUNS, json={"prompt": "Plan"})).json()["run_id"]
+    run = await wait_for(client, run_id, "done")
+    seqs = [s["seq"] for s in run["steps"]]
+    response = await client.get(f"{RUNS}/{run_id}/events", headers={"Last-Event-ID": "1"})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["x-accel-buffering"] == "no"
+    assert response.headers["cache-control"] == "no-cache"
+    sent = parse_sse(response.text)
+    steps = [e for e in sent if e["event"] == "step"]
+    assert [int(e["id"]) for e in steps] == [s for s in seqs if s > 1]
+    assert [e["data"]["seq"] for e in steps] == [s for s in seqs if s > 1]
+    assert sent[-1]["event"] == "status" and sent[-1]["data"]["status"] == "done"
+    assert "id" not in sent[-1]
+    by_query = await client.get(f"{RUNS}/{run_id}/events", params={"last_event_id": "2"})
+    assert [e["data"]["seq"] for e in parse_sse(by_query.text) if e["event"] == "step"] == [
+        s for s in seqs if s > 2
+    ]
+    everything = await client.get(f"{RUNS}/{run_id}/events")
+    assert [e["data"]["seq"] for e in parse_sse(everything.text) if e["event"] == "step"] == seqs
+
+
+async def _subscribers(run_id: str) -> int:
+    counts = await get_shared_redis().pubsub_numsub(events.channel(run_id))
+    return int(counts[0][1])
+
+
+async def test_sse_replays_then_streams(client, monkeypatch):
+    """A browser reconnecting mid-run sees every step exactly once, in order: the stored ones
+    after its Last-Event-ID, then the live ones, then the final status."""
+    await signup(client)
+    gate = asyncio.Event()
+
+    async def held(messages):
+        await gate.wait()
+        return gen(None, ToolCall("l2", "lookup_airport", {"query": "Mumbai"}))
+
+    use(
+        monkeypatch,
+        FakeProvider(
+            [
+                gen(None, ToolCall("l1", "lookup_airport", {"query": "Delhi"})),
+                held,
+                gen("All done."),
+            ]
+        ),  # fmt: skip
+    )
+    run_id = (await client.post(RUNS, json={"prompt": "Plan"})).json()["run_id"]
+    for _ in range(500):
+        if len((await client.get(f"{RUNS}/{run_id}")).json()["steps"]) >= 2:
+            break
+        await asyncio.sleep(0.02)
+    stream = asyncio.create_task(
+        client.get(f"{RUNS}/{run_id}/events", headers={"Last-Event-ID": "0"})
+    )
+    for _ in range(500):
+        if await _subscribers(run_id):
+            break
+        await asyncio.sleep(0.02)
+    assert await _subscribers(run_id) == 1
+    gate.set()
+    response = await asyncio.wait_for(stream, 15)
+    sent = parse_sse(response.text)
+    seqs = [e["data"]["seq"] for e in sent if e["event"] == "step"]
+    assert seqs == list(range(1, len(seqs) + 1))  # 1, 2, 3, ...: once each, in order
+    kinds = [e["data"]["kind"] for e in sent if e["event"] == "step"]
+    assert kinds[-2:] == ["guard", "answer"]
+    assert sent[-1]["event"] == "status" and sent[-1]["data"]["status"] == "done"
+
+
+async def test_a_step_landing_between_subscribe_and_replay_is_sent_once(client, monkeypatch):
+    await signup(client)
+    use(monkeypatch, FakeProvider([gen(None, ToolCall("a1", "ask_user", {"question": "Who?"}))]))
+    run_id = (await client.post(RUNS, json={"prompt": "Plan"})).json()["run_id"]
+    await wait_for(client, run_id, "waiting_for_user")
+    agency = (await client.get("/api/v1/agency")).json()["id"]
+    real = events.read_steps
+    landed: list[int] = []
+
+    async def racing(db, run, after):
+        if not landed:  # once subscribed, before the replay reads: a step is written and published
+            async with get_sessionmaker()() as other:
+                await bind_tenant(other, agency)
+                writer = await events.StepWriter.open(other, get_shared_redis(), run, agency)
+                step = await writer.emit("error", {"code": "test", "message": "Landed."})
+                landed.append(step.seq)
+                await service.cancel(other, get_shared_redis(), agency_id=agency, run_id=run)
+        return await real(db, run, after)
+
+    monkeypatch.setattr(events, "read_steps", racing)
+    response = await client.get(f"{RUNS}/{run_id}/events")
+    sent = parse_sse(response.text)
+    seqs = [e["data"]["seq"] for e in sent if e["event"] == "step"]
+    assert seqs.count(landed[0]) == 1
+    assert seqs == sorted(set(seqs))
+    assert sent[-1]["data"]["status"] == "cancelled"
+
+
+async def test_the_stream_heartbeats_and_picks_up_steps_without_pubsub(monkeypatch, client):
+    """Steps are in the database before they are published: a stream that misses a message
+    (Redis away) still finds the step at its next heartbeat."""
+    await signup(client)
+    use(monkeypatch, FakeProvider([gen(None, ToolCall("a1", "ask_user", {"question": "Who?"}))]))
+    run_id = (await client.post(RUNS, json={"prompt": "Plan"})).json()["run_id"]
+    await wait_for(client, run_id, "waiting_for_user")
+    agency = (await client.get("/api/v1/agency")).json()["id"]
+    monkeypatch.setattr(events, "HEARTBEAT_S", 0.05)
+
+    async def silent(redis, run, message):
+        return None
+
+    async def later():
+        await asyncio.sleep(0.2)
+        monkeypatch.setattr(events, "publish", silent)
+        async with get_sessionmaker()() as db:
+            await bind_tenant(db, agency)
+            await service.cancel(db, get_shared_redis(), agency_id=agency, run_id=run_id)
+
+    task = asyncio.create_task(later())
+    response = await asyncio.wait_for(client.get(f"{RUNS}/{run_id}/events"), 10)
+    await task
+    assert ": heartbeat" in response.text
+    assert parse_sse(response.text)[-1]["data"]["status"] == "cancelled"
+
+
+# --- the worker and shutdown ----------------------------------------------------------------
+
+
+def test_the_worker_runs_agent_jobs():
+    from travelmind import worker
+
+    agent = next(
+        f for f in worker.WorkerSettings.functions if getattr(f, "name", None) == "run_agent_job"
+    )
+    assert agent.max_tries == 1
+    assert agent.timeout_s >= get_settings().agent_run_timeout_s
+
+
+async def test_the_worker_job_drives_the_run(client, monkeypatch):
+    from travelmind import worker
+
+    await signup(client)
+    monkeypatch.setattr(get_settings(), "agent_inline", False)
+
+    async def enqueue(name, *args, job_id=None):
+        return "job"
+
+    monkeypatch.setattr(service.jobs, "enqueue", enqueue)
+    use(monkeypatch, FakeProvider([gen("Hello from the worker.")]))
+    run_id = (await client.post(RUNS, json={"prompt": "Plan"})).json()["run_id"]
+    agency = (await client.get("/api/v1/agency")).json()["id"]
+    assert await worker.run_agent_job({}, run_id, agency) == "done"
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency)
+        kinds = (await db.execute(select(AgentStep.kind).order_by(AgentStep.seq))).scalars()
+        assert list(kinds) == ["guard", "answer"]
+
+
+async def test_shutdown_closes_the_model_clients(monkeypatch):
+    from travelmind import main, worker
+    from travelmind.agent import gemini
+
+    closed: list[str] = []
+
+    async def close():
+        closed.append("closed")
+
+    monkeypatch.setattr(gemini, "close_clients", close)
+    async with main.lifespan(main.create_app()):
+        pass
+    await worker.shutdown({})
+    assert closed == ["closed", "closed"]

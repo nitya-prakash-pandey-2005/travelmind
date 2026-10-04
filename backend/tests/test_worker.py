@@ -208,7 +208,8 @@ async def test_cleanup_job_removes_expired_demo(client, airports):
 
 def test_worker_settings_schedule_the_jobs():
     settings = worker.WorkerSettings
-    assert settings.functions == [worker.generate_demo_job]
+    assert settings.functions[0] is worker.generate_demo_job
+    assert [f.name for f in settings.functions[1:]] == ["run_agent_job"]
     crons = {job.name: job for job in settings.cron_jobs}
     assert set(crons) == {"cron:cleanup_expired_demos", "cron:expire_overdue_quotes_all"}
     cleanup, sweep = crons["cron:cleanup_expired_demos"], crons["cron:expire_overdue_quotes_all"]

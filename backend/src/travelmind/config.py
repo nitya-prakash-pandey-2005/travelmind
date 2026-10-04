@@ -100,6 +100,11 @@ class Settings(BaseSettings):
     # covers the queue wait and the run itself (agent_run_timeout_s); a crashed holder's slot
     # lapses after this. See travelmind.agent.budget for what Task 3 must decide around it.
     agent_run_slot_ttl_s: float = 300.0
+    # New runs an agency may start per minute (each run is several model calls).
+    agent_runs_per_minute: int = 10
+    # Run agent jobs in the API process (an asyncio task) instead of the arq queue. None: inline in
+    # development and test only, so a dev API needs no worker; production queues them.
+    agent_inline: Annotated[bool | None, BeforeValidator(_blank_to_none)] = None
     # Places and weather for the agent's tools (travelmind.agent.tools). Contact for the
     # User-Agent sent to OpenStreetMap services (Nominatim, Overpass), whose usage policies ask
     # for an identifiable client: a URL or email of whoever runs this deployment. Empty sends
@@ -130,6 +135,12 @@ class Settings(BaseSettings):
         if self.google_api_key is None:
             self.google_api_key = self.google_api_key_fallback
         return self
+
+    @property
+    def agent_inline_enabled(self) -> bool:
+        if self.agent_inline is not None:
+            return self.agent_inline
+        return self.environment in ("development", "test")
 
     @property
     def sandbox_supplier_enabled(self) -> bool:

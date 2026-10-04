@@ -401,10 +401,22 @@ SEARCHES = {
     ("POST", "/api/v1/flights/search"),
     ("POST", "/api/v1/hotels/search"),
 }
-NEVER_BUMP = SEARCHES | {
-    ("POST", "/api/v1/flights/offers/{offer_id}/price"),
-    ("POST", "/api/v1/notifications/seen"),
+# Agent runs and their steps are never cached; the write tools a run executes (create_enquiry,
+# draft_quote) bump the agency themselves, in the job, after their commit.
+AGENT_WRITES = {
+    ("POST", "/api/v1/agent/runs"),
+    ("POST", "/api/v1/agent/runs/{run_id}/reply"),
+    ("POST", "/api/v1/agent/runs/{run_id}/confirm"),
+    ("POST", "/api/v1/agent/runs/{run_id}/cancel"),
 }
+NEVER_BUMP = (
+    SEARCHES
+    | AGENT_WRITES
+    | {
+        ("POST", "/api/v1/flights/offers/{offer_id}/price"),
+        ("POST", "/api/v1/notifications/seen"),
+    }
+)
 # Reads that can write: lazy quote expiry, or the client's first view of a shared quote.
 READS_THAT_WRITE = {
     ("GET", "/api/v1/quotes"),

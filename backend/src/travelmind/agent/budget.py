@@ -13,21 +13,16 @@
   (Redis server time), after which a crashed holder's slot lapses. Like the other Redis limits it
   fails open: an unreachable Redis does not stop runs.
 
-Open questions for Task 3 (the engine, API and worker), to settle there:
-- Queue wait vs TTL. The TTL runs from acquisition, not from when the worker starts the run, so
-  it must cover the queue wait plus `agent_run_timeout_s`. If a queued run can wait longer than
-  `agent_run_slot_ttl_s - agent_run_timeout_s`, its slot lapses while it is still pending and a
-  further run can start: either fail a run that starts too late (started_at - created_at over
-  the slack), re-take the slot when the worker starts, or size the TTL to the queue's worst case.
-- waiting_for_user. A run that asks the user a question ends its turn. Holding the slot until
-  the reply would let three unanswered questions block the agency, and the TTL would expire the
-  slot anyway. Proposed: release the slot when the run enters waiting_for_user and take a new
-  one (same holder, the run id) when the reply resumes it, refusing the reply with TooManyRuns
-  when none is free; check the monthly budget again (reserve) at that point too.
-- Budget checks per call. Call `assert_within_budget(db, agency, now, extra_tokens=<the run's
-  tokens not yet recorded>)` before every model call, and `record` after each call (including a
-  failed one: ProviderError carries the tokens it cost), so concurrent runs see each other's
-  spend and the overshoot stays bounded by one call per running run.
+How the engine uses them (`agent.service`, `agent.loop`):
+- Queue wait vs TTL: the TTL runs from acquisition, so a job that starts more than
+  `agent_run_slot_ttl_s - agent_run_timeout_s` after its run was (re)queued fails the run ("waited
+  too long") instead of running on a slot that may have lapsed.
+- waiting_for_user: the slot is released when the run stops for the user, and taken again (same
+  holder, the run id) when a reply or decision resumes it, after `reserve` checks the budget
+  again; no free slot is TooManyRuns (429).
+- Per call: `assert_within_budget` before every model call and `record` after each one, a failed
+  call's tokens included (ProviderError carries them), so concurrent runs see each other's spend
+  and the overshoot stays bounded by one call per running run.
 """
 
 from datetime import UTC, date, datetime

@@ -2,10 +2,13 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 
+import structlog
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
+from travelmind.agent import service as agent_service
+from travelmind.agent.router import agent_router
 from travelmind.agent.tools.external import warn_about_feed_settings
 from travelmind.cache import close_redis
 from travelmind.config import get_settings
@@ -46,6 +49,16 @@ from travelmind.workspace.quotes import quotes_router
 from travelmind.workspace.timelines import timelines_router
 
 
+async def close_model_clients() -> None:
+    """Close the Gemini SDK clients, if anything in this process opened one."""
+    from travelmind.agent import gemini
+
+    try:
+        await gemini.close_clients()
+    except Exception as exc:
+        structlog.get_logger().warning("model_clients_close_failed", error_type=type(exc).__name__)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Run the demo cleanup at startup and then every interval (not under tests, and not where a
@@ -67,8 +80,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # A task that failed must not stop the clients below from closing.
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
+        # Inline agent runs (development) stop and are marked interrupted.
+        with contextlib.suppress(Exception):
+            await agent_service.drain_inline_runs(cancel=True)
         # Each close runs even if an earlier one fails.
         try:
+            await close_model_clients()
             await close_http_clients()
         finally:
             try:
@@ -124,4 +141,5 @@ def create_app() -> FastAPI:
     app.include_router(search_router)
     app.include_router(demo_router)
     app.include_router(platform_router)
+    app.include_router(agent_router)
     return app
