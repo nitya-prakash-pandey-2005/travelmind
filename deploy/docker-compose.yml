@@ -2,6 +2,8 @@
 #   cp deploy/.env.example deploy/.env      # then change the passwords
 #   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 #   bash deploy/smoke.sh
+# Low-memory machine: build the two images one at a time first (`... build api`, then
+# `... build nginx`) and start without --build. See deploy/README.md.
 # Topology: nginx (:8080 on the host) -> api (gunicorn + uvicorn workers, N replicas)
 #           -> pgbouncer (transaction pooling) -> postgres; redis; arq worker; one-shot migrate.
 # Only nginx publishes a port. Every secret comes from deploy/.env (git-ignored).
@@ -12,6 +14,14 @@ x-logging: &logging
   options:
     max-size: "10m"
     max-file: "3"
+
+# For containers that run as a non-root user from the start and bind no port below 1024
+# (api, worker, migrate, pgbouncer, nginx): no Linux capabilities, no privilege gain through
+# setuid binaries. Postgres and Redis keep Docker's defaults: their entrypoints start as root to
+# chown the data directory, then switch user.
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
 
 # Settings shared by the api and the worker. Keys without a value are passed through from
 # deploy/.env (or the shell) only when set there, so the app's own defaults apply otherwise.
@@ -49,12 +59,27 @@ x-app-env: &app-env
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    command: ["postgres", "-c", "max_connections=200"]
+    # Sized for a laptop that runs the whole stack (deploy/README.md, "Postgres settings").
+    # work_mem is per sort or hash step; PgBouncer holds at most DEFAULT_POOL_SIZE (40) server
+    # connections for the app, so 40 x 8 MB bounds the usual worst case. pg_stat_statements is
+    # preloaded here and created by init.sql (on an older volume, create it by hand: README).
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-256MB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-8MB}
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    # Parallel query workers share memory through /dev/shm (Docker's default is 64 MB).
+    shm_size: 256mb
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
-      # Read by init.sql (\getenv) when the volume is first created.
-      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      # Read by init.sql (\getenv) when the volume is first created. It fails if either is unset.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in deploy/.env}
       OWNER_DB_PASSWORD: ${OWNER_DB_PASSWORD:?set OWNER_DB_PASSWORD in deploy/.env}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -70,26 +95,33 @@ services:
 
   pgbouncer:
     image: edoburu/pgbouncer:v1.26.0-p0
+    <<: *hardening
     environment:
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_NAME: travelmind
       DB_USER: travelmind_app
       DB_PASSWORD: ${APP_DB_PASSWORD}
-      OWNER_DB_PASSWORD: ${OWNER_DB_PASSWORD}
       AUTH_TYPE: scram-sha-256
       POOL_MODE: transaction
       MAX_CLIENT_CONN: "2000"
       DEFAULT_POOL_SIZE: "40"
-      # The owner may open the admin console (SHOW POOLS / SHOW STATS) on the `pgbouncer` db.
-      ADMIN_USERS: travelmind_owner
+      # A client that waits this long for a server connection gets an error, instead of queueing
+      # for the default 120 s. The app's own pool gives up after 5 s anyway.
+      QUERY_WAIT_TIMEOUT: "10"
+      # Read-only console user for SHOW POOLS / SHOW STATS on the `pgbouncer` db. It exists only
+      # in PgBouncer's userlist, not in Postgres. There is no admin user: admin_users keeps the
+      # image default `postgres`, which has no userlist entry, so nobody can PAUSE, RELOAD or
+      # SHUTDOWN through the console. The owner role is not in the userlist at all.
+      STATS_USERS: travelmind_stats
+      PGBOUNCER_STATS_PASSWORD: ${PGBOUNCER_STATS_PASSWORD:?set PGBOUNCER_STATS_PASSWORD in deploy/.env}
       IGNORE_STARTUP_PARAMETERS: extra_float_digits
-    # The image's entrypoint writes the app user to userlist.txt; the owner is added first.
+    # The image's entrypoint appends the app user to userlist.txt; the stats user is written first.
     entrypoint:
       - /bin/sh
       - -c
       - |
-        printf '"travelmind_owner" "%s"\n' "$$OWNER_DB_PASSWORD" > /etc/pgbouncer/userlist.txt
+        printf '"travelmind_stats" "%s"\n' "$$PGBOUNCER_STATS_PASSWORD" > /etc/pgbouncer/userlist.txt
         exec /entrypoint.sh /usr/bin/pgbouncer /etc/pgbouncer/pgbouncer.ini
     ulimits:
       nofile: { soft: 8192, hard: 8192 }
@@ -122,9 +154,11 @@ services:
   # One-shot: schema migrations as the owner role, straight to postgres (DDL does not go through
   # PgBouncer). The api and the worker start only after it exits 0.
   migrate:
-    build:
-      context: ../backend
+    # The api service is the only one that builds this image, so `up --build` builds it once
+    # (not three times in parallel). `never`: use the local build, don't try a registry.
     image: travelmind-prod/api:local
+    pull_policy: never
+    <<: *hardening
     command: ["alembic", "upgrade", "head"]
     environment:
       TM_MIGRATION_DATABASE_URL: postgresql+asyncpg://travelmind_owner:${OWNER_DB_PASSWORD}@postgres:5432/travelmind
@@ -138,6 +172,7 @@ services:
     build:
       context: ../backend
     image: travelmind-prod/api:local
+    <<: *hardening
     environment:
       <<: *app-env
       PROMETHEUS_MULTIPROC_DIR: /tmp/prom
@@ -153,6 +188,8 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
+      # The real /ready (database and Redis), inside the container. Through nginx, /ready only
+      # answers a bare status (deploy/nginx/nginx.conf).
       test:
         - CMD
         - python
@@ -168,9 +205,9 @@ services:
   # arq: periodic jobs (demo cleanup, quote expiry) and queued work. It exits quickly when Redis
   # is unreachable (conn_retries=1), so it starts after a healthy Redis and is restarted.
   worker:
-    build:
-      context: ../backend
-    image: travelmind-prod/api:local
+    image: travelmind-prod/api:local # built by the api service
+    pull_policy: never
+    <<: *hardening
     command: ["arq", "travelmind.worker.WorkerSettings"]
     environment:
       <<: *app-env
@@ -185,12 +222,15 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  # nginx-unprivileged (frontend/Dockerfile): runs as uid 101 and listens on 8080 inside the
+  # container, so it needs no capabilities at all.
   nginx:
     build:
       context: ../frontend
     image: travelmind-prod/web:local
+    <<: *hardening
     ports:
-      - "8080:80"
+      - "8080:8080"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/proxy.conf:/etc/nginx/travelmind/proxy.conf:ro
@@ -201,7 +241,7 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
       interval: 10s
       timeout: 5s
       retries: 6

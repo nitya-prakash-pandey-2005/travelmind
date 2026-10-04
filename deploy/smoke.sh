@@ -56,8 +56,14 @@ else
 fi
 
 # 3. Readiness and liveness through nginx.
+# The public /ready is a bare status: the api's JSON (which dependency is down) stays inside.
 code="$(fetch ready /ready)"
-[[ "$code" == 200 ]] && pass "ready (/ready -> 200 $(cat "$TMP/ready.b"))" || fail "ready" "status $code $(cat "$TMP/ready.b" 2>/dev/null)"
+body="$(tr -d '\r\n' <"$TMP/ready.b" 2>/dev/null || true)"
+if [[ "$code" == 200 && "$body" == ok ]]; then
+  pass "ready (/ready -> 200, bare body 'ok')"
+else
+  fail "ready" "status $code body '$body' (want 200 'ok')"
+fi
 code="$(fetch health /health)"
 [[ "$code" == 200 ]] && pass "health (/health -> 200)" || fail "health" "status $code"
 

@@ -6,7 +6,9 @@
 # (no "prepared statement does not exist" from a reused server connection) and each agency must
 # only ever see its own client (the transaction-local tenant never leaks between transactions that
 # share a server connection). Finally it checks the reads really went through PgBouncer.
-set -uo pipefail
+# -e: an unexpected failure stops the run. Expected failures are handled explicitly: curl calls
+# end in `|| true`, checks run as `check ... || failures=...`, and so do greps that may not match.
+set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="${1:-${SMOKE_BASE_URL:-http://localhost:8080}}"
@@ -73,11 +75,13 @@ for ((i = 0; i < READS; i++)); do
 done
 echo "pgbouncer_smoke: $READS concurrent reads, $burst_failures bad"
 
-# The app role's traffic really goes through PgBouncer in transaction mode.
-pools="$(compose exec -T postgres sh -c \
-  'PGPASSWORD="$OWNER_DB_PASSWORD" psql -h pgbouncer -p 5432 -U travelmind_owner -d pgbouncer -At -F" " -c "SHOW POOLS"' \
-  2>&1 | tr -d '\r')"
-app_pool="$(grep '^travelmind travelmind_app ' <<<"$pools")"
+# The app role's traffic really goes through PgBouncer in transaction mode. Asked by the
+# read-only stats user (STATS_USERS) from inside the pgbouncer container, which has psql and the
+# stats password.
+pools="$(compose exec -T pgbouncer sh -c \
+  'PGPASSWORD="$PGBOUNCER_STATS_PASSWORD" psql -h 127.0.0.1 -p 5432 -U travelmind_stats -d pgbouncer -At -F" " -c "SHOW POOLS"' \
+  2>&1 | tr -d '\r' || true)"
+app_pool="$(grep '^travelmind travelmind_app ' <<<"$pools" || true)"
 if [[ -z "$app_pool" || "$app_pool" != *transaction* ]]; then
   echo "pgbouncer_smoke: no transaction-mode travelmind_app pool in SHOW POOLS:"
   echo "$pools"
