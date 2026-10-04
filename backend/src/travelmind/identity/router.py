@@ -98,6 +98,7 @@ async def signup_route(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "An account with this email already exists."
         ) from None
+    await revoke_replaced_session(request, db, redis, token)
     set_session_cookie(response, token)
     return me_response(user, agency)
 

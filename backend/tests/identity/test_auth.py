@@ -207,3 +207,17 @@ async def test_login_with_a_stale_cookie_just_signs_in(client):
     )
     assert r.status_code == 200
     assert (await client.get("/api/v1/auth/me")).status_code == 200
+
+
+async def test_signup_revokes_the_browsers_previous_session(client, app):
+    """Signing up for a new agency replaces the browser's cookie; the session it replaced is
+    revoked (database and session cache)."""
+    await signup(client)
+    old = client.cookies.get(SESSION_COOKIE)
+    assert (await client.get("/api/v1/auth/me")).status_code == 200  # cached now
+    r = await signup(client, email="second@alphatravels.com", agency_name="Second Co")
+    assert r.status_code == 201
+    new = client.cookies.get(SESSION_COOKIE)
+    assert new and new != old
+    assert await _replay_me(app, old) == 401
+    assert await _replay_me(app, new) == 200
