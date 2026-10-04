@@ -163,3 +163,47 @@ async def test_password_hashing_runs_off_the_event_loop(client, app, monkeypatch
     # signup + accept hash; ok/wrong/unknown(dummy) logins verify
     assert [name for name, _ in spy.calls] == ["hash", "hash", "verify", "verify", "verify"]
     assert not any(on_loop for _, on_loop in spy.calls), spy.calls
+
+
+async def _replay_me(app, token: str) -> int:  # type: ignore[no-untyped-def]
+    async with make_client(app) as replay:
+        r = await replay.get("/api/v1/auth/me", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+    return r.status_code
+
+
+async def test_login_revokes_the_browsers_previous_session(client, app):
+    """Signing in replaces the browser's cookie; the session it replaced is revoked (database
+    and session cache), not left live for whoever kept the old token."""
+    await signup(client)
+    async with make_client(app) as other:
+        await signup(other, email="second@alphatravels.com", agency_name="Second Co")
+    old = client.cookies.get(SESSION_COOKIE)
+    assert (await client.get("/api/v1/auth/me")).status_code == 200  # cached now
+    r = await client.post(
+        LOGIN, json={"email": "second@alphatravels.com", "password": DEFAULT_PASSWORD}
+    )
+    assert r.status_code == 200
+    new = client.cookies.get(SESSION_COOKIE)
+    assert new and new != old
+    assert await _replay_me(app, old) == 401
+    assert await _replay_me(app, new) == 200
+
+
+async def test_a_failed_login_keeps_the_current_session(client, app):
+    await signup(client)
+    token = client.cookies.get(SESSION_COOKIE)
+    r = await client.post(
+        LOGIN, json={"email": "owner@alphatravels.com", "password": "wrong-password-123"}
+    )
+    assert r.status_code == 401
+    assert await _replay_me(app, token) == 200
+
+
+async def test_login_with_a_stale_cookie_just_signs_in(client):
+    client.cookies.set(SESSION_COOKIE, "not-a-session")
+    await signup(client)
+    r = await client.post(
+        LOGIN, json={"email": "owner@alphatravels.com", "password": DEFAULT_PASSWORD}
+    )
+    assert r.status_code == 200
+    assert (await client.get("/api/v1/auth/me")).status_code == 200

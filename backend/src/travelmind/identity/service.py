@@ -282,15 +282,22 @@ async def find_session_user(db: AsyncSession, token_hash: str) -> SessionUser | 
     )
 
 
-async def revoke_session(db: AsyncSession, token: str) -> None:
-    """Revoke the session and commit. Callers then evict it from the session cache
-    (`sessioncache.evict_and_publish`)."""
-    await db.execute(
+async def revoke_session(db: AsyncSession, token: str) -> bool:
+    """Revoke the session and commit; True if it was live (not revoked or expired already).
+    Callers then evict it from the session cache (`sessioncache.evict_and_publish`)."""
+    now = datetime.now(UTC)
+    revoked = await db.scalar(
         update(UserSession)
-        .where(UserSession.token_hash == hash_token(token), UserSession.revoked_at.is_(None))
-        .values(revoked_at=datetime.now(UTC))
+        .where(
+            UserSession.token_hash == hash_token(token),
+            UserSession.revoked_at.is_(None),
+            UserSession.expires_at > now,
+        )
+        .values(revoked_at=now)
+        .returning(UserSession.id)
     )
     await db.commit()
+    return revoked is not None
 
 
 async def get_user_and_agency(db: AsyncSession, user_id: UUID) -> tuple[User, Agency]:

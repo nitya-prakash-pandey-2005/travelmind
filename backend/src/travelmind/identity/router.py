@@ -54,6 +54,17 @@ def me_response(user: User, agency: Agency) -> MeResponse:
     )
 
 
+async def revoke_replaced_session(
+    request: Request, db: DbSession, redis: RedisClient, new_token: str
+) -> None:
+    """A new session cookie replaces the browser's current one: revoke the session it held, if
+    still live, rather than leave it valid for whoever kept the old token. Call once the new
+    session is committed (a failed sign-in keeps the current session)."""
+    old = request.cookies.get(get_settings().session_cookie_name)
+    if old and old != new_token and await service.revoke_session(db, old):
+        await evict_and_publish(redis, "token", hash_token(old))
+
+
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup_route(
     body: SignupRequest,
@@ -122,6 +133,7 @@ async def login_route(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password.") from None
     await limiter.reset(key)
     await ip_limiter.refund(ip_key)
+    await revoke_replaced_session(request, db, redis, token)
     set_session_cookie(response, token)
     return me_response(user, agency)
 
@@ -191,7 +203,7 @@ async def list_invitations_route(current: ManagerUser, db: DbSession) -> list[In
 
 @invitations_router.post("/accept", status_code=status.HTTP_201_CREATED)
 async def accept_invitation_route(
-    body: InvitationAccept, request: Request, response: Response, db: DbSession
+    body: InvitationAccept, request: Request, response: Response, db: DbSession, redis: RedisClient
 ) -> MeResponse:
     try:
         user, agency, token = await invitations.accept_invitation(
@@ -205,6 +217,7 @@ async def accept_invitation_route(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, invitations.INVALID_INVITATION_MESSAGE
         ) from None
+    await revoke_replaced_session(request, db, redis, token)
     set_session_cookie(response, token)
     return me_response(user, agency)
 
