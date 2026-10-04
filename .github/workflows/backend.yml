@@ -40,8 +40,12 @@ jobs:
   docker:
     # Build only (no push): the API image used by deploy/docker-compose.yml.
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Validate the deploy compose file
+        run: docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config -q
       - uses: docker/setup-buildx-action@v3
       - name: Build backend image
         uses: docker/build-push-action@v6
@@ -49,3 +53,5 @@ jobs:
           context: backend
           push: false
           tags: travelmind-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
