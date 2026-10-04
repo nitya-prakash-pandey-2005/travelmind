@@ -1,12 +1,17 @@
 """The rule-based demo planner: pure extraction from plain text, and the tool calls it scripts."""
 
+import re
+import time
 from datetime import date
 
 import pytest
 
+from travelmind.agent import planner
 from travelmind.agent.fake import FakeProvider
 from travelmind.agent.planner import (
+    MAX_MESSAGE_CHARS,
     TripRequest,
+    _bare_place,
     extract_cabin,
     extract_dates,
     extract_route,
@@ -15,6 +20,7 @@ from travelmind.agent.planner import (
     extract_trip,
     missing_fields,
     plan_turn,
+    read_dates,
 )
 from travelmind.agent.provider import Message, ToolCall, ToolResult
 
@@ -304,3 +310,164 @@ async def test_fake_provider_planner_drives_the_same_turns():
         timeout_s=5,
     )
     assert [c.name for c in generation.calls] == ["search_flights", "weather_forecast"]
+
+
+# --- decimals are not dates ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "dates"),
+    [
+        ("next Friday for 3 nights, 4.5 star hotel", (date(2026, 10, 9), date(2026, 10, 12))),
+        ("12/10 to Goa for 2 adults, budget 1.5 lakh", (date(2026, 10, 12), None)),
+        ("12/10, a 3.5 star stay, 2.5k per night", (date(2026, 10, 12), None)),
+        ("25.12.2026", (date(2026, 12, 25), None)),
+        ("leaving 5.11.26", (date(2026, 11, 5), None)),
+    ],
+)
+def test_decimals_are_not_read_as_dates(text, dates):
+    assert extract_dates(text, TODAY) == dates
+
+
+# --- dates the planner must ask about ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "2025-12-12 to 2025-12-16",
+        "12/12/2025",
+        "on 5 March 2026",
+        "12 Dec 2025 for 4 nights",
+    ],
+)
+def test_an_explicit_past_date_is_an_issue_not_a_date(text):
+    assert read_dates(text, TODAY) == (None, None, "past")
+    assert extract_dates(text, TODAY) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "16 Dec to 12 Dec",
+        "Dec 16 - Dec 12",
+        "16-12 Dec",
+        "Dec 16-12",
+        "16 Dec 2026 to 12 Dec 2026",
+        "leaving 15 Mar, back 10 Feb",
+    ],
+)
+def test_a_reversed_range_is_an_issue_not_next_year(text):
+    assert read_dates(text, TODAY) == (None, None, "reversed")
+    assert extract_dates(text, TODAY) == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("text", "dates"),
+    [
+        ("28 Dec – 3 Jan", (date(2026, 12, 28), date(2027, 1, 3))),
+        ("12-12 Dec", (date(2026, 12, 12), date(2026, 12, 12))),
+        ("today", (TODAY, None)),
+        ("on 5th March", (date(2027, 3, 5), None)),  # no year: the next 5 March
+    ],
+)
+def test_dates_that_need_no_question(text, dates):
+    assert read_dates(text, TODAY) == (*dates, None)
+
+
+def test_a_past_date_is_asked_about():
+    [call] = plan_turn([_user("DEL to DXB 2025-12-12 to 2025-12-16, 2 adults")], TODAY).calls
+    assert call.name == "ask_user" and call.args["fields"] == ["depart_date"]
+    assert "already passed" in call.args["question"]
+
+
+def test_a_reversed_range_is_asked_about():
+    [call] = plan_turn([_user("DEL to DXB 16 Dec to 12 Dec, 2 adults")], TODAY).calls
+    assert call.name == "ask_user" and call.args["fields"] == ["depart_date"]
+    assert "before the departure" in call.args["question"]
+
+
+def test_a_corrected_date_clears_the_issue():
+    messages = [_user("DEL to DXB 16 Dec to 12 Dec, 2 adults")]
+    ask = plan_turn(messages, TODAY)
+    messages += [Message(role="model", calls=ask.calls), _user("12 Dec to 16 Dec")]
+    turn = plan_turn(messages, TODAY)
+    assert turn.calls[0].name == "search_flights"
+    assert turn.calls[0].args["depart_date"] == "2026-12-12"
+
+
+def test_a_later_past_date_replaces_good_dates_with_a_question():
+    messages = [_user("DEL to DXB 12-16 Dec, 2 adults, flights only")]
+    first = plan_turn(messages, TODAY)
+    messages += [Message(role="model", calls=first.calls), _user("actually 2025-12-12")]
+    [call] = plan_turn(messages, TODAY).calls
+    assert call.name == "ask_user" and "already passed" in call.args["question"]
+
+
+def test_a_return_date_reply_before_the_departure_is_asked_about():
+    messages = [_user("DEL to DXB on 16 Dec, 2 adults, and a hotel")]
+    ask = plan_turn(messages, TODAY)
+    assert ask.calls[0].args["fields"] == ["return_date"]
+    messages += [Message(role="model", calls=ask.calls), _user("12 Dec")]
+    [call] = plan_turn(messages, TODAY).calls
+    assert call.name == "ask_user" and "before the departure" in call.args["question"]
+
+
+# --- bounded work on long input --------------------------------------------------------------
+
+ADVERSARIAL = {
+    "spaces": " " * 20_000 + "x",
+    "digit then spaces": "1" + " " * 20_000 + "x",
+    "year then spaces": "1 years" + " " * 20_000 + "x",
+    "dash then spaces": "4 -" + " " * 20_000 + "x",
+    "code then spaces": "DEL" + " " * 20_000 + "x",
+    "aged then spaces": "aged 1" + " " * 20_000 + "x",
+    "only then spaces": "only" + " " * 20_000 + "x",
+    "next then spaces": "next" + " " * 20_000 + "x",
+    "month then spaces": "dec" + " " * 20_000 + "x",
+    "digits and spaces": "1 " * 10_000,
+    "apostrophes": "a" + "'" * 20_000,
+    "underscores": "a" + "_" * 20_000,
+    "hyphens": "a-" * 10_000 + "-",
+    "digits": "1" * 20_000,
+    "arrows": "->" * 10_000,
+    "to words": " to" * 7_000,
+    "from words": "from " * 5_000,
+    "in words": " in" * 7_000,
+    "mixed": ("12 Dec to 4.5 star 2 adults aged 3, " + " " * 50) * 240,
+}
+
+
+@pytest.mark.parametrize("name", list(ADVERSARIAL))
+def test_extraction_is_linear_on_long_adversarial_input(name):
+    text = ADVERSARIAL[name]
+    assert len(text) >= 20_000
+    started = time.perf_counter()
+    extract_trip(text, TODAY)
+    _bare_place(text)
+    assert time.perf_counter() - started < 0.1
+
+
+PATTERNS = {
+    name: value for name, value in vars(planner).items() if isinstance(value, re.Pattern)
+} | {f"_CABINS[{i}]": pattern for i, (pattern, _) in enumerate(planner._CABINS)}
+
+
+@pytest.mark.parametrize("pattern", list(PATTERNS))
+def test_every_pattern_is_linear_on_long_adversarial_input(pattern):
+    compiled = PATTERNS[pattern]
+    for name, text in ADVERSARIAL.items():
+        started = time.perf_counter()
+        for _ in compiled.finditer(text):
+            pass
+        assert time.perf_counter() - started < 0.1, name
+
+
+def test_the_planner_reads_at_most_max_message_chars_of_a_message():
+    assert MAX_MESSAGE_CHARS == 2000
+    padded = "DEL to DXB, 2 adults, flights only" + " " * MAX_MESSAGE_CHARS + "12 Dec"
+    [call] = plan_turn([_user(padded)], TODAY).calls
+    assert call.name == "ask_user" and call.args["fields"] == ["depart_date"]
+    started = time.perf_counter()
+    plan_turn([_user("1" + " " * 200_000)], TODAY)
+    assert time.perf_counter() - started < 0.1
