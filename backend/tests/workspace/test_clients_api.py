@@ -222,8 +222,10 @@ async def _quote(
     versions=((100000,),),
     sent_version=1,
     accepted_option=None,
+    decided_days_ago=1,
 ):
-    """A quote with one version per entry of `versions` (each a tuple of option sell prices)."""
+    """A quote with one version per entry of `versions` (each a tuple of option sell prices),
+    decided `decided_days_ago` days ago."""
     import json
 
     from tests.helpers import exec_as_tenant
@@ -231,8 +233,9 @@ async def _quote(
     rows = await exec_as_tenant(
         agency,
         "INSERT INTO quotes (id, agency_id, enquiry_id, client_id, number, currency, status, "
-        "current_version, sent_version, accepted_option) VALUES (gen_random_uuid(), :a, :e, :c, "
-        ":n, :cur, :s, :cv, :sv, :ao) RETURNING id",
+        "current_version, sent_version, accepted_option, decided_at) VALUES (gen_random_uuid(), "
+        ":a, :e, :c, :n, :cur, :s, :cv, :sv, :ao, now() - make_interval(days => :dd)) "
+        "RETURNING id",
         {
             "a": agency,
             "e": enquiry_id,
@@ -243,6 +246,7 @@ async def _quote(
             "cv": len(versions),
             "sv": sent_version,
             "ao": accepted_option,
+            "dd": decided_days_ago,
         },
     )
     for version, sells in enumerate(versions, start=1):
@@ -276,11 +280,11 @@ async def test_client_stats_won_value_and_trips(client, airports):
     await _enquiry(
         agency, p, 2, status="lost", route=("DEL", "GOI"), depart=today - timedelta(days=5)
     )
-    await _enquiry(agency, p, 3, status="new", route=("BOM", "DEL"), depart=None)
+    third = await _enquiry(agency, p, 3, status="new", route=("BOM", "DEL"), depart=None)
     soon = await _enquiry(
         agency, p, 4, status="quoting", route=("BOM", "GOI"), depart=today + timedelta(days=17)
     )
-    await _enquiry(
+    lost = await _enquiry(
         agency, p, 6, status="lost", route=("GOI", "DEL"), depart=today + timedelta(days=3)
     )
     theirs = await _enquiry(agency, r, 5, status="won", depart=today + timedelta(days=90))
@@ -295,9 +299,11 @@ async def test_client_stats_won_value_and_trips(client, airports):
         sent_version=2,
         accepted_option=1,
     )
+    # An enquiry is won once: an earlier decided accepted quote on it doesn't count again.
+    await _quote(agency, p, won, 2, versions=((80000,),), decided_days_ago=2)
     # Marked accepted by the agent (no option recorded): the sent version's cheapest option.
-    await _quote(agency, p, won, 2, versions=((50000, 70000),))
-    await _quote(agency, p, won, 3, currency="USD", versions=((999,),))  # not agency currency
+    await _quote(agency, p, third, 3, versions=((50000, 70000),))
+    await _quote(agency, p, lost, 6, currency="USD", versions=((999,),))  # not agency currency
     await _quote(agency, p, soon, 4, status="sent", versions=((40000,),))  # not won
     await _quote(agency, r, theirs, 5, versions=((7000,),))  # another client's
 
@@ -306,7 +312,7 @@ async def test_client_stats_won_value_and_trips(client, airports):
     # Lost enquiries are never trips; the latest past trip and the earliest upcoming one.
     assert got["last_trip"] == _trip(("DEL", "BOM"), today - timedelta(days=20))
     assert got["next_trip"] == _trip(("BOM", "GOI"), today + timedelta(days=17))
-    assert (got["enquiry_count"], got["quote_count"]) == (5, 4)
+    assert (got["enquiry_count"], got["quote_count"]) == (5, 5)
 
     listed = {c["id"]: c for c in (await client.get(URL)).json()["items"]}
     assert listed[p]["won_value_minor"] == 170000

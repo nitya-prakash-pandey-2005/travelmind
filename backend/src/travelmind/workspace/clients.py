@@ -1,9 +1,10 @@
 """Agency clients (travellers and companies): schemas, service and /api/v1/clients router.
 
 Each client read carries its stats in the agency currency:
-- `won_value_minor`: the sum over the client's accepted quotes in that currency of the option the
-  client accepted on the public page, from the version they were sent (`sent_version`); a quote
-  the agent marked accepted (no option recorded) counts its sent version's cheapest option.
+- `won_value_minor`: the value of the client's won quotes in that currency, by the one rule in
+  `quotes` (the accepted option of the version the client was sent, else that version's cheapest
+  option when the agent marked it accepted), counting at most one accepted quote per enquiry:
+  the one decided last.
 - `last_trip` / `next_trip`: among the client's enquiries that aren't lost and have an origin,
   destination and departure date, the one with the latest departure on or before today (the
   agency's local date), and the one with the earliest departure after today. Same-day ties go to
@@ -29,7 +30,6 @@ from sqlalchemy import (
     ColumnElement,
     Row,
     Select,
-    String,
     cast,
     exists,
     func,
@@ -37,8 +37,10 @@ from sqlalchemy import (
     select,
     true,
 )
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.selectable import LateralFromClause
 
 from travelmind.db import DbSession, utcnow
@@ -59,6 +61,7 @@ from travelmind.workspace._common import (
 )
 from travelmind.workspace.activity import record_activity
 from travelmind.workspace.models import Client, Enquiry, Quote, QuoteVersion
+from travelmind.workspace.quotes import QUOTE_VALUE, VALUED_VERSION
 
 __all__ = [
     "ClientCreate",
@@ -216,27 +219,27 @@ _QUOTE_COUNT = (
 )
 
 
-# The accepted option's sell price in the sent version, else (agent-marked) its cheapest option.
-_ACCEPTED_SELL = func.coalesce(
-    cast(
-        func.jsonb_extract_path_text(
-            QuoteVersion.options, cast(Quote.accepted_option, String), "sell", "amount_minor"
-        ),
-        BigInteger,
-    ),
-    QuoteVersion.totals["min_sell_minor"].as_integer(),
-)
-
-
 def _won_value(currency: str) -> ColumnElement[int]:
+    """The client's won value in `currency`: for each of its enquiries, the accepted quote
+    decided last (never two per enquiry), valued as everywhere else (QUOTE_VALUE)."""
+    accepted = aliased(Quote)
+    won = (
+        select(accepted.id)
+        .where(accepted.client_id == Client.id, accepted.status == "accepted")
+        .ext(distinct_on(accepted.enquiry_id))
+        .order_by(
+            accepted.enquiry_id, accepted.decided_at.desc().nulls_last(), accepted.number.desc()
+        )
+        .correlate(Client)
+    )
     return (
-        select(cast(func.coalesce(func.sum(_ACCEPTED_SELL), 0), BigInteger))
+        select(cast(func.coalesce(func.sum(QUOTE_VALUE), 0), BigInteger))
         .select_from(Quote)
         .join(
             QuoteVersion,
-            (QuoteVersion.quote_id == Quote.id) & (QuoteVersion.version == Quote.sent_version),
+            (QuoteVersion.quote_id == Quote.id) & (QuoteVersion.version == VALUED_VERSION),
         )
-        .where(Quote.client_id == Client.id, Quote.status == "accepted", Quote.currency == currency)
+        .where(Quote.id.in_(won), Quote.currency == currency)
         .correlate(Client)
         .scalar_subquery()
     )

@@ -299,7 +299,11 @@ async def test_public_payload_has_no_internal_fields(client, app, airports):
     body = r.json()
     assert set(body) == QUOTE_KEYS
     assert body["number"] == "Q-0001" and body["status"] == "viewed"
-    assert body["agency"] == {"name": "Alpha Travels", "brand_color": "#22d3ee"}
+    assert body["agency"] == {
+        "name": "Alpha Travels",
+        "brand_color": "#22d3ee",
+        "timezone": "Asia/Kolkata",
+    }
     assert body["client_first_name"] == "Priya"
     assert body["message"] == "Hi Priya, two good options for you"
     assert body["currency"] == "INR" and body["expires_at"] and body["decided_at"] is None

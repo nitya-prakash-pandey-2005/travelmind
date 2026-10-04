@@ -432,7 +432,7 @@ async def test_list_filters(client, airports):
     listed = (await client.get("/api/v1/quotes")).json()
     assert listed["total"] == 2 and [q["number"] for q in listed["items"]] == ["Q-0002", "Q-0001"]
     first = listed["items"][1]
-    assert first["client"] == {"id": c["id"], "name": "Priya"}
+    assert first["client"] == {"id": c["id"], "name": "Priya", "kind": "individual"}
     assert first["enquiry"] == {
         "id": e1["id"],
         "number": "E-0001",

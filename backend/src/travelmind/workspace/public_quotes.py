@@ -81,6 +81,7 @@ _FINAL = frozenset({"accepted", "declined"})
 class PublicAgency(BaseModel):
     name: str
     brand_color: str
+    timezone: str  # IANA zone: the page shows dates such as the expiry in the agency's time
 
 
 class PublicSegment(BaseModel):
@@ -290,7 +291,9 @@ async def _public_view(db: AsyncSession, quote: Quote) -> PublicQuote:
     return PublicQuote(
         number=format_number("quote", quote.number),
         status=cast(PublicStatus, quote.status),  # a linked quote is never a draft
-        agency=PublicAgency(name=agency.name, brand_color=agency.brand_color),
+        agency=PublicAgency(
+            name=agency.name, brand_color=agency.brand_color, timezone=agency.timezone
+        ),
         client_first_name=await _first_name(db, quote),
         message=message,
         options=[_public_option(i, o, adults_only) for i, o in enumerate(options)],
