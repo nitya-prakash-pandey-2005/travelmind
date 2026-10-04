@@ -15,6 +15,9 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
+  // Two workers locally as in CI: at the default (about 6 parallel browsers) this machine's Docker Postgres and
+  // Redis get starved and tests time out.
+  workers: 2,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   use: { baseURL, trace: "retain-on-failure" },

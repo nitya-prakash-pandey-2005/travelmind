@@ -89,7 +89,8 @@ export function KpiTile({
         inStrip ? "px-4 py-3.5" : "p-[18px]",
       )}
     >
-      <p className="tm-micro truncate">{label}</p>
+      {/* One line on wider screens; phones wrap long labels to two lines rather than cut them short. */}
+      <p className="tm-micro truncate max-sm:line-clamp-2 max-sm:whitespace-normal">{label}</p>
       {loading ? (
         <>
           <Skeleton className="my-[3px] h-8 w-24" />

@@ -11,6 +11,7 @@ import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
 import { useClock } from "../../shell/useClock";
 import { Avatar } from "../../ui/Avatar";
 import { Badge } from "../../ui/Badge";
+import { MetaLine } from "../../ui/MetaLine";
 import { Button, buttonClasses } from "../../ui/Button";
 import { KpiStrip, KpiTile } from "../../ui/charts";
 import { cn } from "../../ui/cn";
@@ -82,7 +83,7 @@ function ContactPanel({ client, now, className }: { client: ClientOut; now: Date
           {client.email ? (
             <a href={mailtoHref(client.email)} className="inline-flex max-w-full items-center gap-1.5 text-primary underline-offset-2 hover:underline">
               <Mail size={13} aria-hidden="true" className="shrink-0" />
-              <span className="min-w-0 break-all">{client.email}</span>
+              <span className="min-w-0 [overflow-wrap:anywhere]">{emailBreaks(client.email)}</span>
             </a>
           ) : (
             "No email"
@@ -475,6 +476,19 @@ function ClientHeaderMeta({ client }: { client: ClientOut }) {
   );
 }
 
+/** An email with a break opportunity after the "@", so a narrow card splits it there rather than mid-word. */
+function emailBreaks(email: string): ReactNode {
+  const at = email.indexOf("@");
+  if (at < 0) return email;
+  return (
+    <>
+      {email.slice(0, at + 1)}
+      <wbr />
+      {email.slice(at + 1)}
+    </>
+  );
+}
+
 function ClientView({ client }: { client: ClientOut }) {
   const now = useClock(60_000);
   const [editing, setEditing] = useState(false);
@@ -483,7 +497,7 @@ function ClientView({ client }: { client: ClientOut }) {
   const enquiries = useClientEnquiries(client);
   const quotes = useClientQuotes(client);
   const timeline = useQuery(clientActivityQueryOptions(client.id));
-  const contact = [client.company_name, client.email, client.phone].filter(Boolean).join(" · ");
+  const contact = [client.company_name, client.email, client.phone].filter(Boolean);
 
   return (
     <>
@@ -492,13 +506,20 @@ function ClientView({ client }: { client: ClientOut }) {
         title={client.name}
         meta={<ClientHeaderMeta client={client} />}
         description={
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <Avatar name={client.name} size="sm" className="h-5 w-5 text-[9px]" />
-            <span className="text-ink">{contact || "No contact details yet"}</span>
-            <span aria-hidden="true" className="text-faint">
-              ·
-            </span>
-            <span>Client since {formatDate(client.created_at)}</span>
+          <span className="flex items-start gap-2">
+            <Avatar name={client.name} size="sm" className="mt-px h-5 w-5 shrink-0 text-[9px]" />
+            <MetaLine className="min-w-0">
+              {contact.length > 0 ? (
+                contact.map((part) => (
+                  <span key={part} className="min-w-0 break-words text-ink [overflow-wrap:anywhere]">
+                    {part}
+                  </span>
+                ))
+              ) : (
+                <span className="text-ink">No contact details yet</span>
+              )}
+              <span>Client since {formatDate(client.created_at)}</span>
+            </MetaLine>
           </span>
         }
         actions={

@@ -22,6 +22,7 @@ import { Button } from "../../ui/Button";
 import { KpiStrip, KpiTile } from "../../ui/charts";
 import { EmptyState } from "../../ui/EmptyState";
 import { Menu } from "../../ui/Menu";
+import { MetaLine } from "../../ui/MetaLine";
 import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { Skeleton } from "../../ui/Skeleton";
@@ -210,7 +211,7 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
           </>
         }
         description={
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <MetaLine>
             {quote.client ? (
               <Link to="/app/clients/$clientId" params={{ clientId: quote.client.id }} className="text-primary underline-offset-2 hover:underline">
                 {quote.client.name}
@@ -218,9 +219,6 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
             ) : (
               <span className="text-faint">No client</span>
             )}
-            <span aria-hidden="true" className="text-faint">
-              ·
-            </span>
             <Link
               to="/app/enquiries/$enquiryId"
               params={{ enquiryId: quote.enquiry.id }}
@@ -228,19 +226,9 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
             >
               {quote.enquiry.number} {routeLabel(quote.enquiry)}
             </Link>
-            {trip && (
-              <>
-                <span aria-hidden="true" className="text-faint">
-                  ·
-                </span>
-                <span className="font-mono text-ink">{trip}</span>
-              </>
-            )}
-            <span aria-hidden="true" className="text-faint">
-              ·
-            </span>
+            {trip && <span className="font-mono text-ink">{trip}</span>}
             <span>Prices in {quote.currency}</span>
-          </span>
+          </MetaLine>
         }
         actions={
           <>

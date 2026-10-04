@@ -10,8 +10,6 @@
 @layer base {
   html {
     /* color-scheme comes with each theme block (themes.generated.css). */
-    /* Reserve the scrollbar's space so locking scroll under an open dialog doesn't shift the layout. */
-    scrollbar-gutter: stable;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
@@ -41,6 +39,14 @@
   /* In-page links on the landing page glide (reduced motion turns this off below). */
   html:has(.tm-landing) {
     scroll-behavior: smooth;
+  }
+  /* Reserve the scrollbar's space so locking scroll under an open dialog doesn't shift the layout. Not on phones:
+     their scrollbars overlay the page, and on a page that doesn't scroll (sign-in, 404) the empty gutter showed as
+     a flat strip beside the ambient glow. */
+  @media (min-width: 640px) {
+    html {
+      scrollbar-gutter: stable;
+    }
   }
   /* A modal dialog or drawer is open: the page behind it must not scroll. */
   html:has(dialog[open]) {

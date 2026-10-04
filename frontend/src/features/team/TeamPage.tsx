@@ -200,7 +200,7 @@ export function TeamPage() {
       <PageHeader
         breadcrumb={[{ label: "Workspace", to: "/app" }, { label: "Team" }]}
         title="Team"
-        description={`Everyone with access to ${me.agency.name}.`}
+        description={`Everyone with access to ${me.agency.name.trimEnd().replace(/\.+$/, "")}.`}
         meta={count !== undefined && <Badge>{`${count} member${count === 1 ? "" : "s"}`}</Badge>}
         actions={
           canInvite && (

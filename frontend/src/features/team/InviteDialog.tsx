@@ -67,7 +67,7 @@ export function InviteDialog({ agencyName, onClose }: { agencyName: string; onCl
       open
       onClose={onClose}
       title="Invite teammate"
-      description={`They get a one-time link to join ${agencyName}.`}
+      description={`They get a one-time link to join ${agencyName.trimEnd().replace(/\.+$/, "")}.`}
       footer={
         created ? (
           <>

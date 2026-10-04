@@ -474,3 +474,10 @@ input[type="range"].slider::-moz-range-thumb { width: 16px; height: 16px; border
 :root:is([data-theme="contrast"], [data-contrast="high"]) .card.glow::before {
   display: none;
 }
+
+/* ---------- meta line: facts divided by "·" that never starts or ends a wrapped row ---------- */
+.meta-line { display: block; overflow-x: clip; }
+.meta-line-list { display: flex; flex-wrap: wrap; align-items: center; margin-left: -16px; row-gap: 4px; }
+.meta-line-item { position: relative; display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 6px; padding-left: 16px; }
+.meta-line-item::before { content: "·"; position: absolute; left: 0; width: 16px; text-align: center; color: var(--faint, var(--muted)); }
+.meta-line-item:first-child::before { content: none; }

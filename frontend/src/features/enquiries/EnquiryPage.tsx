@@ -15,6 +15,7 @@ import { Badge } from "../../kit";
 import { KpiStrip, KpiTile } from "../../ui/charts";
 import { DataTable, type DataTableColumn } from "../../ui/DataTable";
 import { EmptyState } from "../../ui/EmptyState";
+import { MetaLine } from "../../ui/MetaLine";
 import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { Skeleton } from "../../ui/Skeleton";
@@ -361,30 +362,20 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
           </>
         }
         description={
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <MetaLine>
             <span className="font-mono text-ink">{summary}</span>
             {enquiry.client && (
-              <>
-                <span aria-hidden="true" className="text-faint">
-                  ·
-                </span>
-                <Link to="/app/clients/$clientId" params={{ clientId: enquiry.client.id }} className="text-primary underline-offset-2 hover:underline">
-                  {enquiry.client.name}
-                </Link>
-              </>
+              <Link to="/app/clients/$clientId" params={{ clientId: enquiry.client.id }} className="text-primary underline-offset-2 hover:underline">
+                {enquiry.client.name}
+              </Link>
             )}
             {enquiry.assignee && (
-              <>
-                <span aria-hidden="true" className="text-faint">
-                  ·
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Avatar name={enquiry.assignee.full_name} size="sm" className="h-5 w-5 text-[9px]" />
-                  {enquiry.assignee.full_name}
-                </span>
-              </>
+              <span className="inline-flex items-center gap-1.5">
+                <Avatar name={enquiry.assignee.full_name} size="sm" className="h-5 w-5 text-[9px]" />
+                {enquiry.assignee.full_name}
+              </span>
             )}
-          </span>
+          </MetaLine>
         }
         actions={
           <>
