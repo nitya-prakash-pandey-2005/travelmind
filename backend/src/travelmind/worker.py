@@ -41,7 +41,7 @@ from travelmind.demo.cleanup import run_demo_cleanup
 from travelmind.demo.service import DemoBusy, start_demo_workspace
 from travelmind.http import close_http_clients
 from travelmind.identity.service import SessionContext
-from travelmind.jobs import arq_redis_settings
+from travelmind.jobs import arq_redis_settings, close_job_queue
 from travelmind.observability import configure_logging
 from travelmind.readcache import discard_agency_changes, publish_agency_changes
 from travelmind.workspace.quotes import agencies_with_overdue_quotes, expire_overdue_quotes
@@ -78,15 +78,19 @@ async def startup(ctx: dict[str, Any]) -> None:
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
-    """Close the shared clients; each close runs even if an earlier one fails."""
+    """Close the shared clients (and the job queue pool, if a job opened it); each close runs
+    even if an earlier one fails."""
     remove_statement_timeout()
     try:
         await close_http_clients()
     finally:
         try:
-            await close_redis()
+            await close_job_queue()
         finally:
-            await get_engine().dispose()
+            try:
+                await close_redis()
+            finally:
+                await get_engine().dispose()
 
 
 async def cleanup_expired_demos(ctx: dict[str, Any]) -> int:

@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     read_cache_timeout_ms: int = 150
     read_cache_breaker_failures: int = 3
     read_cache_breaker_cooldown_s: float = 10.0
+    # Enqueueing a job or reading its status gives up after this (TimeoutError).
+    job_queue_timeout_s: float = 2.0
     allowed_origins: list[str] = ["http://localhost:5173"]
     session_cookie_name: str = "tm_session"
     session_ttl_hours: int = 24 * 14

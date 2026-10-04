@@ -10,10 +10,14 @@ have a sent or viewed quote whose share link expired before `now` (the same pred
 `expire_overdue_quotes`), in one round trip.
 
 It is not a definer function and changes no policy: it runs as the caller (the app role), binds
-each agency in turn exactly as `bind_tenant` does, and probes that agency's quotes under the
-usual tenant RLS (one `ix_quotes_agency_status` index probe per agency), then puts the caller's
-own binding back (an error aborts the transaction, which drops the local setting anyway). It
-returns agency ids only.
+each agency in turn exactly as `bind_tenant` does, and checks that agency's quotes under the
+usual tenant RLS, then puts the caller's own binding back (an error aborts the transaction, which
+drops the local setting anyway). It returns agency ids only.
+
+Here each check scans `ix_quotes_agency_status` for the agency's sent and viewed quotes and
+reads each one until it finds an overdue one, so its cost grows with the agency's live shared
+quotes. 0010 adds a partial index on live shared quotes by expiry that makes it a single index
+probe per agency.
 """
 
 from collections.abc import Sequence

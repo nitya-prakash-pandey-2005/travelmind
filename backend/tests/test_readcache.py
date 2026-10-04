@@ -451,3 +451,25 @@ def test_every_write_invalidates_the_agency_cache(app):
     assert READS_THAT_WRITE <= seen  # every listed read still exists
     assert ("POST", "/api/v1/public/quotes/{token}/decision") in bumps
     assert ("POST", "/api/v1/demo") in bumps
+
+
+async def test_a_cancelled_half_open_trial_lets_the_next_call_try(clock):
+    """A trial call cancelled mid-flight has no outcome: it must not leave the breaker stuck
+    refusing everyone (no trial slot free, never reopened or closed)."""
+    breaker = readcache._breaker
+    for _ in range(3):
+        breaker.record_failure()
+    clock.now += 10.0
+    started = asyncio.Event()
+
+    async def hang() -> None:
+        started.set()
+        await asyncio.Event().wait()
+
+    trial = asyncio.create_task(readcache._call("airports", hang))
+    await started.wait()
+    assert not breaker.allow()  # the trial is in flight
+    trial.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await trial
+    assert breaker.allow()  # the next call becomes the trial

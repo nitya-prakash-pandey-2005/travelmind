@@ -399,3 +399,112 @@ async def test_stale_semaphore_slots_lapse():
         await asyncio.sleep(0.3)  # the holder "crashed": its slot times out
         async with redis_semaphore(redis, "tm:sem:t", limit=1, ttl_s=0.2, wait_s=0):
             pass
+
+
+async def test_a_slot_granted_before_a_lost_reply_is_released():
+    """Redis may run the acquire script and then lose the reply (a connection drop or socket
+    timeout): the caller fails open, and hands back the slot the script may have taken."""
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    from travelmind.semaphore import redis_semaphore
+
+    redis = get_shared_redis()
+
+    class LostReplyAfterGrant:
+        def register_script(self, script):  # type: ignore[no-untyped-def]
+            real = redis.register_script(script)
+
+            async def call(**kwargs):  # type: ignore[no-untyped-def]
+                await real(**kwargs)  # Redis took the slot,
+                raise RedisConnectionError("reply lost")  # and the reply never arrived
+
+            return call
+
+        def __getattr__(self, name):  # type: ignore[no-untyped-def]
+            return getattr(redis, name)
+
+    ran = False
+    async with redis_semaphore(
+        LostReplyAfterGrant(),  # type: ignore[arg-type]
+        "tm:sem:lost",
+        limit=1,
+        ttl_s=60,
+        wait_s=1,
+    ):
+        ran = True  # failed open
+        assert await redis.zcard("tm:sem:lost") == 0  # the slot was handed straight back
+    assert ran
+    assert await redis.zcard("tm:sem:lost") == 0
+
+
+async def test_the_first_job_queue_is_created_once(monkeypatch):
+    """Two callers racing to open the queue share one pool: the second never leaks its own."""
+    made: list[object] = []
+    gate = asyncio.Event()
+
+    class FakePool:
+        async def aclose(self) -> None:
+            pass
+
+    async def slow_create_pool(settings):  # type: ignore[no-untyped-def]
+        pool = FakePool()
+        made.append(pool)
+        await gate.wait()
+        return pool
+
+    monkeypatch.setattr(jobs, "create_pool", slow_create_pool)
+    first = asyncio.create_task(jobs.queue())
+    second = asyncio.create_task(jobs.queue())
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    gate.set()
+    assert await first is await second
+    assert len(made) == 1
+
+
+def test_the_job_queue_gives_up_reconnecting_quickly():
+    settings = jobs.arq_redis_settings()
+    assert settings.conn_retries == 1  # arq's default of 5 (5 s+) would hold a request hostage
+    assert settings.conn_timeout <= 1
+
+
+def test_job_queue_timeout_default():
+    from travelmind.config import Settings
+
+    assert Settings(_env_file=None).job_queue_timeout_s == 2.0
+
+
+async def test_enqueue_and_job_status_time_out(monkeypatch):
+    from travelmind.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "job_queue_timeout_s", 0.05)
+    hang = asyncio.Event()
+
+    class HungQueue:
+        async def enqueue_job(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            await hang.wait()
+
+    async def hung_queue():  # type: ignore[no-untyped-def]
+        return HungQueue()
+
+    monkeypatch.setattr(jobs, "queue", hung_queue)
+    with pytest.raises(TimeoutError):
+        await jobs.enqueue("generate_demo_job")
+
+    class HungStatus:
+        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            pass
+
+        async def status(self):  # type: ignore[no-untyped-def]
+            await hang.wait()
+
+    monkeypatch.setattr(jobs, "Job", HungStatus)
+    with pytest.raises(TimeoutError):
+        await jobs.job_status("some-job")
+
+
+async def test_worker_shutdown_closes_the_job_queue():
+    queue = await jobs.queue()
+    await worker.shutdown({})
+    assert jobs._queue is None
+    assert await jobs.queue() is not queue

@@ -188,6 +188,14 @@ HOT_INDEXES = {
         "CREATE INDEX ix_flight_searches_route ON public.flight_searches "
         "USING btree (agency_id, origin, destination, created_at)",
     ),
+    # 0010: the overdue-quote lookup and lazy expiry probe only live shared quotes.
+    "ix_quotes_agency_share_due": (
+        "quotes",
+        "CREATE INDEX ix_quotes_agency_share_due ON public.quotes "
+        "USING btree (agency_id, share_expires_at) "
+        "WHERE ((status)::text = ANY ((ARRAY['sent'::character varying, "
+        "'viewed'::character varying])::text[]))",
+    ),
 }
 
 
