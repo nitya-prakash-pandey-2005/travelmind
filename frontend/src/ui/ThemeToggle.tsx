@@ -11,7 +11,7 @@ export function ThemeToggle() {
       title={available ? label : unavailableReason}
       disabled={!available}
       onClick={toggle}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-dim"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-dim transition-colors duration-150 ease-tm hover:bg-card-2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-dim"
     >
       {mode === "dark" ? <Sun size={16} strokeWidth={1.75} aria-hidden="true" /> : <Moon size={16} strokeWidth={1.75} aria-hidden="true" />}
     </button>

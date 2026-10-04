@@ -7,9 +7,9 @@ export type Crumb = { label: string; to?: LinkProps["to"] };
 
 type PageHeaderProps = {
   title: string;
-  /** One line under the title (13px, secondary text). */
+  /** One line under the title (14px, secondary text). */
   description?: ReactNode;
-  /** Trail above the title; the last crumb is the current page and is not a link. */
+  /** Trail above the title (the kit's HUD kicker); the last crumb is the current page and is not a link. */
   breadcrumb?: Crumb[];
   /** Right-aligned: secondary buttons first, then at most one primary. */
   actions?: ReactNode;
@@ -17,43 +17,35 @@ type PageHeaderProps = {
   meta?: ReactNode;
   /** A tab row under the header (e.g. <Tabs />); the header then ends on the tabs' bottom border. */
   tabs?: ReactNode;
-  /** The faint dot-grid backdrop. Reserved for the Command Center header. */
+  /** Kept for callers: the kit's HUD grid now runs behind every page (the shell's ambient background). */
   dotGrid?: boolean;
   className?: string;
 };
 
 /**
- * The top of every app page: breadcrumb, title (the page's h1), description and actions, with an optional
- * tab row beneath. Sits directly inside the shell's padded <main>.
+ * The top of every app page, as the kit's page head: the breadcrumb as a HUD kicker, the title (the page's h1) in
+ * Space Grotesk, the description and the actions on the right, with an optional tab row beneath. Sits directly
+ * inside the shell's content column.
  */
 export function PageHeader({ title, description, breadcrumb, actions, meta, tabs, dotGrid = false, className }: PageHeaderProps) {
   return (
-    <div
-      data-page-header=""
-      className={cn(
-        "relative flex flex-col gap-4",
-        tabs ? "mb-5" : "mb-6",
-        dotGrid && "tm-dot-grid -mx-4 -mt-4 px-4 pt-4 lg:-mx-6 lg:-mt-6 lg:px-6 lg:pt-6",
-        dotGrid && !tabs && "pb-5",
-        className,
-      )}
-    >
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0 max-w-3xl">
+    <div data-page-header="" data-dot-grid={dotGrid || undefined} className={cn("relative flex flex-col gap-4", tabs ? "mb-5" : "mb-6", className)}>
+      <div className="page-head mb-0 justify-between gap-x-6 gap-y-3">
+        <div className="grow max-w-3xl">
           {breadcrumb && breadcrumb.length > 0 && (
-            <nav aria-label="Breadcrumb" className="mb-1.5">
-              <ol className="flex flex-wrap items-center gap-1 text-xs leading-4 text-faint">
+            <nav aria-label="Breadcrumb" className="mb-2">
+              <ol className="hud flex flex-wrap items-center gap-1.5">
                 {breadcrumb.map((crumb, index) => {
                   const last = index === breadcrumb.length - 1;
                   return (
-                    <li key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-1">
-                      {index > 0 && <ChevronRight size={12} aria-hidden="true" className="shrink-0" />}
+                    <li key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-1.5">
+                      {index > 0 && <ChevronRight size={11} aria-hidden="true" className="shrink-0" />}
                       {crumb.to && !last ? (
                         <Link to={crumb.to} className="truncate rounded-[4px] transition-colors duration-150 hover:text-ink">
                           {crumb.label}
                         </Link>
                       ) : (
-                        <span aria-current={last ? "page" : undefined} className={cn("truncate", last && "text-dim")}>
+                        <span aria-current={last ? "page" : undefined} className={cn("truncate", last && "text-primary")}>
                           {crumb.label}
                         </span>
                       )}
@@ -67,7 +59,7 @@ export function PageHeader({ title, description, breadcrumb, actions, meta, tabs
             <h1 className="tm-page-title min-w-0 text-ink">{title}</h1>
             {meta && <div className="flex items-center gap-2">{meta}</div>}
           </div>
-          {description && <p className="mt-1 text-[13px] leading-5 text-dim">{description}</p>}
+          {description && <p className="mt-1.5 text-sm leading-5 text-dim">{description}</p>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>

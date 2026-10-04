@@ -23,7 +23,7 @@ const TONES: Record<ToastTone, { icon: LucideIcon; text: string; bar: string }> 
   info: { icon: Info, text: "text-info", bar: "bg-info" },
 };
 
-/** Provides `useToast()` and renders the toast stack (bottom-right; full width on phones). */
+/** Provides `useToast()` and renders the kit's toast stack (bottom centre, above the phone tab bar). */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(0);
@@ -47,15 +47,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       {/* Both regions are always mounted (empty until needed): screen readers announce content added to an
           existing live region, but not reliably a region that arrives already filled. */}
-      <div className="pointer-events-none fixed inset-x-4 bottom-4 z-[60] flex flex-col gap-2 sm:left-auto sm:right-4 sm:w-96">
-        <div aria-live="assertive" className="flex flex-col gap-2">
+      <div className="toasts z-[60]">
+        <div aria-live="assertive" className="flex w-full flex-col items-center gap-2">
           {toasts
             .filter((item) => item.tone === "danger")
             .map((item) => (
               <ToastItem key={item.id} toast={item} onDismiss={dismiss} />
             ))}
         </div>
-        <div role="status" aria-live="polite" className="flex flex-col gap-2">
+        <div role="status" aria-live="polite" className="flex w-full flex-col items-center gap-2">
           {toasts
             .filter((item) => item.tone !== "danger")
             .map((item) => (
@@ -96,10 +96,10 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)}
       onBlur={onBlur}
-      className="tm-enter tm-popover pointer-events-auto relative flex items-start gap-3 overflow-hidden rounded-lg py-3 pl-4 pr-2"
+      className="toast tm-enter relative w-full items-start overflow-hidden py-3 pl-4 pr-2"
     >
-      <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-0.5", bar)} />
-      <Icon size={16} aria-hidden="true" className={cn("mt-0.5 shrink-0", text)} />
+      <span aria-hidden="true" className={cn("absolute inset-y-3 left-0 w-[3px] rounded-r-full", bar)} />
+      <Icon size={17} aria-hidden="true" className={cn("mt-0.5 shrink-0", text)} />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-semibold leading-5 text-ink">{toast.title}</p>
         {toast.description && <p className="mt-0.5 text-[13px] leading-5 text-dim">{toast.description}</p>}
@@ -108,7 +108,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
         type="button"
         aria-label="Dismiss notification"
         onClick={() => onDismiss(toast.id)}
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-dim transition-colors duration-150 ease-tm hover:bg-card-2 hover:text-ink"
       >
         <X size={15} aria-hidden="true" />
       </button>

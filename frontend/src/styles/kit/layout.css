@@ -45,7 +45,7 @@
   box-shadow: 0 0 24px var(--glow);
 }
 .brand .logo img { width: 26px; height: 26px; }
-.brand b { display: block; font-family: var(--font-display); font-size: 19px; line-height: 1.2; letter-spacing: -0.02em; color: var(--text); }
+.brand .name { display: block; font-family: var(--font-display); font-size: 19px; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; color: var(--text); }
 .brand .sub { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.18em; color: var(--muted); text-transform: uppercase; white-space: nowrap; }
 .sidebar[data-collapsed="true"] .brand { justify-content: center; padding-left: 0; padding-right: 0; }
 .nav-group { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
@@ -99,8 +99,8 @@
   border-bottom: 1px solid var(--line);
 }
 .topbar .title { min-width: 0; line-height: 1.25; }
-.topbar .title b { display: block; font-family: var(--font-display); font-size: 16px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.topbar .title span { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar .title .t { display: block; font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar .title .s { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mode-pill {
   display: inline-flex;
   align-items: center;

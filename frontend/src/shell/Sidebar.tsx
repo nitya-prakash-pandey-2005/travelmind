@@ -128,7 +128,7 @@ export function Sidebar({ id }: { id: string }) {
           <BrandLogo />
           {!collapsed && (
             <span className="min-w-0">
-              <b>TravelMind</b>
+              <span className="name">TravelMind</span>
               <span className="sub block">Operations console</span>
             </span>
           )}

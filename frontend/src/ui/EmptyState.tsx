@@ -32,13 +32,13 @@ export function EmptyState({ icon: Icon, title, description, action, className }
       {Icon && (
         <span
           aria-hidden="true"
-          className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-surface-2 text-dim"
+          className="grid h-11 w-11 place-items-center rounded-[14px] border border-line bg-card-2 text-dim shadow-[0_0_24px_var(--tm-glow)]"
         >
-          <Icon size={18} strokeWidth={1.75} />
+          <Icon size={19} strokeWidth={1.75} />
         </span>
       )}
       <div className="flex max-w-sm flex-col gap-1">
-        <p className="text-sm font-semibold text-ink">{title}</p>
+        <p className="font-display text-[15px] font-semibold text-ink">{title}</p>
         {description && <p className="text-[13px] leading-5 text-dim">{description}</p>}
       </div>
       {action &&

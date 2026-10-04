@@ -3,9 +3,11 @@
  *
  * The kit's colour names are aliases of --tm-* properties: the values live in src/theme/palettes.ts and arrive
  * through themes.generated.css, so switching theme (data-theme / data-mode / data-contrast on <html>) recolours
- * every kit class too. Only sizes are the kit's own values here.
+ * every kit class too. Only sizes are the kit's own values here. An element that re-declares the --tm-* tokens
+ * (a theme preview card) marks itself [data-theme-scope] so these aliases resolve against its own values.
  */
-:root {
+:root,
+[data-theme-scope] {
   /* surfaces */
   --bg: var(--tm-bg);
   --bg-2: var(--tm-bg);

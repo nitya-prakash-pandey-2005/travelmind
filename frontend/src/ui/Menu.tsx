@@ -126,10 +126,10 @@ export function Menu({
         onClick={() => (open ? close(false) : openAt(0))}
         onKeyDown={onTriggerKeyDown}
         className={cn(
-          "inline-flex h-8 items-center gap-1.5 rounded-md text-[13px] font-medium transition-colors duration-150 ease-tm",
+          "inline-flex h-9 items-center gap-1.5 rounded-[10px] text-[13px] font-medium transition-colors duration-150 ease-tm",
           triggerVariant === "secondary"
-            ? cn("border border-line-strong px-2.5 text-ink hover:bg-hover", open ? "bg-hover" : "bg-surface-2")
-            : cn("text-dim hover:bg-hover hover:text-ink", open && "bg-hover text-ink"),
+            ? cn("border border-line-soft px-3 text-ink hover:border-line-strong", open ? "bg-hover" : "bg-card-2")
+            : cn("text-dim hover:bg-card-2 hover:text-ink", open && "bg-card-2 text-ink"),
           triggerClassName,
         )}
       >
@@ -138,12 +138,12 @@ export function Menu({
       {open && (
         <div
           className={cn(
-            "tm-enter tm-popover absolute top-full z-40 mt-1 flex min-w-48 max-w-[calc(100vw-2rem)] flex-col rounded-lg",
+            "tm-enter tm-popover absolute top-full z-40 mt-1.5 flex min-w-52 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[16px]",
             align === "end" ? "right-0" : "left-0",
           )}
         >
-          {header && <div className="border-b border-line px-3 py-2.5">{header}</div>}
-          <div id={menuId} role="menu" aria-labelledby={triggerId} onKeyDown={onMenuKeyDown} className="flex flex-col p-1">
+          {header && <div className="border-b border-line px-3.5 py-3">{header}</div>}
+          <div id={menuId} role="menu" aria-labelledby={triggerId} onKeyDown={onMenuKeyDown} className="flex flex-col p-1.5">
             {items.map((item, index) => {
               const Icon = item.icon;
               return (
@@ -158,8 +158,8 @@ export function Menu({
                     tabIndex={-1}
                     onClick={() => select(item)}
                     className={cn(
-                      "flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-[13px]",
-                      "transition-colors duration-100 ease-tm hover:bg-hover focus:bg-hover focus-visible:-outline-offset-2",
+                      "flex h-9 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-left text-[13px] font-medium",
+                      "transition-colors duration-100 ease-tm hover:bg-card-2 focus:bg-card-2 focus-visible:-outline-offset-2",
                       item.danger ? "text-danger" : "text-ink",
                     )}
                   >

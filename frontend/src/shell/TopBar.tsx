@@ -36,8 +36,8 @@ function PageTitle() {
   const { title, sub } = pageTitle(pathname);
   return (
     <div className="title grow">
-      <b>{title}</b>
-      <span>{sub}</span>
+      <span className="t">{title}</span>
+      <span className="s">{sub}</span>
     </div>
   );
 }

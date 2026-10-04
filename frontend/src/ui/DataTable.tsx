@@ -110,8 +110,8 @@ export function DataTable<T>({
                   scope="col"
                   aria-sort={ariaSort}
                   className={cn(
-                    "sticky top-0 z-10 h-9 whitespace-nowrap border-b border-line bg-surface px-3 align-middle",
-                    "text-[11px] font-medium uppercase leading-4 tracking-[0.06em] text-faint",
+                    "sticky top-0 z-10 h-10 whitespace-nowrap border-b border-line bg-surface px-3 align-middle",
+                    "tm-micro",
                     ALIGN[align],
                     column.className,
                   )}
@@ -121,7 +121,7 @@ export function DataTable<T>({
                       type="button"
                       onClick={() => toggle(column.key)}
                       className={cn(
-                        "group -mx-1 inline-flex items-center gap-1 rounded-[4px] px-1 uppercase tracking-[0.06em]",
+                        "group -mx-1 inline-flex items-center gap-1 rounded-[4px] px-1 uppercase tracking-[0.14em]",
                         "transition-colors duration-150 ease-tm hover:text-ink",
                         align === "right" && "flex-row-reverse",
                         active && "text-ink",
@@ -141,7 +141,7 @@ export function DataTable<T>({
               );
             })}
             {rowActions && (
-              <th scope="col" className="sticky top-0 z-10 h-9 w-px border-b border-line bg-surface px-3">
+              <th scope="col" className="sticky top-0 z-10 h-10 w-px border-b border-line bg-surface px-3">
                 <span className="sr-only">Actions</span>
               </th>
             )}
@@ -152,13 +152,13 @@ export function DataTable<T>({
             Array.from({ length: SKELETON_ROWS }, (_, index) => (
               <tr key={`skeleton-${index}`}>
                 {columns.map((column) => (
-                  <td key={column.key} className="h-9 border-b border-line px-3">
+                  <td key={column.key} className="h-11 border-b border-line px-3">
                     <div className={cn("flex", JUSTIFY[column.align ?? "left"])}>
                       <Skeleton className={cn("h-3.5", index % 2 === 0 ? "w-3/4" : "w-1/2")} />
                     </div>
                   </td>
                 ))}
-                {rowActions && <td className="h-9 border-b border-line px-3" />}
+                {rowActions && <td className="h-11 border-b border-line px-3" />}
               </tr>
             ))}
           {empty && (
@@ -176,15 +176,15 @@ export function DataTable<T>({
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 onKeyDown={onRowClick ? (event) => onRowKeyDown(event, row) : undefined}
                 className={cn(
-                  "group/row transition-colors duration-100 ease-tm hover:bg-hover",
-                  onRowClick && "cursor-pointer focus-visible:bg-hover focus-visible:-outline-offset-2",
+                  "group/row transition-colors duration-100 ease-tm hover:bg-card-2",
+                  onRowClick && "cursor-pointer focus-visible:bg-card-2 focus-visible:-outline-offset-2",
                 )}
               >
                 {columns.map((column) => (
                   <td
                     key={column.key}
                     className={cn(
-                      "h-9 border-b border-line px-3 py-1.5 text-ink",
+                      "h-11 border-b border-line px-3 py-2 text-ink",
                       ALIGN[column.align ?? "left"],
                       column.align === "right" && "font-mono tabular-nums",
                       column.className,
@@ -197,7 +197,7 @@ export function DataTable<T>({
                   <td
                     onClick={(event) => event.stopPropagation()}
                     onKeyDown={(event) => event.stopPropagation()}
-                    className="h-9 whitespace-nowrap border-b border-line px-2 text-right"
+                    className="h-11 whitespace-nowrap border-b border-line px-2 text-right"
                   >
                     <div className="inline-flex items-center gap-1 opacity-0 transition-opacity duration-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100 max-lg:opacity-100">
                       {rowActions(row)}

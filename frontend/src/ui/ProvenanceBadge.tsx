@@ -8,7 +8,7 @@ export function ProvenanceBadge({ provenance, className }: { provenance: Provena
   const { tone, label } = PROVENANCE[provenance];
   return (
     <Badge tone={tone} className={className}>
-      <span aria-hidden="true" className={cn("h-1.5 w-1.5 rounded-full bg-current", provenance === "LIVE" && "tm-live")} />
+      <span aria-hidden="true" className={cn("dot h-1.5! w-1.5!", provenance === "LIVE" && "tm-live")} />
       {label}
     </Badge>
   );

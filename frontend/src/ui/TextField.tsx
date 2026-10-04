@@ -8,13 +8,13 @@ type TextFieldProps = Omit<ComponentProps<"input">, "id"> & {
   hint?: string;
 };
 
-/** Label above (13px medium), 36px input, helper text 12px, error 12px with an icon. */
-export const FIELD_LABEL = "text-[13px] font-medium leading-5 text-ink";
+/** The kit's `.field`: label above (13px medium), 40px `.input`, helper text 12px, error 12px with an icon. */
+export const FIELD_LABEL = "text-[13px] font-medium leading-5 text-dim";
 
 export const FIELD_CONTROL = cn(
-  "h-9 w-full min-w-0 rounded-md border bg-surface-2 px-3 text-sm text-ink",
-  "transition-colors duration-150 ease-tm placeholder:text-faint",
-  "hover:border-faint focus:border-primary",
+  "h-10 w-full min-w-0 rounded-md border bg-bg px-3.5 text-sm text-ink",
+  "transition-[border-color,box-shadow] duration-150 ease-tm placeholder:text-faint",
+  "hover:border-faint focus:border-primary focus:shadow-[0_0_0_4px_var(--tm-selected)] focus:outline-none",
   "disabled:cursor-not-allowed disabled:opacity-60",
 );
 
@@ -38,7 +38,7 @@ export function TextField({ label, error, hint, className, ...input }: TextField
   const showHint = Boolean(hint) && !error;
   const describedBy = error ? errorId : showHint ? hintId : undefined;
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+    <div className={cn("field gap-1.5", className)}>
       <label htmlFor={id} className={FIELD_LABEL}>
         {label}
       </label>
