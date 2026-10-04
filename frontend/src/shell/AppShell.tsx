@@ -47,7 +47,9 @@ export function AppShell() {
   };
 
   return (
-    <div className="flex h-dvh flex-col bg-bg" style={brandStyle(me.agency.brand_color)}>
+    // Pinned to the window and clipped (not just hidden): focus moves and scroll-into-view inside the page
+    // can then never scroll the frame itself, so the top bar and status bar always stay in place.
+    <div className="fixed inset-0 flex flex-col overflow-clip bg-bg" style={brandStyle(me.agency.brand_color)}>
       <a
         href="#main"
         className="sr-only z-[60] rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-ink focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
@@ -63,7 +65,7 @@ export function AppShell() {
           navButtonRef={navButtonRef}
         />
       </div>
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-clip">
         <Sidebar id={sidebarId} mobileOpen={drawerOpen} onCloseMobile={closeNav} />
         <div inert={drawerOpen} className="flex min-w-0 flex-1 flex-col">
           {me.agency.is_demo && <DemoBanner />}
