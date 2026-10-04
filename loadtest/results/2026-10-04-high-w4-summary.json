@@ -1,0 +1,269 @@
+{
+  "run_id": "2026-10-04-high-w4",
+  "stages": [
+    {
+      "duration": "2m",
+      "target": 500,
+      "hold": false
+    },
+    {
+      "duration": "2m",
+      "target": 500,
+      "hold": true
+    },
+    {
+      "duration": "1m",
+      "target": 750,
+      "hold": false
+    },
+    {
+      "duration": "150s",
+      "target": 750,
+      "hold": true
+    },
+    {
+      "duration": "1m",
+      "target": 1000,
+      "hold": false
+    },
+    {
+      "duration": "150s",
+      "target": 1000,
+      "hold": true
+    },
+    {
+      "duration": "30s",
+      "target": 0,
+      "hold": false
+    }
+  ],
+  "max_vus": 1000,
+  "duration_s": 584,
+  "total": {
+    "requests": 145409,
+    "rps": 249.2,
+    "error_rate": 0.0020150059487376985,
+    "iterations": 125064
+  },
+  "checks": {
+    "rate": 0.9979970336692403,
+    "passes": 143997,
+    "fails": 289
+  },
+  "kinds": {
+    "public": {
+      "requests": 37974,
+      "rps": 65.1,
+      "p50_ms": 13,
+      "p95_ms": 1596,
+      "p99_ms": 2864,
+      "max_ms": 5473,
+      "error_rate": 0.00079
+    },
+    "read": {
+      "requests": 57305,
+      "rps": 98.2,
+      "p50_ms": 349,
+      "p95_ms": 2976,
+      "p99_ms": 4933,
+      "max_ms": 9817,
+      "error_rate": 0.00246
+    },
+    "search": {
+      "requests": 18780,
+      "rps": 32.2,
+      "p50_ms": 378,
+      "p95_ms": 2258,
+      "p99_ms": 3809,
+      "max_ms": 5557,
+      "error_rate": 0.00218
+    },
+    "reprice": {
+      "requests": 18638,
+      "rps": 31.9,
+      "p50_ms": 293,
+      "p95_ms": 2081,
+      "p99_ms": 3622,
+      "max_ms": 5304,
+      "error_rate": 0.00215
+    },
+    "write": {
+      "requests": 12512,
+      "rps": 21.4,
+      "p50_ms": 372,
+      "p95_ms": 2253,
+      "p99_ms": 3869,
+      "max_ms": 5289,
+      "error_rate": 0.00328
+    }
+  },
+  "levels": {
+    "500": {
+      "hold_seconds": 120,
+      "requests": 31139,
+      "rps": 259.5,
+      "error_rate": 0,
+      "kinds": {
+        "public": {
+          "requests": 8127,
+          "rps": 67.7,
+          "p50_ms": 5,
+          "p95_ms": 167,
+          "p99_ms": 384,
+          "max_ms": 1559,
+          "error_rate": 0
+        },
+        "read": {
+          "requests": 12275,
+          "rps": 102.3,
+          "p50_ms": 44,
+          "p95_ms": 242,
+          "p99_ms": 479,
+          "max_ms": 1565,
+          "error_rate": 0
+        },
+        "search": {
+          "requests": 4014,
+          "rps": 33.5,
+          "p50_ms": 68,
+          "p95_ms": 276,
+          "p99_ms": 430,
+          "max_ms": 1333,
+          "error_rate": 0
+        },
+        "reprice": {
+          "requests": 4017,
+          "rps": 33.5,
+          "p50_ms": 39,
+          "p95_ms": 193,
+          "p99_ms": 354,
+          "max_ms": 1305,
+          "error_rate": 0
+        },
+        "write": {
+          "requests": 2706,
+          "rps": 22.6,
+          "p50_ms": 60,
+          "p95_ms": 244,
+          "p99_ms": 402,
+          "max_ms": 1384,
+          "error_rate": 0
+        }
+      }
+    },
+    "750": {
+      "hold_seconds": 150,
+      "requests": 44033,
+      "rps": 293.6,
+      "error_rate": 0.00025,
+      "kinds": {
+        "public": {
+          "requests": 11447,
+          "rps": 76.3,
+          "p50_ms": 17,
+          "p95_ms": 1394,
+          "p99_ms": 2205,
+          "max_ms": 5245,
+          "error_rate": 0.00009
+        },
+        "read": {
+          "requests": 17241,
+          "rps": 114.9,
+          "p50_ms": 686,
+          "p95_ms": 2431,
+          "p99_ms": 3792,
+          "max_ms": 6639,
+          "error_rate": 0.00041
+        },
+        "search": {
+          "requests": 5800,
+          "rps": 38.7,
+          "p50_ms": 641,
+          "p95_ms": 1810,
+          "p99_ms": 2726,
+          "max_ms": 5167,
+          "error_rate": 0
+        },
+        "reprice": {
+          "requests": 5797,
+          "rps": 38.6,
+          "p50_ms": 571,
+          "p95_ms": 1688,
+          "p99_ms": 2623,
+          "max_ms": 4876,
+          "error_rate": 0
+        },
+        "write": {
+          "requests": 3748,
+          "rps": 25,
+          "p50_ms": 654,
+          "p95_ms": 1833,
+          "p99_ms": 2899,
+          "max_ms": 5023,
+          "error_rate": 0.0008
+        }
+      }
+    },
+    "1000": {
+      "hold_seconds": 150,
+      "requests": 17444,
+      "rps": 116.3,
+      "error_rate": 0.01531,
+      "kinds": {
+        "public": {
+          "requests": 4668,
+          "rps": 31.1,
+          "p50_ms": 18,
+          "p95_ms": 3097,
+          "p99_ms": 4895,
+          "max_ms": 5473,
+          "error_rate": 0.00578
+        },
+        "read": {
+          "requests": 6764,
+          "rps": 45.1,
+          "p50_ms": 1883,
+          "p95_ms": 5037,
+          "p99_ms": 6813,
+          "max_ms": 9817,
+          "error_rate": 0.01833
+        },
+        "search": {
+          "requests": 2304,
+          "rps": 15.4,
+          "p50_ms": 1753,
+          "p95_ms": 4322,
+          "p99_ms": 5036,
+          "max_ms": 5557,
+          "error_rate": 0.0178
+        },
+        "reprice": {
+          "requests": 2256,
+          "rps": 15,
+          "p50_ms": 1655,
+          "p95_ms": 3990,
+          "p99_ms": 5027,
+          "max_ms": 5304,
+          "error_rate": 0.01684
+        },
+        "write": {
+          "requests": 1452,
+          "rps": 9.7,
+          "p50_ms": 1778,
+          "p95_ms": 4339,
+          "p99_ms": 5039,
+          "max_ms": 5289,
+          "error_rate": 0.02548
+        }
+      }
+    }
+  },
+  "thresholds": {
+    "http_req_duration{kind:read} p(95)<300": false,
+    "http_req_failed rate<0.01": true,
+    "http_req_duration{kind:search} p(95)<2500": true,
+    "http_reqs{status:401} count<1": true,
+    "http_req_duration{kind:public} p(95)<300": false,
+    "http_reqs{status:429} count<1": true
+  }
+}
