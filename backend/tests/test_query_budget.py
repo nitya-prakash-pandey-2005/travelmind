@@ -2,8 +2,8 @@
 request, whatever the number of rows (no per-row queries), and the hot-path indexes in place.
 
 Statements are counted with a `before_cursor_execute` listener on the engine's sync side, so the
-count covers everything the request sends: the session lookup, the tenant binding, lazy quote
-expiry and the reads themselves.
+count covers everything the request sends: the tenant binding, lazy quote expiry and the reads
+themselves. The session lookup is answered by the (warmed) per-process session cache.
 """
 
 from collections.abc import Iterator
@@ -91,6 +91,8 @@ async def seed_workspace(agency_id: UUID, user_id: UUID, *, first: int, count: i
 
 async def _owner(client) -> tuple[UUID, UUID]:  # type: ignore[no-untyped-def]
     me = (await signup(client)).json()
+    # Warm the session cache: measured requests then see the steady state (no session lookup).
+    assert (await client.get("/api/v1/auth/me")).status_code == 200
     return UUID(me["agency"]["id"]), UUID(me["user"]["id"])
 
 
