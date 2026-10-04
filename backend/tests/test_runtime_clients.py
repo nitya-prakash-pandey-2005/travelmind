@@ -14,13 +14,22 @@ from travelmind.config import Settings, get_settings
 from travelmind.http import close_http_clients, get_http_client
 
 
-async def test_get_redis_reuses_one_pool():
-    first = await anext(get_redis())
-    second = await anext(get_redis())
-    assert first.connection_pool is second.connection_pool
-    assert get_shared_redis().connection_pool is first.connection_pool
+async def test_get_redis_reuses_one_client_and_pool():
+    """One client per process: requests never build their own (each costs CPU)."""
+    first = await get_redis()
+    second = await get_redis()
+    assert first is second is get_shared_redis()
     assert first.connection_pool.max_connections == 100
     assert await first.ping()
+
+
+async def test_close_redis_also_retires_the_shared_client():
+    before = get_shared_redis()
+    await close_redis()
+    after = get_shared_redis()
+    assert after is not before
+    assert after.connection_pool is not before.connection_pool
+    assert await after.ping()
 
 
 async def test_redis_pool_waits_for_a_free_connection_instead_of_failing(monkeypatch):
