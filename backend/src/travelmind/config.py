@@ -100,6 +100,19 @@ class Settings(BaseSettings):
     # covers the queue wait and the run itself (agent_run_timeout_s); a crashed holder's slot
     # lapses after this. See travelmind.agent.budget for what Task 3 must decide around it.
     agent_run_slot_ttl_s: float = 300.0
+    # Places and weather for the agent's tools (travelmind.agent.tools). Contact for the
+    # User-Agent sent to OpenStreetMap services (Nominatim, Overpass), whose usage policies ask
+    # for an identifiable client: a URL or email of whoever runs this deployment. Empty sends
+    # the product name only.
+    osm_contact: str = ""
+    # The public instances by default. Their policies (max 1 request/s for Nominatim, about
+    # 10,000 requests a day for Overpass, no heavy or backend use) suit development and light
+    # use; a busy production deployment should point these at its own or a paid instance.
+    osm_nominatim_url: str = "https://nominatim.openstreetmap.org"
+    osm_overpass_url: str = "https://overpass-api.de/api/interpreter"
+    # OpenTripMap replaces Overpass for find_places when set. Sent in the query string, so the
+    # URL is never logged.
+    opentripmap_key: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = None
     log_level: str = "INFO"
     # Bearer token for GET /metrics. Empty: /metrics is served only outside production.
     metrics_token: str = ""

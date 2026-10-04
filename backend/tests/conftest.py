@@ -21,6 +21,8 @@ for _key in (
     "TM_TRAVELPAYOUTS_TOKEN",
     "TM_GOOGLE_API_KEY",
     "GOOGLE_API_KEY",
+    "TM_OPENTRIPMAP_KEY",
+    "TM_OSM_CONTACT",
 ):
     os.environ[_key] = ""
 os.environ["TM_FX_ENABLED"] = "false"

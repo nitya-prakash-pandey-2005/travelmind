@@ -1,7 +1,8 @@
 """Outbound resilience: a concurrency limit and a circuit breaker for each outbound supplier.
 
 `guard_for(name)` returns the guard of one supplier (Duffel, LiteAPI, Google TIM, Travelpayouts,
-ECB, and Gemini for the agent; the names are the supplier metrics labels). Callers wrap the whole
+ECB, and for the agent Gemini, Open-Meteo, Nominatim, Overpass and OpenTripMap; the names are the
+supplier metrics labels). Callers wrap the whole
 outbound call, including their own deadline, in `async with guard.call():`, so a call that runs
 out of time counts as a failure:
 - At most `supplier_max_concurrent` (20) calls to a supplier are in flight. A call that gets no
@@ -67,7 +68,21 @@ log = structlog.get_logger()
 BreakerState = Literal["closed", "open", "half_open"]
 
 # Outbound suppliers and feeds, by their metrics label. The sandbox runs in process: no guard.
-GUARDED_SUPPLIERS = frozenset({"duffel", "liteapi", "google_tim", "travelpayouts", "ecb", "gemini"})
+GUARDED_SUPPLIERS = frozenset(
+    {
+        "duffel",
+        "liteapi",
+        "google_tim",
+        "travelpayouts",
+        "ecb",
+        "gemini",
+        # the agent's place and weather feeds (travelmind.agent.tools)
+        "open_meteo",
+        "nominatim",
+        "overpass",
+        "opentripmap",
+    }
+)
 
 # The supplier answered about this request: not a sign that it is unwell.
 _REQUEST_ERRORS = frozenset({"invalid_request", "offer_expired", "offer_unavailable"})

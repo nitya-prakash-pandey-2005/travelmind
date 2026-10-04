@@ -4,7 +4,8 @@ Each adapter makes one successful (mocked) call with `configure_logging("INFO")`
 root logger capturing at DEBUG; no stdlib record (message or args) and nothing structlog prints may
 contain the secret. The ECB feed has no credential, so its case puts a token in the feed URL: the
 same shape as the old TIM `?key=` bug, which httpx's INFO request log used to print in full. The
-Gemini case reads its key from TM_GOOGLE_API_KEY, as the agent does.
+Gemini case reads its key from TM_GOOGLE_API_KEY, as the agent does. OpenTripMap takes its key
+in the query string, like the old TIM bug.
 """
 
 import json
@@ -17,10 +18,12 @@ from pathlib import Path
 import httpx
 import pytest
 import structlog
+from pydantic import SecretStr
 from redis.asyncio import Redis
 
 from tests.offers.offer_factory import make_offer
 from travelmind.agent.provider import Message, get_provider
+from travelmind.agent.tools.places import OPENTRIPMAP_URL, opentripmap_places
 from travelmind.config import Settings
 from travelmind.db import get_sessionmaker
 from travelmind.fareintel.travelpayouts import TP_PRICES_URL, seed_route
@@ -155,6 +158,18 @@ async def _gemini(respx_mock) -> None:
     assert provider.name == "gemini" and generation.text == "Hello."
 
 
+async def _opentripmap(respx_mock) -> None:
+    respx_mock.get(url__startswith=OPENTRIPMAP_URL).mock(
+        return_value=httpx.Response(
+            200, json=_json(TESTS / "agent" / "fixtures" / "opentripmap_radius.json")
+        )
+    )
+    found = await opentripmap_places(
+        SecretStr(SECRET), latitude=19.055, longitude=72.8692, kind="museums"
+    )
+    assert found
+
+
 CALLS: dict[str, Callable[..., Awaitable[None]]] = {
     "duffel": _duffel,
     "liteapi": _liteapi,
@@ -162,6 +177,7 @@ CALLS: dict[str, Callable[..., Awaitable[None]]] = {
     "travelpayouts": _travelpayouts,
     "ecb": _ecb,
     "gemini": _gemini,
+    "opentripmap": _opentripmap,
 }
 
 
