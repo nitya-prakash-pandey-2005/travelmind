@@ -348,6 +348,14 @@ async def publish_agency_changes(db: AsyncSession, redis: Redis, *, write: bool 
         await invalidate_agency(redis, agency_id)
 
 
+async def _close_before_redis(db: AsyncSession) -> None:
+    """Close the request's session before the bump talks to Redis, so no connection is held
+    meanwhile. `get_db` would close it right after anyway: the endpoint has returned and its
+    response is serialised, and uncommitted work is rolled back either way. The marks and the
+    bound agency stay in `db.info`."""
+    await db.close()
+
+
 async def publish_agency_changes_after(
     request: Request, db: DbSession, redis: RedisClient
 ) -> AsyncIterator[None]:
@@ -356,6 +364,7 @@ async def publish_agency_changes_after(
     try:
         yield
     finally:
+        await _close_before_redis(db)
         await publish_agency_changes(db, redis, write=request.method in MUTATING_METHODS)
 
 
@@ -365,6 +374,7 @@ async def publish_marked_changes_after(db: DbSession, redis: RedisClient) -> Asy
     try:
         yield
     finally:
+        await _close_before_redis(db)
         await publish_agency_changes(db, redis)
 
 
@@ -372,6 +382,7 @@ async def bump_agency_throttled_after(db: DbSession, redis: RedisClient) -> Asyn
     """Router dependency for searches: once the endpoint has returned (not when it raised),
     bumps the session's bound agency, at most once per `search_bump_interval_s`."""
     yield
+    await _close_before_redis(db)
     bound: Any = db.info.get("agency_id")
     if bound is not None:
         await bump_agency_version_throttled(redis, bound)

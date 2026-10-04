@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -87,7 +87,33 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-DbSession = Annotated[AsyncSession, Depends(get_db)]
+# Function scope: the session closes (handing its connection back) as soon as the endpoint has
+# returned and its response is serialised, not after the response has been sent.
+DbSession = Annotated[AsyncSession, Depends(get_db, scope="function")]
+
+
+async def release_connection(db: AsyncSession) -> None:
+    """Commit the session's open transaction, if any, so its connection goes back to the pool
+    before the caller waits on something slow (a supplier, Redis, a lock). The session's next
+    statement begins a new transaction, which `TenantSession` binds to the tenant again.
+
+    For code that owns the transaction: anything it wrote so far is committed."""
+    if db.in_transaction():
+        await db.commit()
+
+
+def releasing[T](
+    db: AsyncSession, loader: Callable[[], Awaitable[T]]
+) -> Callable[[], Awaitable[T]]:
+    """`loader`, then `release_connection`: for a read-through cache's loader, so the cache
+    write that follows a miss doesn't hold the connection."""
+
+    async def load() -> T:
+        value = await loader()
+        await release_connection(db)
+        return value
+
+    return load
 
 
 @asynccontextmanager

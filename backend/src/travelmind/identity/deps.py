@@ -32,6 +32,9 @@ async def get_current_user(request: Request, db: DbSession) -> CurrentUser:
     if not isinstance(user, CurrentUser):
         generation = cache.generation
         found = await service.find_session_user(db, token_hash)
+        # End the lookup's transaction now: the endpoint's own statements begin a fresh one,
+        # which carries the tenant bound below (db.TenantSession re-applies it on every begin).
+        await db.commit()
         if found is None:
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED, "Your session has expired. Please sign in again."

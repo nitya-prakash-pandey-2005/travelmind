@@ -13,7 +13,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.config import Settings
-from travelmind.db import utcnow
+from travelmind.db import release_connection, utcnow
 from travelmind.hotels.liteapi import LiteApiHotelSupplier
 from travelmind.hotels.models import HotelOffer, HotelSearchRequest
 from travelmind.hotels.schemas import HotelOfferView, HotelSearchResponse
@@ -149,6 +149,7 @@ async def search_hotels(
             display_currency=currency, nights=request.nights, sources=[source], offers=[]
         )
 
+    await release_connection(db)  # no connection held while the supplier answers
     offers, source = await _search_supplier(
         settings,
         request,

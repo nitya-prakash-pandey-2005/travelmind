@@ -6,7 +6,7 @@ from pydantic import BaseModel, TypeAdapter
 from starlette.concurrency import run_in_threadpool
 
 from travelmind.cache import RedisClient
-from travelmind.db import DbSession
+from travelmind.db import DbSession, release_connection
 from travelmind.identity.deps import AuthedUser
 from travelmind.readcache import CACHE_PREFIX, cached_json
 from travelmind.reference.search import AirportRecord, fold
@@ -53,6 +53,7 @@ async def search_airports_route(
 ) -> list[AirportOut]:
     async def load() -> list[AirportOut]:
         index = await get_airport_index(db)
+        await release_connection(db)  # the (hourly) index load is the only database read
         hits = await run_in_threadpool(index.search, q, limit)  # fuzzy scan is CPU-heavy
         return [AirportOut.from_record(hit.airport) for hit in hits]
 

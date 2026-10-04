@@ -31,7 +31,7 @@ from travelmind.dashboard.schemas import (
     SupplierHealthOut,
     TeamOut,
 )
-from travelmind.db import DbSession, utcnow
+from travelmind.db import DbSession, releasing, utcnow
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
 from travelmind.readcache import (
@@ -51,7 +51,8 @@ __all__ = [
 SEARCH_MIN_LENGTH = 2
 SEARCH_TOO_SHORT_MESSAGE = f"Type at least {SEARCH_MIN_LENGTH} characters to search."
 # Summary and pipeline are read through the agency's Redis cache (readcache): a write to the
-# agency's workspace retires them at once. Searches don't, so the "searches" KPI may lag by up to
+# agency's workspace retires them at once. A miss commits its read before writing the cache, so
+# no connection is held while Redis answers. Searches don't, so the "searches" KPI may lag by up to
 # this TTL.
 DASHBOARD_TTL_SECONDS = 30
 
@@ -94,7 +95,7 @@ async def summary_route(
         agency.id,
         (range_, today),
         DASHBOARD_TTL_SECONDS,
-        lambda: metrics.summary(db, agency, range_, now=now),
+        releasing(db, lambda: metrics.summary(db, agency, range_, now=now)),
         encode=SummaryOut.model_dump_json,
         decode=SummaryOut.model_validate_json,
         cache="summary",
@@ -110,7 +111,7 @@ async def pipeline_route(current: AuthedUser, db: DbSession, redis: RedisClient)
         agency.id,
         (),
         DASHBOARD_TTL_SECONDS,
-        lambda: metrics.pipeline(db, agency),
+        releasing(db, lambda: metrics.pipeline(db, agency)),
         encode=PipelineOut.model_dump_json,
         decode=PipelineOut.model_validate_json,
         cache="pipeline",

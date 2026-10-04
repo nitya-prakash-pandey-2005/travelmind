@@ -38,7 +38,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.cache import RedisClient
-from travelmind.db import DbSession, utcnow
+from travelmind.db import DbSession, releasing, utcnow
 from travelmind.fareintel.service import PROVENANCES, Family
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
@@ -295,7 +295,7 @@ async def route_intel(
             redis,
             f"{CACHE_PREFIX}route:" + ":".join(parts),
             ROUTE_FARES_TTL_SECONDS,
-            load,
+            releasing(db, load),
             encode=RouteFares.model_dump_json,
             decode=RouteFares.model_validate_json,
             cache="route_intel",
