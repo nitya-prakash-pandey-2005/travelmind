@@ -71,6 +71,7 @@ __all__ = [
     "bump_agency_version",
     "cached_agency_json",
     "cached_json",
+    "discard_agency_changes",
     "invalidate_agency",
     "mark_agency_changed",
     "publish_agency_changes",
@@ -341,6 +342,12 @@ def mark_agency_changed(db: AsyncSession, agency_id: UUID) -> None:
     """Note that this request changed the agency's data, for a read that writes (a GET that
     expires quotes, say). `publish_agency_changes` bumps it after the request's commits."""
     db.info.setdefault(_CHANGED, set()).add(agency_id)
+
+
+def discard_agency_changes(db: AsyncSession) -> None:
+    """Forget the session's marks (its changes were rolled back), so a later publish on the same
+    session doesn't bump agencies that didn't change."""
+    db.info.pop(_CHANGED, None)
 
 
 async def publish_agency_changes(db: AsyncSession, redis: Redis, *, write: bool = False) -> None:

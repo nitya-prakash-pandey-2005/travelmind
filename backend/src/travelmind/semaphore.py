@@ -7,6 +7,10 @@ one Lua script, so two processes can't both take the last slot.
 
 If Redis can't be reached the semaphore fails open (the caller runs unlimited), like the rate
 limiters: losing Redis must not take the feature down with it.
+
+A caller cancelled while its acquire is in flight may have been granted the slot already (the
+script ran; the reply never arrived): it releases the slot anyway, shielded from the
+cancellation, so the slot doesn't sit idle until its TTL. ZREM of a slot never taken is a no-op.
 """
 
 import asyncio
@@ -59,6 +63,9 @@ async def redis_semaphore(
         except (RedisError, OSError) as exc:
             log.warning("semaphore_unavailable", key=key, error_type=type(exc).__name__)
             break  # fail open
+        except BaseException:  # cancelled mid-acquire: the slot may be ours already
+            await asyncio.shield(_release(redis, key, holder))
+            raise
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise SemaphoreBusy
@@ -67,7 +74,11 @@ async def redis_semaphore(
         yield
     finally:
         if acquired:
-            try:
-                await redis.zrem(key, holder)
-            except (RedisError, OSError) as exc:  # the slot lapses after its TTL
-                log.warning("semaphore_release_failed", key=key, error_type=type(exc).__name__)
+            await asyncio.shield(_release(redis, key, holder))
+
+
+async def _release(redis: Redis, key: str, holder: str) -> None:
+    try:
+        await redis.zrem(key, holder)
+    except (RedisError, OSError) as exc:  # the slot lapses after its TTL
+        log.warning("semaphore_release_failed", key=key, error_type=type(exc).__name__)

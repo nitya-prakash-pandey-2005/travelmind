@@ -66,6 +66,7 @@ __all__ = [
     "apply_markup",
     "create_quote",
     "decide_quote",
+    "agencies_with_overdue_quotes",
     "expire_overdue_quotes",
     "get_quote",
     "list_quotes",
@@ -537,6 +538,14 @@ async def expire_overdue_quotes(
         await db.flush()
         mark_agency_changed(db, agency_id)  # bumped after the request (readcache)
     return len(rows)
+
+
+async def agencies_with_overdue_quotes(db: AsyncSession, *, now: datetime) -> list[UUID]:
+    """Ids of the agencies with at least one quote `expire_overdue_quotes` would expire at `now`,
+    in one statement (the `agencies_with_overdue_quotes` SQL function, migration 0009). It binds
+    each agency in turn under the usual RLS and restores the session's own binding."""
+    rows = await db.scalars(text("SELECT agencies_with_overdue_quotes(:now)"), {"now": now})
+    return list(rows.all())
 
 
 _DECISION_KIND: dict[str, ActivityKind] = {

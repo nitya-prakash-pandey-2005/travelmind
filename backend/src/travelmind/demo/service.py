@@ -20,7 +20,8 @@ from travelmind.semaphore import SemaphoreBusy, redis_semaphore
 DEMO_SEMAPHORE_KEY = "tm:sem:demo"
 DEMO_CONCURRENCY = 4
 DEMO_WAIT_SECONDS = 10.0
-# Longer than any healthy generation; a crashed process's slot frees itself after this.
+# A crashed holder's slot lapses after this. It assumes a generation stays well under it
+# (about 5 s today); a slower one could outlive its slot and let a fifth generation start.
 DEMO_SLOT_TTL_SECONDS = 120.0
 BUSY_MESSAGE = "Demo workspaces are busy. Try again in a moment."
 

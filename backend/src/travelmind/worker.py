@@ -5,7 +5,8 @@ jobs are unique by default):
 - `cleanup_expired_demos`: hourly at :00, and once at startup. Deletes expired demo workspaces
   in bounded batches (`demo.cleanup`).
 - `expire_overdue_quotes_all`: every 5 minutes. Marks sent and viewed quotes whose share link
-  has lapsed as expired, agency by agency, and invalidates each changed agency's read cache.
+  has lapsed as expired, visiting only agencies that have such quotes (in random order, so a
+  timeout never starves the same ones), and invalidates each changed agency's read cache.
 
 Queued jobs: `generate_demo_job` (one demo workspace; for the traveller app in a later step).
 
@@ -14,12 +15,17 @@ keeps its 5 s), through an `after_begin` hook that only `startup` installs. It i
 local, so it is safe behind PgBouncer's transaction pooling.
 """
 
+import random
+from datetime import datetime
 from typing import Any, ClassVar
+from uuid import UUID
 
 import structlog
 from arq import Retry, cron
 from arq.cron import CronJob
+from redis.asyncio import Redis
 from sqlalchemy import event, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.cache import close_redis, get_shared_redis
 from travelmind.config import get_settings
@@ -34,11 +40,11 @@ from travelmind.db import (
 from travelmind.demo.cleanup import run_demo_cleanup
 from travelmind.demo.service import DemoBusy, start_demo_workspace
 from travelmind.http import close_http_clients
-from travelmind.identity.service import SessionContext, list_agency_ids
+from travelmind.identity.service import SessionContext
 from travelmind.jobs import arq_redis_settings
 from travelmind.observability import configure_logging
-from travelmind.readcache import invalidate_agency
-from travelmind.workspace.quotes import expire_overdue_quotes
+from travelmind.readcache import discard_agency_changes, publish_agency_changes
+from travelmind.workspace.quotes import agencies_with_overdue_quotes, expire_overdue_quotes
 
 log = structlog.get_logger()
 
@@ -89,45 +95,85 @@ async def cleanup_expired_demos(ctx: dict[str, Any]) -> int:
     return await run_demo_cleanup()
 
 
-async def expire_overdue_quotes_all(ctx: dict[str, Any]) -> int:
-    """Expire overdue quotes in every agency; returns how many.
+def _sweep_order(agency_ids: list[UUID]) -> list[UUID]:
+    """Random order: if a run times out, the agencies it didn't reach differ from run to run."""
+    random.shuffle(agency_ids)
+    return agency_ids
 
-    The agency list is read on the app role through the identity service (the `agencies`
-    table has no RLS). Each agency is
-    then bound as the tenant and handled in its own transaction, so RLS still applies to every
-    quote touched and one agency's failure doesn't undo or stop the others. Agencies whose
-    quotes changed get their read cache invalidated after the commit.
+
+class _Sweep:
+    def __init__(self) -> None:
+        self.total = self.changed = self.failed = 0
+
+
+async def expire_overdue_quotes_all(ctx: dict[str, Any]) -> int:
+    """Expire overdue quotes in every agency that has some; returns how many.
+
+    One statement finds the agencies with overdue quotes (`agencies_with_overdue_quotes`, under
+    RLS); agencies with nothing due are never visited. Each one found is then bound as the tenant
+    and handled in its own transaction, so RLS applies to every quote touched and one agency's
+    failure doesn't undo or stop the others. A failure whose rollback fails too (a dead
+    connection) drops that connection and carries on with a fresh one. Agencies whose quotes
+    changed get their read cache invalidated after the commit.
     """
     now = utcnow()
     redis = get_shared_redis()
-    total = changed = failed = 0
     async with pinned_session() as db:
-        agency_ids = await list_agency_ids(db)
+        due = await agencies_with_overdue_quotes(db, now=now)
         await db.commit()
-        for agency_id in agency_ids:
-            try:
-                await bind_tenant(db, agency_id)
-                expired = await expire_overdue_quotes(db, agency_id, now=now)
-                await db.commit()
-            except Exception as exc:
-                await db.rollback()
-                failed += 1
-                log.exception(
-                    "quote_expiry_failed", agency_id=str(agency_id), error_type=type(exc).__name__
-                )
-                continue
-            if expired:
-                total += expired
-                changed += 1
-                await invalidate_agency(redis, agency_id)
+    pending = _sweep_order(due)
+    sweep = _Sweep()
+    while pending:
+        remaining = pending
+        try:
+            async with pinned_session() as db:
+                remaining = await _expire_until_broken(db, redis, pending, now, sweep)
+        except Exception as exc:  # opening, or closing a broken, connection failed
+            log.warning("quote_expiry_connection_failed", error_type=type(exc).__name__)
+            if remaining is pending:  # no progress (the database is unreachable): next run
+                break
+        pending = remaining
     log.info(
         "overdue_quotes_expired",
-        count=total,
-        agencies=len(agency_ids),
-        changed=changed,
-        failed=failed,
+        count=sweep.total,
+        agencies=len(due),
+        changed=sweep.changed,
+        failed=sweep.failed,
     )
-    return total
+    return sweep.total
+
+
+async def _expire_until_broken(
+    db: AsyncSession, redis: Redis, pending: list[UUID], now: datetime, sweep: _Sweep
+) -> list[UUID]:
+    """Expire agency by agency on one connection; returns the agencies left when the connection
+    broke (a rollback that failed), else an empty list."""
+    for index, agency_id in enumerate(pending):
+        try:
+            await bind_tenant(db, agency_id)
+            expired = await expire_overdue_quotes(db, agency_id, now=now)
+            await db.commit()
+        except Exception as exc:
+            discard_agency_changes(db)  # rolled back: nothing to invalidate
+            sweep.failed += 1
+            log.exception(
+                "quote_expiry_failed", agency_id=str(agency_id), error_type=type(exc).__name__
+            )
+            try:
+                await db.rollback()
+            except Exception as rollback_exc:
+                log.warning(
+                    "quote_expiry_rollback_failed",
+                    agency_id=str(agency_id),
+                    error_type=type(rollback_exc).__name__,
+                )
+                return pending[index + 1 :]
+            continue
+        await publish_agency_changes(db, redis)  # bumps this agency if it expired any; clears
+        if expired:
+            sweep.total += expired
+            sweep.changed += 1
+    return []
 
 
 async def generate_demo_job(ctx: dict[str, Any]) -> str:

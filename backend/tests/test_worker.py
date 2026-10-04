@@ -5,6 +5,7 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy import text
+from structlog.testing import capture_logs
 
 from tests.helpers import exec_as_tenant, make_client, run_as_owner, signup
 from tests.workspace.test_timelines import agency_of, new_enquiry, sent_quote
@@ -71,6 +72,123 @@ async def test_expire_sweep_keeps_going_after_one_agency_fails(app, airports, mo
     assert await worker.expire_overdue_quotes_all({}) == 1
     assert await _quote_state(alpha) == (["sent"], 0)
     assert await _quote_state(beta) == (["expired"], 1)
+
+
+def _alpha_first(alpha: str):
+    """A sweep order with `alpha` first, so the agencies after it show what its failure did."""
+
+    def order(ids: list[UUID]) -> list[UUID]:
+        return sorted(ids, key=lambda a: str(a) != alpha)
+
+    return order
+
+
+async def test_expire_sweep_visits_only_agencies_with_overdue_quotes(app, airports, monkeypatch):
+    due = await _agency_with_sent_quote(app, "owner@alpha.com", "Alpha Travels")
+    live = await _agency_with_sent_quote(app, "owner@beta.com", "Beta Trips")  # not yet due
+    async with make_client(app) as c:  # no quotes at all
+        await signup(c, email="owner@gamma.com", agency_name="Gamma Tours")
+    await exec_as_tenant(due, OVERDUE)
+    visited: list[str] = []
+    real = worker.expire_overdue_quotes
+
+    async def spy(db, agency_id, *, now=None):  # type: ignore[no-untyped-def]
+        visited.append(str(agency_id))
+        return await real(db, agency_id, now=now)
+
+    monkeypatch.setattr(worker, "expire_overdue_quotes", spy)
+    assert await worker.expire_overdue_quotes_all({}) == 1
+    assert visited == [due]
+    assert await _quote_state(live) == (["sent"], 0)
+    visited.clear()
+    assert await worker.expire_overdue_quotes_all({}) == 0
+    assert visited == []  # nothing is due any more: nobody is visited
+
+
+async def test_overdue_agency_lookup_keeps_the_tenant_binding(app, airports):
+    """The lookup binds each agency in turn inside the database; the caller's own binding is
+    back afterwards, and RLS still hides other agencies' quotes from it."""
+    from travelmind.db import bind_tenant, utcnow
+    from travelmind.workspace.quotes import agencies_with_overdue_quotes
+
+    alpha = await _agency_with_sent_quote(app, "owner@alpha.com", "Alpha Travels")
+    beta = await _agency_with_sent_quote(app, "owner@beta.com", "Beta Trips")
+    await exec_as_tenant(alpha, OVERDUE)
+    await exec_as_tenant(beta, OVERDUE)
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, UUID(alpha))
+        await db.execute(text("SELECT 1"))
+        found = await agencies_with_overdue_quotes(db, now=utcnow())
+        assert sorted(map(str, found)) == sorted([alpha, beta])
+        setting = await db.scalar(text("SELECT current_setting('app.agency_id', true)"))
+        assert setting == alpha
+        assert await db.scalar(text("SELECT count(*) FROM quotes")) == 1  # alpha's only
+    async with get_sessionmaker()() as db:  # unbound: the setting stays unset
+        await agencies_with_overdue_quotes(db, now=utcnow())
+        assert not await db.scalar(text("SELECT current_setting('app.agency_id', true)"))
+
+
+def test_sweep_order_is_a_shuffled_permutation():
+    ids = [UUID(int=n) for n in range(50)]
+    orders = {tuple(worker._sweep_order(list(ids))) for _ in range(5)}
+    assert all(sorted(o) == ids for o in orders)
+    assert len(orders) > 1  # not always the same order, so no agency is always last
+
+
+async def test_a_failing_rollback_does_not_stop_the_sweep(app, airports, monkeypatch):
+    alpha = await _agency_with_sent_quote(app, "owner@alpha.com", "Alpha Travels")
+    beta = await _agency_with_sent_quote(app, "owner@beta.com", "Beta Trips")
+    gamma = await _agency_with_sent_quote(app, "owner@gamma.com", "Gamma Tours")
+    for agency in (alpha, beta, gamma):
+        await exec_as_tenant(agency, OVERDUE)
+    real = worker.expire_overdue_quotes
+
+    async def broken_rollback():  # type: ignore[no-untyped-def]
+        raise ConnectionResetError("connection lost")
+
+    async def flaky(db, agency_id, *, now=None):  # type: ignore[no-untyped-def]
+        if str(agency_id) == alpha:
+            db.rollback = broken_rollback  # the connection died with the failure
+            raise ConnectionResetError("connection lost")
+        return await real(db, agency_id, now=now)
+
+    monkeypatch.setattr(worker, "expire_overdue_quotes", flaky)
+    monkeypatch.setattr(worker, "_sweep_order", _alpha_first(alpha))
+    with capture_logs() as logs:
+        assert await worker.expire_overdue_quotes_all({}) == 2
+    assert await _quote_state(alpha) == (["sent"], 0)
+    assert await _quote_state(beta) == (["expired"], 1)
+    assert await _quote_state(gamma) == (["expired"], 1)
+    events = [e["event"] for e in logs]
+    assert "quote_expiry_rollback_failed" in events
+    summary = next(e for e in logs if e["event"] == "overdue_quotes_expired")
+    assert (summary["count"], summary["changed"], summary["failed"]) == (2, 2, 1)
+
+
+async def test_a_failed_agency_leaves_no_cache_marks_behind(app, airports, monkeypatch):
+    from travelmind.readcache import mark_agency_changed
+
+    alpha = await _agency_with_sent_quote(app, "owner@alpha.com", "Alpha Travels")
+    beta = await _agency_with_sent_quote(app, "owner@beta.com", "Beta Trips")
+    await exec_as_tenant(alpha, OVERDUE)
+    await exec_as_tenant(beta, OVERDUE)
+    redis = get_shared_redis()
+    before = await agency_version(redis, UUID(alpha))
+    real = worker.expire_overdue_quotes
+    leftovers: list[object] = []
+
+    async def flaky(db, agency_id, *, now=None):  # type: ignore[no-untyped-def]
+        leftovers.append(db.info.get("tm_changed_agencies"))
+        if str(agency_id) == alpha:
+            mark_agency_changed(db, agency_id)  # marked, then failed and rolled back
+            raise RuntimeError("boom")
+        return await real(db, agency_id, now=now)
+
+    monkeypatch.setattr(worker, "expire_overdue_quotes", flaky)
+    monkeypatch.setattr(worker, "_sweep_order", _alpha_first(alpha))
+    assert await worker.expire_overdue_quotes_all({}) == 1
+    assert leftovers == [None, None]  # beta's turn starts with no marks from alpha's
+    assert await agency_version(redis, UUID(alpha)) == before  # rolled back: no bump
 
 
 async def test_cleanup_job_removes_expired_demo(client, airports):
@@ -236,6 +354,38 @@ async def test_demo_semaphore_fails_open_when_redis_is_down(monkeypatch):
     async with redis_semaphore(DownRedis(), "tm:sem:x", limit=1, ttl_s=60, wait_s=0.1):  # type: ignore[arg-type]
         entered = True
     assert entered
+
+
+async def test_a_slot_granted_as_the_caller_is_cancelled_is_released():
+    """Redis may grant the slot just as the waiting task is cancelled: the slot is given back
+    instead of being held until its TTL."""
+    from travelmind.semaphore import redis_semaphore
+
+    redis = get_shared_redis()
+
+    class CancelledAfterGrant:
+        def register_script(self, script):  # type: ignore[no-untyped-def]
+            real = redis.register_script(script)
+
+            async def call(**kwargs):  # type: ignore[no-untyped-def]
+                await real(**kwargs)  # Redis took the slot,
+                raise asyncio.CancelledError  # and the caller was cancelled before the reply
+
+            return call
+
+        def __getattr__(self, name):  # type: ignore[no-untyped-def]
+            return getattr(redis, name)
+
+    with pytest.raises(asyncio.CancelledError):
+        async with redis_semaphore(
+            CancelledAfterGrant(),  # type: ignore[arg-type]
+            "tm:sem:c",
+            limit=1,
+            ttl_s=60,
+            wait_s=1,
+        ):
+            pytest.fail("the body never runs")
+    assert await redis.zcard("tm:sem:c") == 0
 
 
 async def test_stale_semaphore_slots_lapse():
