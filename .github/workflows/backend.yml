@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -35,7 +39,92 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy src
-      - run: uv run pytest -q
+      # The agent evals run in their own job, below.
+      - run: uv run pytest -q --ignore=tests/agent/evals
+
+  agent-evals:
+    # The agent evaluation suite with the demo planner and scripted turns: offline (sandbox
+    # supplier, mocked feeds), against the real loop and tools. Grounding and injection must pass
+    # every case; the report goes to the job summary.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - name: Create roles and databases
+        run: psql -h localhost -p 5433 -U postgres -f ../infra/postgres/init.sql
+        env:
+          PGPASSWORD: postgres
+      - name: Agent evals
+        run: uv run pytest tests/agent/evals -q
+
+  agent-evals-live:
+    # The live-capable cases against the real model. Manual runs only (Actions > backend > Run
+    # workflow), so it never runs for a pull request, a fork's included; it needs the repository
+    # secret GOOGLE_API_KEY and is skipped without it. The report is kept as an artifact.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Skip without a model key
+        if: env.GOOGLE_API_KEY == ''
+        working-directory: ${{ github.workspace }}
+        run: echo "The GOOGLE_API_KEY secret is not set; live agent evals skipped."
+      - uses: actions/checkout@v4
+        if: env.GOOGLE_API_KEY != ''
+      - uses: astral-sh/setup-uv@v6
+        if: env.GOOGLE_API_KEY != ''
+      - run: uv sync --locked
+        if: env.GOOGLE_API_KEY != ''
+      - name: Create roles and databases
+        if: env.GOOGLE_API_KEY != ''
+        run: psql -h localhost -p 5433 -U postgres -f ../infra/postgres/init.sql
+        env:
+          PGPASSWORD: postgres
+      - name: Live agent evals
+        if: env.GOOGLE_API_KEY != ''
+        run: uv run python -m travelmind.agent.evals --live
+      - uses: actions/upload-artifact@v4
+        if: always() && env.GOOGLE_API_KEY != ''
+        with:
+          name: agent-evals-live
+          path: docs/perf/agent-evals-*.md
+          if-no-files-found: ignore
 
   docker:
     # Build only (no push): the API image used by deploy/docker-compose.yml.
