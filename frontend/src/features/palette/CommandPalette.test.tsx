@@ -147,6 +147,7 @@ test("closing with Ctrl+K clears the search, so reopening starts fresh", async (
     "Pipeline",
     "Quotes",
     "Clients",
+    "Agent",
     "Fare search",
     "Hotel search",
     "Route intel",
@@ -154,9 +155,25 @@ test("closing with Ctrl+K clears the search, so reopening starts fresh", async (
     "Team",
     "Settings",
     "Design system",
+    "Plan a trip with the agent",
     "Switch to light mode",
     "Sign out",
   ]) {
     expect(screen.getByRole("option", { name })).toBeInTheDocument();
   }
+});
+
+test("Plan a trip with the agent opens the Agent", async () => {
+  mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/agent/availability": { status: 200, body: { available: true, provider: "fake", model: "demo-planner", demo: true } },
+      "GET /api/v1/agent/runs": { status: 200, body: { items: [] } },
+    }),
+  );
+  const { user, router } = renderApp("/app");
+  await screen.findByRole("banner");
+  await user.keyboard("{Control>}k{/Control}");
+  await user.type(await screen.findByPlaceholderText(/command or an airport/i), "plan a trip");
+  await user.click(await screen.findByRole("option", { name: "Plan a trip with the agent" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/agent"));
 });

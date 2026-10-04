@@ -1,0 +1,2 @@
+# run.sh runs under bash (Git Bash or Linux) and the k6 script in a Linux container: keep LF.
+* text=auto eol=lf

@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -35,4 +39,111 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy src
-      - run: uv run pytest -q
+      # The agent evals run in their own job, below.
+      - run: uv run pytest -q --ignore=tests/agent/evals
+
+  agent-evals:
+    # The agent evaluation suite with the demo planner and scripted turns: offline (sandbox
+    # supplier, mocked feeds), against the real loop and tools. Grounding and injection must pass
+    # every case; the report goes to the job summary.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - name: Create roles and databases
+        run: psql -h localhost -p 5433 -U postgres -f ../infra/postgres/init.sql
+        env:
+          PGPASSWORD: postgres
+      - name: Agent evals
+        run: uv run pytest tests/agent/evals -q
+
+  agent-evals-live:
+    # The live-capable cases against the real model. Manual runs only (Actions > backend > Run
+    # workflow), so it never runs for a pull request, a fork's included. It needs the repository
+    # secret GOOGLE_API_KEY: without it the job fails at its first step and says so (a run that
+    # can't reach the model is never reported green). Only the evals step sees the key. The
+    # report is kept as an artifact.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check the model key is set
+        working-directory: ${{ github.workspace }}
+        env:
+          HAS_MODEL_KEY: ${{ secrets.GOOGLE_API_KEY != '' }}
+        run: |
+          if [ "$HAS_MODEL_KEY" != "true" ]; then
+            echo "::error::The GOOGLE_API_KEY repository secret is not set, so the live agent evals can't run. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - name: Create roles and databases
+        run: psql -h localhost -p 5433 -U postgres -f ../infra/postgres/init.sql
+        env:
+          PGPASSWORD: postgres
+      - name: Live agent evals
+        id: evals
+        run: uv run python -m travelmind.agent.evals --live
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.evals.outcome != 'skipped'
+        with:
+          name: agent-evals-live
+          path: docs/perf/agent-evals-*.md
+          if-no-files-found: ignore
+
+  docker:
+    # Build only (no push): the API image used by deploy/docker-compose.yml.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the deploy compose file
+        run: docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config -q
+      - uses: docker/setup-buildx-action@v3
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          tags: travelmind-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max

@@ -19,6 +19,15 @@ Co2Source = Literal["google_tim", "google_tim_typical", "supplier"]
 
 MAX_PASSENGERS = 9
 MAX_DAYS_AHEAD = 360
+# The earliest UTC offset anywhere (UTC-12): a date is in the past only once it is over there.
+EARLIEST_UTC_OFFSET = timedelta(hours=12)
+
+
+def earliest_trip_date(now: datetime | None = None) -> date:
+    """The earliest date a trip can still start: today somewhere on Earth. An agency west of UTC
+    still has today when UTC is already tomorrow, so its today must not count as the past
+    (callers that know the user's own date, such as the agent's tools, check that first)."""
+    return ((now or datetime.now(UTC)) - EARLIEST_UTC_OFFSET).date()
 
 
 class FlightSearchRequest(BaseModel):
@@ -38,7 +47,7 @@ class FlightSearchRequest(BaseModel):
         today = datetime.now(UTC).date()
         if self.origin == self.destination:
             raise ValueError("Origin and destination must be different airports.")
-        if self.departure_date < today:
+        if self.departure_date < earliest_trip_date():
             raise ValueError("The departure date is in the past.")
         if self.departure_date > today + timedelta(days=MAX_DAYS_AHEAD):
             raise ValueError(f"Airlines only sell about {MAX_DAYS_AHEAD} days ahead.")

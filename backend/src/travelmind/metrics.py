@@ -73,6 +73,14 @@ CACHE_REQUESTS = Counter(
     "Read-through cache lookups by cache and result.",
     ["cache", "result"],
 )
+# Agent runs (travelmind.agent): `status` is a run status (agent.models.RUN_STATUSES), counted
+# each time a run enters it; `kind` a step kind (agent.models.STEP_KINDS); `direction` is
+# `input` or `output`. All bounded.
+AGENT_RUNS = Counter("agent_runs_total", "Agent runs entering each status.", ["status"])
+AGENT_STEPS = Counter("agent_steps_total", "Agent run steps written, by kind.", ["kind"])
+AGENT_TOKENS = Counter(
+    "agent_tokens_total", "Model tokens agent runs used, by direction.", ["direction"]
+)
 # Each process reports its own pool; across workers the live values add up.
 DB_POOL_CHECKED_OUT = Gauge(
     "db_pool_checked_out",

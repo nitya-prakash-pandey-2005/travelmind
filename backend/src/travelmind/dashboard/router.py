@@ -10,7 +10,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,7 @@ from travelmind.dashboard.schemas import (
     ActivityOut,
     DeparturesOut,
     HealthRange,
+    Kpi,
     MarketPulseOut,
     NotificationsOut,
     OnboardingOut,
@@ -31,13 +32,16 @@ from travelmind.dashboard.schemas import (
     SupplierHealthOut,
     TeamOut,
 )
-from travelmind.db import DbSession, utcnow
+from travelmind.db import DbSession, releasing, utcnow
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
 from travelmind.readcache import (
     PublishesMarkedAgencyChanges,
+    as_bytes,
     cached_agency_json,
+    json_response,
     publish_agency_changes,
+    schema_tag,
 )
 from travelmind.workspace.quotes import expire_overdue_quotes
 
@@ -51,8 +55,10 @@ __all__ = [
 SEARCH_MIN_LENGTH = 2
 SEARCH_TOO_SHORT_MESSAGE = f"Type at least {SEARCH_MIN_LENGTH} characters to search."
 # Summary and pipeline are read through the agency's Redis cache (readcache): a write to the
-# agency's workspace retires them at once. Searches don't, so the "searches" KPI may lag by up to
-# this TTL.
+# agency's workspace retires them at once. The summary's "searches" KPI is not cached: searches
+# are frequent and change nothing else, so it is computed on every read (one indexed query), and
+# searching never retires the cache. A miss commits its read before writing the cache, so no
+# connection is held while Redis answers.
 DASHBOARD_TTL_SECONDS = 30
 
 dashboard_router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
@@ -80,41 +86,70 @@ async def _expire_first(db: AsyncSession, redis: Redis, agency_id: UUID, now: da
     await publish_agency_changes(db, redis)
 
 
-@dashboard_router.get("/summary")
+# Cached as JSON and served as is (readcache: "Serving stored bytes").
+_KPIS = TypeAdapter(list[Kpi])
+KPIS_TAG = schema_tag(list[Kpi])
+PIPELINE_TAG = schema_tag(PipelineOut)
+
+
+def summary_body(range_: Range, currency: str, cached_kpis: bytes, searches: Kpi) -> bytes:
+    """The summary's JSON: `SummaryOut(range_, currency, [*cached_kpis, searches])`, built around
+    the cached cards' JSON array without decoding it. The same bytes as
+    `SummaryOut.model_dump_json(by_alias=True)`, as FastAPI sends it (tested)."""
+    live = SummaryOut(range=range_, currency=currency, kpis=[searches])
+    tail = live.model_dump_json(by_alias=True).encode()
+    at = tail.index(b'"kpis":[') + len(b'"kpis":[')
+    cards = cached_kpis.strip()[1:-1]
+    return tail[:at] + cards + (b"," if cards else b"") + tail[at:]
+
+
+@dashboard_router.get("/summary", response_model=SummaryOut)
 async def summary_route(
     current: AuthedUser, db: DbSession, redis: RedisClient, range_: RangeQuery = "30d"
-) -> SummaryOut:
+) -> Response:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
     now = utcnow()
+    searches = await metrics.searches_kpi(db, agency, range_, now=now)
     await _expire_first(db, redis, agency.id, now)
     # The windows are the agency's local days, so the local date is part of the key.
     today = now.astimezone(ZoneInfo(agency.timezone)).date().isoformat()
-    return await cached_agency_json(
+
+    async def load() -> bytes:
+        kpis = await metrics.workspace_kpis(db, agency, range_, now=now)
+        return _KPIS.dump_json(kpis, by_alias=True)
+
+    cached = await cached_agency_json(
         redis,
         agency.id,
-        (range_, today),
+        ("kpis", range_, today, KPIS_TAG),
         DASHBOARD_TTL_SECONDS,
-        lambda: metrics.summary(db, agency, range_, now=now),
-        encode=SummaryOut.model_dump_json,
-        decode=SummaryOut.model_validate_json,
+        releasing(db, load),
+        encode=as_bytes,
+        decode=as_bytes,
         cache="summary",
     )
+    return json_response(summary_body(range_, agency.currency, cached, searches))
 
 
-@dashboard_router.get("/pipeline")
-async def pipeline_route(current: AuthedUser, db: DbSession, redis: RedisClient) -> PipelineOut:
+@dashboard_router.get("/pipeline", response_model=PipelineOut)
+async def pipeline_route(current: AuthedUser, db: DbSession, redis: RedisClient) -> Response:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
     await _expire_first(db, redis, agency.id, utcnow())
-    return await cached_agency_json(
+
+    async def load() -> bytes:
+        return (await metrics.pipeline(db, agency)).model_dump_json(by_alias=True).encode()
+
+    body = await cached_agency_json(
         redis,
         agency.id,
-        (),
+        (PIPELINE_TAG,),
         DASHBOARD_TTL_SECONDS,
-        lambda: metrics.pipeline(db, agency),
-        encode=PipelineOut.model_dump_json,
-        decode=PipelineOut.model_validate_json,
+        releasing(db, load),
+        encode=as_bytes,
+        decode=as_bytes,
         cache="pipeline",
     )
+    return json_response(body)
 
 
 @dashboard_router.get("/activity")

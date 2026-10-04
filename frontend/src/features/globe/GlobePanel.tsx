@@ -54,6 +54,8 @@ type GlobePanelProps = {
   className?: string;
   /** Shown under the map (route list, empty state). */
   children?: ReactNode;
+  /** A shorter globe for a side column. */
+  compact?: boolean;
 };
 
 /** Route map card: the 3D globe where WebGL works, otherwise a flat map of the same arcs. */
@@ -66,6 +68,7 @@ export function GlobePanel({
   footer,
   className,
   children,
+  compact = false,
 }: GlobePanelProps) {
   const [webgl] = useState(hasWebGL);
   return (
@@ -81,7 +84,7 @@ export function GlobePanel({
         {webgl ? (
           <GlobeBoundary arcs={arcs}>
             <Suspense fallback={<MapPlaceholder message="Loading globe…" />}>
-              <RouteGlobe arcs={arcs} />
+              <RouteGlobe arcs={arcs} compact={compact} />
             </Suspense>
           </GlobeBoundary>
         ) : (

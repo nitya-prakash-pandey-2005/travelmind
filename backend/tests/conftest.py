@@ -1,4 +1,5 @@
 import os
+import sys
 
 os.environ["TM_ENVIRONMENT"] = "test"
 os.environ["TM_DATABASE_URL"] = os.environ.get(
@@ -10,14 +11,19 @@ os.environ["TM_MIGRATION_DATABASE_URL"] = os.environ.get(
     "postgresql+asyncpg://travelmind_owner:owner_dev_pw@localhost:5433/travelmind_test",
 )
 os.environ["TM_REDIS_URL"] = os.environ.get("TM_TEST_REDIS_URL", "redis://localhost:6380/15")
-# Process env beats backend/.env, so these switch off any real supplier keys and the FX feed a
-# developer's .env may hold. TM_SANDBOX_SUPPLIER is only unset here, so a value for it in
+# Process env beats backend/.env, so these switch off any real supplier or model keys and the FX
+# feed a developer's .env may hold. TM_SANDBOX_SUPPLIER is only unset here, so a value for it in
 # backend/.env still applies: tests that depend on it build Settings(_env_file=None).
 for _key in (
     "TM_DUFFEL_TOKEN",
     "TM_LITEAPI_KEY",
     "TM_GOOGLE_TIM_API_KEY",
     "TM_TRAVELPAYOUTS_TOKEN",
+    "TM_GOOGLE_API_KEY",
+    "GOOGLE_API_KEY",
+    "TM_OPENTRIPMAP_KEY",
+    "TM_OPEN_METEO_API_KEY",
+    "TM_OSM_CONTACT",
 ):
     os.environ[_key] = ""
 os.environ["TM_FX_ENABLED"] = "false"
@@ -93,13 +99,16 @@ async def clean_redis():
 async def close_shared_clients():
     """Each test runs on its own event loop; the process-wide Redis pool and httpx clients hold
     sockets bound to the loop that opened them, so close them after every test. The read cache's
-    breaker and the supplier guards (breakers and concurrency limits) are process-wide too: they
-    start fresh in every test, whatever an earlier one did."""
+    breaker, the supplier guards (breakers and concurrency limits) and the session cache are
+    process-wide too: they start fresh in every test, whatever an earlier one did. So do the
+    Gemini SDK clients, which hold their own HTTP pools."""
+    from travelmind.identity.sessioncache import reset_session_cache
     from travelmind.readcache import reset_breaker
     from travelmind.resilience import reset_guards
 
     reset_breaker()
     reset_guards()
+    reset_session_cache()
     yield
     from travelmind.cache import close_redis
     from travelmind.http import close_http_clients
@@ -107,6 +116,9 @@ async def close_shared_clients():
 
     reset_breaker()
     reset_guards()
+    gemini = sys.modules.get("travelmind.agent.gemini")  # only once a test has loaded it
+    if gemini is not None:
+        await gemini.close_clients()
     await close_http_clients()
     await close_job_queue()
     await close_redis()

@@ -1,0 +1,14 @@
+# Secrets never enter the image (settings come from the container environment).
+.env
+.env.*
+# Local tooling and caches
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/*.pyc
+# Not needed at runtime
+tests
+Dockerfile
+.dockerignore

@@ -5,7 +5,6 @@ The pool's connections are bound to the event loop that opened them. A script th
 the engine) before each run ends, so the next run starts fresh pools on its own loop.
 """
 
-from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends
@@ -13,10 +12,13 @@ from redis.asyncio import BlockingConnectionPool, Redis
 
 from travelmind.config import get_settings
 
-# One pool per process: clients are cheap views over it, so requests never open their own sockets.
+# One pool per process, so requests never open their own sockets, and one client over it, so
+# requests don't build a client each (cheap, but not free on the hot path). A client is safe to
+# share between tasks: every command borrows a pooled connection.
 # A blocking pool: when every connection is busy a command waits briefly for one to come back
 # instead of failing at once (the plain pool raises MaxConnectionsError immediately).
 _pool: BlockingConnectionPool | None = None
+_client: Redis | None = None
 
 
 def _get_pool() -> BlockingConnectionPool:
@@ -34,19 +36,24 @@ def _get_pool() -> BlockingConnectionPool:
 
 
 def get_shared_redis() -> Redis:
-    """A client on the process-wide pool, for code that runs outside a request."""
-    return Redis(connection_pool=_get_pool())
+    """The process-wide client (on the process-wide pool)."""
+    global _client
+    if _client is None:
+        _client = Redis(connection_pool=_get_pool())
+    return _client
 
 
-async def get_redis() -> AsyncIterator[Redis]:
-    yield get_shared_redis()  # the pool owns the connections; nothing to close per request
+async def get_redis() -> Redis:
+    """Request dependency: the process-wide client. A plain coroutine, not a generator: there is
+    nothing to close per request (the pool owns the connections)."""
+    return get_shared_redis()
 
 
 async def close_redis() -> None:
     """Close the shared pool (shutdown, or between `asyncio.run` calls). The next caller gets a
-    fresh one."""
-    global _pool
-    pool, _pool = _pool, None
+    fresh pool and client."""
+    global _pool, _client
+    pool, _pool, _client = _pool, None, None
     if pool is not None:
         await pool.aclose()
 

@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { cn } from "../../ui/cn";
-import { FareInsightCard, FareRowsCard, Illustration } from "./ConsolePreview";
+import { FareConsole, Illustration } from "./ConsolePreview";
 import { CtaLink } from "./CtaLink";
 import { CONTAINER, SECTION_TITLE } from "./layout";
 
@@ -37,10 +37,7 @@ export function ClosingCall() {
           </div>
         </div>
         <Illustration caption="Illustration with sample data, not live fares.">
-          <div className="relative sm:pb-24 sm:pl-10">
-            <FareRowsCard className="shadow-frame" />
-            <FareInsightCard className="absolute bottom-0 left-0 z-10 w-64 shadow-pop max-sm:hidden" />
-          </div>
+          <FareConsole rows={4} className="shadow-frame" />
         </Illustration>
       </div>
     </section>

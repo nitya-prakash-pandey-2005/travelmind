@@ -1,0 +1,29 @@
+[
+  {
+    "xid": "Q1060468",
+    "name": "Chhatrapati Shivaji Maharaj Vastu Sangrahalaya",
+    "dist": 14522.3,
+    "rate": 7,
+    "osm": "node/1002",
+    "wikidata": "Q1060468",
+    "kinds": "museums,cultural,interesting_places,history_museums",
+    "point": {"lon": 72.8326, "lat": 18.9269}
+  },
+  {
+    "xid": "N1003",
+    "name": "",
+    "dist": 900.1,
+    "rate": 1,
+    "kinds": "museums,cultural",
+    "point": {"lon": 72.8650, "lat": 19.05}
+  },
+  {
+    "xid": "W2001",
+    "name": "Jehangir Art Gallery",
+    "dist": 14400.0,
+    "rate": 3,
+    "osm": "way/2001",
+    "kinds": "art_galleries,museums,cultural,interesting_places",
+    "point": {"lon": 72.8317, "lat": 18.9275}
+  }
+]

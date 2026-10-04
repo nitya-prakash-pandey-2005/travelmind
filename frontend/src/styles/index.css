@@ -299,6 +299,18 @@
   }
 }
 
+/* A route arc's travelling dash (illustrations only; the global reduced-motion rule stops it). */
+@keyframes tm-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.tm-arc-flow {
+  stroke-dasharray: 4 8;
+  animation: tm-dash 1.6s linear infinite;
+}
+
 /* ---- Theme extras (v3 spec section 2). Unlayered on purpose: they restyle utilities per theme. ---------- */
 
 /* Orbital and Nebula: page titles carry a soft accent glow (--tm-glow is transparent in light and high contrast). */

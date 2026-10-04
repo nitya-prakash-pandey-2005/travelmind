@@ -21,3 +21,13 @@ dist/
 
 # Editor
 .vscode/
+
+# Deploy stack secrets (deploy/.env.example is the committed template)
+deploy/.env
+# Load-test overrides are test-only; the committed template is deploy/.env.loadtest.example
+!deploy/.env.loadtest.example
+
+# Load tests: seeded accounts and share links, raw k6 output (only summaries are committed)
+loadtest/users.json
+loadtest/results/*
+!loadtest/results/*-summary.json

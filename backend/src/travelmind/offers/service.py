@@ -16,7 +16,7 @@ from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.config import Settings
-from travelmind.db import utcnow
+from travelmind.db import release_connection, utcnow
 from travelmind.fareintel.models import FareSnapshot
 from travelmind.fareintel.service import (
     PROVENANCES,
@@ -249,8 +249,9 @@ async def search_flights(
 ) -> FlightSearchResponse:
     """Search every connected supplier and return ranked offers with insights.
 
-    `db` must already be bound to `agency_id` (bind_tenant). Commits once, at the end, together
-    with one result row per supplier and a `search.flights` activity event.
+    `db` must already be bound to `agency_id` (bind_tenant). Commits before calling the suppliers
+    (ending any read transaction, so no connection is held while they answer), and at the end,
+    together with one result row per supplier and a `search.flights` activity event.
     Raises RateLimited, UnknownAirport or NoSuppliers.
 
     Demo seeding only (never exposed over HTTP): `suppliers` replaces the connected suppliers,
@@ -273,6 +274,8 @@ async def search_flights(
     if not suppliers:
         raise NoSuppliers()
 
+    # Nothing is written before the suppliers answer: hand the connection back while they work.
+    await release_connection(db)
     # Exchange rates are fetched while suppliers search, so they never add to the wait.
     (offers, sources), fx = await asyncio.gather(
         fan_out(suppliers, request, settings.search_timeout_seconds),
@@ -284,7 +287,8 @@ async def search_flights(
 
     currency = display_currency_for(origin.country_code)
     one_way = request.return_date is None
-    days_out = (request.departure_date - datetime.now(UTC).date()).days
+    # Never negative: a departure "today" west of UTC can be UTC's yesterday.
+    days_out = max((request.departure_date - datetime.now(UTC).date()).days, 0)
     # Sandbox fares are never compared with (or mixed into) the market's history.
     family: Family = "market" if any(o.provenance == "LIVE" for o in offers) else "sandbox"
 
@@ -420,6 +424,7 @@ async def reprice_offer(
     )
     if supplier is None:
         raise SupplierGone()
+    await release_connection(db)  # no connection held while the supplier answers
     try:
         async with guarded(supplier.code):
             with supplier_call(supplier.code):

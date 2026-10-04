@@ -1,9 +1,10 @@
 """Outbound resilience: a concurrency limit and a circuit breaker for each outbound supplier.
 
 `guard_for(name)` returns the guard of one supplier (Duffel, LiteAPI, Google TIM, Travelpayouts,
-ECB; the names are the supplier metrics labels). Callers wrap the whole outbound call, including
-their own deadline, in `async with guard.call():`, so a call that runs out of time counts as a
-failure:
+ECB, and for the agent Gemini, Open-Meteo, Nominatim, Overpass and OpenTripMap; the names are the
+supplier metrics labels). Callers wrap the whole
+outbound call, including their own deadline, in `async with guard.call():`, so a call that runs
+out of time counts as a failure:
 - At most `supplier_max_concurrent` (20) calls to a supplier are in flight. A call that gets no
   slot within `supplier_acquire_timeout_s` (2 s) is refused with CircuitOpen (`reason="busy"`).
 - After `supplier_breaker_threshold` (5) consecutive failures the breaker opens: for
@@ -12,20 +13,25 @@ failure:
   (half-open) while the others are still refused; its success closes the breaker and its failure
   opens it for another 30 s.
 - A failure is any exception from the call except an answer about the request itself: a
-  SupplierError coded `invalid_request`, `offer_expired` or `offer_unavailable`, or an
-  `httpx.HTTPStatusError` with a 4xx status other than 401, 403 and 429 (the feeds that call
-  `raise_for_status()`: ECB, Google TIM, Travelpayouts). The supplier answered and our request
+  SupplierError coded `invalid_request`, `offer_expired` or `offer_unavailable` (the agent's
+  ProviderError of kind `invalid` is one), or an `httpx.HTTPStatusError` with a 4xx status
+  other than 401, 403 and 429 (the feeds that call `raise_for_status()`: ECB, Google TIM,
+  Travelpayouts). The supplier answered and our request
   was wrong, so it is healthy; the caller still logs it and returns its usual degraded result.
   401/403 (our credentials) and 429 (slow down) are failures, as are 5xx and timeouts. A
-  cancelled call has no outcome; if it was the half-open trial, the next call becomes the trial.
+  cancelled call has no outcome, and neither has an exception marked `breaker_neutral` (the
+  agent's Gemini rate limit, ProviderError of kind `rate_limited`: one key's quota, not an
+  outage; it neither counts as a failure nor clears the count). If a call without an outcome was
+  the half-open trial, the next call becomes the trial.
 - Each admitted call carries the breaker's epoch, which moves on every open and close. An
   outcome from an older epoch is ignored: a slow call admitted before the breaker opened can't
   close it without a trial, nor reopen it (or free the trial) while a trial is in flight.
 
 Every caller turns CircuitOpen into its usual "unavailable" result, never a 500: flight and hotel
 search mark the source `error` with the refusal's message, a price check fails as "couldn't
-confirm the price" (502), and the CO2, FX and fare-history feeds return nothing, as when they are
-down. A refusal is recorded as supplier outcome `circuit_open` with the time spent waiting.
+confirm the price" (502), the CO2, FX and fare-history feeds return nothing, as when they are
+down, and a Gemini call fails as ProviderError(kind="unavailable"). A refusal is recorded as
+supplier outcome `circuit_open` with the time spent waiting.
 
 The guards are per process. Each API worker (gunicorn) and the arq worker has its own registry,
 so each worker has its own breaker and its own concurrency limit: with N workers a supplier sees
@@ -65,7 +71,22 @@ log = structlog.get_logger()
 BreakerState = Literal["closed", "open", "half_open"]
 
 # Outbound suppliers and feeds, by their metrics label. The sandbox runs in process: no guard.
-GUARDED_SUPPLIERS = frozenset({"duffel", "liteapi", "google_tim", "travelpayouts", "ecb"})
+GUARDED_SUPPLIERS = frozenset(
+    {
+        "duffel",
+        "liteapi",
+        "google_tim",
+        "travelpayouts",
+        "ecb",
+        "gemini",
+        # the agent's place and weather feeds (travelmind.agent.tools)
+        "open_meteo_forecast",
+        "open_meteo_archive",
+        "nominatim",
+        "overpass",
+        "opentripmap",
+    }
+)
 
 # The supplier answered about this request: not a sign that it is unwell.
 _REQUEST_ERRORS = frozenset({"invalid_request", "offer_expired", "offer_unavailable"})
@@ -223,7 +244,9 @@ class SupplierGuard:
             self._breaker.abandon(epoch)
             raise
         except BaseException as exc:
-            if _is_failure(exc):
+            if getattr(exc, "breaker_neutral", False):
+                self._breaker.abandon(epoch)  # no outcome either way (see the module docstring)
+            elif _is_failure(exc):
                 self._failed(exc, epoch)
             else:
                 self._succeeded(epoch)

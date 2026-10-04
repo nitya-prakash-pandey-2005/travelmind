@@ -1,0 +1,142 @@
+{
+  "run_id": "2026-10-04-smoke",
+  "stages": [
+    {
+      "duration": "30s",
+      "target": 50
+    },
+    {
+      "duration": "1m",
+      "target": 50,
+      "hold": true
+    },
+    {
+      "duration": "10s",
+      "target": 0
+    }
+  ],
+  "max_vus": 50,
+  "duration_s": 110,
+  "total": {
+    "requests": 2387,
+    "rps": 21.6,
+    "error_rate": 0,
+    "iterations": 1888
+  },
+  "checks": {
+    "rate": 1,
+    "passes": 2143,
+    "fails": 0
+  },
+  "kinds": {
+    "public": {
+      "requests": 582,
+      "rps": 5.3,
+      "p50_ms": 2,
+      "p95_ms": 29,
+      "p99_ms": 38,
+      "max_ms": 48,
+      "error_rate": 0
+    },
+    "read": {
+      "requests": 910,
+      "rps": 8.2,
+      "p50_ms": 14,
+      "p95_ms": 42,
+      "p99_ms": 70,
+      "max_ms": 123,
+      "error_rate": 0
+    },
+    "search": {
+      "requests": 255,
+      "rps": 2.3,
+      "p50_ms": 25,
+      "p95_ms": 40,
+      "p99_ms": 53,
+      "max_ms": 92,
+      "error_rate": 0
+    },
+    "reprice": {
+      "requests": 255,
+      "rps": 2.3,
+      "p50_ms": 14,
+      "p95_ms": 22,
+      "p99_ms": 28,
+      "max_ms": 107,
+      "error_rate": 0
+    },
+    "write": {
+      "requests": 185,
+      "rps": 1.7,
+      "p50_ms": 20,
+      "p95_ms": 32,
+      "p99_ms": 39,
+      "max_ms": 43,
+      "error_rate": 0
+    }
+  },
+  "levels": {
+    "50": {
+      "hold_seconds_planned": 60,
+      "hold_seconds": 60,
+      "requests": 1611,
+      "rps": 26.9,
+      "error_rate": 0,
+      "kinds": {
+        "public": {
+          "requests": 445,
+          "rps": 7.4,
+          "p50_ms": 2,
+          "p95_ms": 29,
+          "p99_ms": 38,
+          "max_ms": 48,
+          "error_rate": 0
+        },
+        "read": {
+          "requests": 661,
+          "rps": 11,
+          "p50_ms": 14,
+          "p95_ms": 41,
+          "p99_ms": 71,
+          "max_ms": 123,
+          "error_rate": 0
+        },
+        "search": {
+          "requests": 184,
+          "rps": 3.1,
+          "p50_ms": 25,
+          "p95_ms": 38,
+          "p99_ms": 45,
+          "max_ms": 92,
+          "error_rate": 0
+        },
+        "reprice": {
+          "requests": 185,
+          "rps": 3.1,
+          "p50_ms": 13,
+          "p95_ms": 22,
+          "p99_ms": 29,
+          "max_ms": 107,
+          "error_rate": 0
+        },
+        "write": {
+          "requests": 136,
+          "rps": 2.3,
+          "p50_ms": 19,
+          "p95_ms": 29,
+          "p99_ms": 39,
+          "max_ms": 43,
+          "error_rate": 0
+        }
+      }
+    }
+  },
+  "thresholds": {
+    "http_reqs{status:429} count<1": true,
+    "http_req_duration{kind:public} p(95)<300": true,
+    "http_req_duration{kind:read} p(95)<300": true,
+    "http_req_failed rate<0.01": true,
+    "http_reqs{status:401} count<1": true,
+    "http_req_duration{kind:search} p(95)<2500": true
+  }
+}

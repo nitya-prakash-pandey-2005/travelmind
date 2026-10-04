@@ -1,14 +1,13 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Route } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { routeEnquiriesQueryOptions } from "../../api/dashboard";
-import { airportSearchQueryOptions } from "../../api/queries";
-import type { Airport } from "../../api/types";
 import { formatNumber } from "../../lib/format";
 import { EmptyState } from "../../ui/EmptyState";
 import { cn } from "../../ui/cn";
 import { GlobePanel } from "../globe/GlobePanel";
 import { routeArcs, summariseRoutes } from "../globe/routeArcs";
+import { useAirports } from "../globe/useAirports";
 import { useRouteSelection } from "../route/routeStore";
 import { routeLabel } from "./format";
 import { ErrorPanel } from "./PanelError";
@@ -34,17 +33,6 @@ function Legend() {
       </li>
     </ul>
   );
-}
-
-/** Airports by code, looked up through the (cached) airport search: an exact code match only. */
-function useAirports(codes: readonly string[]): Map<string, Airport> {
-  const combine = useCallback(
-    (results: { data?: Airport[] }[]) => results.map((result, index) => result.data?.find((a) => a.iata_code === codes[index]) ?? null),
-    [codes],
-  );
-  // The combined list is structurally shared, so it keeps its identity until an airport resolves.
-  const found = useQueries({ queries: codes.map((code) => airportSearchQueryOptions(code)), combine });
-  return useMemo(() => new Map(found.flatMap((a) => (a ? [[a.iata_code, a] as const] : []))), [found]);
 }
 
 export function RouteMapPanel({ onNewEnquiry, className }: { onNewEnquiry: () => void; className?: string }) {

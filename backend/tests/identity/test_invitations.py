@@ -113,3 +113,22 @@ async def test_demo_workspaces_cannot_invite(client):
     assert r.status_code == 403
     assert r.json() == {"detail": "Demo workspaces can't invite people or change settings."}
     assert (await client.get(INVITE)).json() == []
+
+
+async def test_accepting_revokes_the_browsers_previous_session(client, app):
+    """Someone signed in to another workspace accepts an invitation in the same browser: the
+    session the new cookie replaces is revoked (database and session cache)."""
+    await signup(client)
+    token = (await _invite(client)).json()["token"]
+    async with make_client(app) as browser:
+        await signup(browser, email="founder@beta.com", agency_name="Beta")
+        old = browser.cookies.get("tm_session")
+        assert (await browser.get("/api/v1/auth/me")).status_code == 200  # cached now
+        assert (await _accept(browser, token)).status_code == 201
+        new = browser.cookies.get("tm_session")
+        assert new and new != old
+    async with make_client(app) as replay:
+        r = await replay.get("/api/v1/auth/me", headers={"Cookie": f"tm_session={old}"})
+        assert r.status_code == 401
+        r = await replay.get("/api/v1/auth/me", headers={"Cookie": f"tm_session={new}"})
+        assert r.status_code == 200

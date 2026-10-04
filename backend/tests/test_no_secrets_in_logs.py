@@ -3,7 +3,9 @@
 Each adapter makes one successful (mocked) call with `configure_logging("INFO")` applied and the
 root logger capturing at DEBUG; no stdlib record (message or args) and nothing structlog prints may
 contain the secret. The ECB feed has no credential, so its case puts a token in the feed URL: the
-same shape as the old TIM `?key=` bug, which httpx's INFO request log used to print in full.
+same shape as the old TIM `?key=` bug, which httpx's INFO request log used to print in full. The
+Gemini case reads its key from TM_GOOGLE_API_KEY, as the agent does. OpenTripMap and a paid
+Open-Meteo plan take their keys in the query string, like the old TIM bug.
 """
 
 import json
@@ -16,9 +18,13 @@ from pathlib import Path
 import httpx
 import pytest
 import structlog
+from pydantic import SecretStr
 from redis.asyncio import Redis
 
 from tests.offers.offer_factory import make_offer
+from travelmind.agent.provider import Message, get_provider
+from travelmind.agent.tools.places import OPENTRIPMAP_URL, opentripmap_places
+from travelmind.config import Settings
 from travelmind.db import get_sessionmaker
 from travelmind.fareintel.travelpayouts import TP_PRICES_URL, seed_route
 from travelmind.hotels.liteapi import LITEAPI_BASE_URL, LiteApiHotelSupplier
@@ -132,12 +138,65 @@ async def _ecb(respx_mock) -> None:
     assert rates is not None
 
 
+async def _gemini(respx_mock) -> None:
+    respx_mock.post(url__startswith="https://generativelanguage.googleapis.com/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "candidates": [{"content": {"role": "model", "parts": [{"text": "Hello."}]}}],
+                "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 2},
+            },
+        )
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("GOOGLE_API_KEY", raising=False)
+        patch.setenv("TM_GOOGLE_API_KEY", f"AIza{SECRET}")
+        provider = get_provider(Settings(_env_file=None))
+    generation = await provider.generate(
+        system="You plan trips.", messages=[Message(role="user", text="hi")], tools=[], timeout_s=5
+    )
+    assert provider.name == "gemini" and generation.text == "Hello."
+
+
+async def _opentripmap(respx_mock) -> None:
+    respx_mock.get(url__startswith=OPENTRIPMAP_URL).mock(
+        return_value=httpx.Response(
+            200, json=_json(TESTS / "agent" / "fixtures" / "opentripmap_radius.json")
+        )
+    )
+    found = await opentripmap_places(
+        SecretStr(SECRET), latitude=19.055, longitude=72.8692, kind="museums"
+    )
+    assert found
+
+
+async def _open_meteo(respx_mock) -> None:
+    from datetime import date
+
+    from travelmind.agent.tools.places import Location
+    from travelmind.agent.tools.weather import CUSTOMER_FORECAST_URL, Feed, _forecast
+
+    respx_mock.get(url__startswith=CUSTOMER_FORECAST_URL).mock(
+        return_value=httpx.Response(
+            200, json=_json(TESTS / "agent" / "fixtures" / "open_meteo_forecast.json")
+        )
+    )
+    feed = Feed(Settings(_env_file=None, open_meteo_api_key=SecretStr(SECRET)))
+    days = await _forecast(
+        feed, Location("Mumbai", 19.0887, 72.8679), date(2026, 10, 6), date(2026, 10, 8)
+    )
+    assert days
+
+
 CALLS: dict[str, Callable[..., Awaitable[None]]] = {
     "duffel": _duffel,
     "liteapi": _liteapi,
     "tim": _tim,
     "travelpayouts": _travelpayouts,
     "ecb": _ecb,
+    "gemini": _gemini,
+    "opentripmap": _opentripmap,
+    "open_meteo": _open_meteo,
 }
 
 
@@ -165,6 +224,48 @@ async def test_a_successful_call_never_logs_the_secret(
         assert SECRET not in repr(record.args), record.name
         assert SECRET not in record.getMessage(), record.name
     printed = capsys.readouterr()
+    assert SECRET not in printed.out and SECRET not in printed.err
+
+
+@pytest.mark.parametrize("status", [400, 503])
+async def test_a_failed_gemini_call_never_logs_the_secret(
+    status, respx_mock, app_logging, caplog, capsys
+):
+    """A failed call logs `gemini_call_failed` (kind, type, status) and nothing else: not the key,
+    and not Google's error text, which may echo the request or the key."""
+    from travelmind.agent.provider import ProviderError
+
+    caplog.set_level(logging.DEBUG)
+    key = f"AIza{SECRET}"
+    respx_mock.post(url__startswith="https://generativelanguage.googleapis.com/").mock(
+        return_value=httpx.Response(
+            status,
+            json={
+                "error": {
+                    "code": status,
+                    "message": f"API key not valid: {key}",
+                    "status": "INVALID_ARGUMENT" if status == 400 else "UNAVAILABLE",
+                    "details": [{"reason": "API_KEY_INVALID", "metadata": {"key": key}}],
+                }
+            },
+        )
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("GOOGLE_API_KEY", raising=False)
+        patch.setenv("TM_GOOGLE_API_KEY", key)
+        provider = get_provider(Settings(_env_file=None))
+    with pytest.raises(ProviderError) as caught:
+        await provider.generate(
+            system="s", messages=[Message(role="user", text="hi")], tools=[], timeout_s=5
+        )
+    assert caught.value.kind == "unavailable"
+    assert SECRET not in str(caught.value) and SECRET not in repr(caught.value)
+    for record in caplog.records:
+        assert SECRET not in record.getMessage(), record.name
+        assert SECRET not in repr(record.args), record.name
+    printed = capsys.readouterr()
+    assert "gemini_call_failed" in printed.out
+    assert f'"status": {status}' in printed.out
     assert SECRET not in printed.out and SECRET not in printed.err
 
 

@@ -1,0 +1,18 @@
+[
+  {
+    "place_id": 254826341,
+    "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "osm_type": "relation",
+    "osm_id": 7888990,
+    "lat": "19.0549990",
+    "lon": "72.8692035",
+    "category": "boundary",
+    "type": "administrative",
+    "place_rank": 16,
+    "importance": 0.7935,
+    "addresstype": "city",
+    "name": "Mumbai",
+    "display_name": "Mumbai, Mumbai Suburban, Maharashtra, India",
+    "boundingbox": ["18.8928676", "19.2716339", "72.7758459", "72.9864994"]
+  }
+]

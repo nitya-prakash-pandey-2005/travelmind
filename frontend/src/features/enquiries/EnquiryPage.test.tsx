@@ -274,3 +274,17 @@ test("the Pipeline item stays highlighted on an enquiry page", async () => {
   expect(within(nav).getByRole("link", { name: "Pipeline" })).toHaveAttribute("aria-current", "page");
   expect(within(nav).getByRole("link", { name: "Command Center" })).not.toHaveAttribute("aria-current");
 });
+
+test("Plan with agent opens the Agent with a request for the whole trip filled in, not sent", async () => {
+  const { user, router, calls } = enquiryPage({
+    "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, children_ages: [7] } },
+    "GET /api/v1/agent/availability": { status: 200, body: { available: true, provider: "fake", model: "demo-planner", demo: true } },
+    "GET /api/v1/agent/runs": { status: 200, body: { items: [] } },
+  });
+  await user.click(await screen.findByRole("link", { name: "Plan with agent" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/agent"));
+  expect(await screen.findByRole("textbox", { name: "Trip request" })).toHaveValue(
+    "Plan a trip from DEL to BOM, 20 Nov 2026 to 27 Nov 2026, for 2 adults and 1 child (age 7), business class.",
+  );
+  expect(calls.some((c) => c.method === "POST" && c.path === "/api/v1/agent/runs")).toBe(false);
+});

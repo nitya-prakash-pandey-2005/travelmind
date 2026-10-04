@@ -20,6 +20,12 @@ Redis is an optimisation, never a dependency:
 - Any failure, or a call skipped by the open breaker, falls through to the loader and counts as
   `error`. The `read_cache_unavailable` warning (error type only) is logged once per opening.
 
+Serving stored bytes: the hot JSON reads (summary, pipeline, airports) cache the response body
+exactly as it is sent (`encode=as_bytes, decode=as_bytes`) and a hit returns it as is
+(`json_response`), skipping a decode and a re-serialise. Nothing then checks a stored entry
+against the current model, so those keys carry `schema_tag(<response type>)`: a release that
+changes the response's shape reads and writes other keys, and never serves the old shape.
+
 A short `SET NX` lock, holding a random owner token, stops a stampede of identical loads; waiters
 poll for the value for at most `LOCK_WAIT_SECONDS` and then load it themselves, so a holder that
 dies never blocks anyone. The holder releases it with a compare-and-delete, so a holder whose lock
@@ -37,18 +43,16 @@ Over-invalidating (say, a write that failed after a partial commit) only costs a
 Frequent writes that don't change what the cache holds take `PublishesMarkedAgencyChanges`
 instead, which bumps only marked agencies: offer repricing and marking notifications seen.
 
-Flight and hotel searches feed the dashboard's "searches" KPI and activity, so they take
-`ThrottledInvalidatesAgencyCache`: after a successful search it bumps the agency's version, but at
-most once per `search_bump_interval_s` (5 s) per agency. The throttle is a `SET tm:sb:<agency> 1
-NX EX <interval>`; only the search whose SET succeeds bumps. So the first search after a quiet
-spell shows on the dashboard at once, and a burst of searches retires the agency's cache once per
-interval, not once per search. A search inside the interval may lag on the dashboard until the
-next bump or the summary TTL (30 s). Like every cache command, the SET and the bump go through
-the breaker and the short deadline, and a failure skips the bump: a search never fails for it.
+Flight and hotel searches change nothing the cache holds, so they don't bump at all: the
+dashboard's "searches" KPI, the only cached-page figure they move, is computed on every read
+instead of cached (dashboard.router). So searching never retires the agency's cached summary
+and pipeline, and every search shows on the dashboard's next read.
 """
 
 import asyncio
 import contextlib
+import hashlib
+import json
 import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, Literal, cast
@@ -56,9 +60,11 @@ from uuid import UUID
 
 import structlog
 from fastapi import Depends, Request
+from pydantic import TypeAdapter
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
 from travelmind.cache import RedisClient
 from travelmind.config import get_settings
@@ -74,21 +80,21 @@ __all__ = [
     "CircuitBreaker",
     "InvalidatesAgencyCache",
     "PublishesMarkedAgencyChanges",
-    "ThrottledInvalidatesAgencyCache",
     "agency_key",
     "agency_version",
+    "as_bytes",
     "bump_agency_version",
-    "bump_agency_throttled_after",
-    "bump_agency_version_throttled",
     "cached_agency_json",
     "cached_json",
     "discard_agency_changes",
     "invalidate_agency",
+    "json_response",
     "mark_agency_changed",
     "publish_agency_changes",
     "publish_agency_changes_after",
     "publish_marked_changes_after",
     "reset_breaker",
+    "schema_tag",
 ]
 
 log = structlog.get_logger()
@@ -99,7 +105,6 @@ CacheName = Literal["summary", "pipeline", "airports", "route_intel"]
 CACHE_PREFIX = "tm:rc:"
 LOCK_PREFIX = "tm:rcl:"
 VERSION_PREFIX = "tm:av:"
-SEARCH_BUMP_PREFIX = "tm:sb:"
 LOCK_TTL_MS = 3000  # longer than a normal load; a crashed holder's lock lapses on its own
 LOCK_WAIT_SECONDS = 0.25
 LOCK_POLL_SECONDS = 0.025
@@ -170,6 +175,26 @@ async def _call[R](what: str, command: Callable[[], Awaitable[R]]) -> R:
     return result
 
 
+def schema_tag(tp: Any) -> str:
+    """A short fingerprint of a response type's JSON schema as it is sent (serialisation mode:
+    computed fields and serialisers count), for the keys of entries that are served as stored
+    bytes (see the module docstring). Their loaders serialise with `by_alias=True`, as FastAPI
+    does."""
+    schema = json.dumps(TypeAdapter(tp).json_schema(mode="serialization"), sort_keys=True)
+    return hashlib.sha256(schema.encode()).hexdigest()[:8]
+
+
+def as_bytes(raw: str | bytes) -> bytes:
+    """`encode` and `decode` for entries kept as the response body itself."""
+    return raw if isinstance(raw, bytes) else raw.encode()
+
+
+def json_response(body: bytes) -> Response:
+    """A JSON body serialised already (a cached entry), sent as is. For a model, FastAPI's own
+    serialisation sends the same bytes with the same content type."""
+    return Response(content=body, media_type="application/json")
+
+
 def _count(cache: CacheName, result: Literal["hit", "miss", "error"]) -> None:
     CACHE_REQUESTS.labels(cache=cache, result=result).inc()
 
@@ -180,7 +205,7 @@ async def cached_json[T](
     ttl_s: int,
     loader: Callable[[], Awaitable[T]],
     *,
-    encode: Callable[[T], str],
+    encode: Callable[[T], str | bytes],
     decode: Callable[[str | bytes], T],
     cache: CacheName,
 ) -> T:
@@ -282,23 +307,6 @@ async def bump_agency_version(redis: Redis, agency_id: UUID) -> None:
         await _call("version", bump)
 
 
-async def bump_agency_version_throttled(redis: Redis, agency_id: UUID) -> bool:
-    """Bump the agency's version unless this already happened within the last
-    `search_bump_interval_s`; True when it bumped. Fails open: a Redis error, a timeout or the
-    open breaker skips the bump (the entries then live out their TTL)."""
-    interval = get_settings().search_bump_interval_s
-    if interval > 0:
-        key = f"{SEARCH_BUMP_PREFIX}{agency_id}"
-        try:
-            first = await _call("version", lambda: redis.set(key, 1, nx=True, ex=interval))
-        except _Unavailable:
-            return False
-        if not first:
-            return False
-    await bump_agency_version(redis, agency_id)
-    return True
-
-
 async def invalidate_agency(redis: Redis, agency_id: UUID) -> None:
     """Call after a successful commit that changed the agency's data."""
     await bump_agency_version(redis, agency_id)
@@ -311,7 +319,7 @@ async def cached_agency_json[T](
     ttl_s: int,
     loader: Callable[[], Awaitable[T]],
     *,
-    encode: Callable[[T], str],
+    encode: Callable[[T], str | bytes],
     decode: Callable[[str | bytes], T],
     cache: CacheName,
 ) -> T:
@@ -348,6 +356,14 @@ async def publish_agency_changes(db: AsyncSession, redis: Redis, *, write: bool 
         await invalidate_agency(redis, agency_id)
 
 
+async def _close_before_redis(db: AsyncSession) -> None:
+    """Close the request's session before the bump talks to Redis, so no connection is held
+    meanwhile. `get_db` would close it right after anyway: the endpoint has returned and its
+    response is serialised, and uncommitted work is rolled back either way. The marks and the
+    bound agency stay in `db.info`."""
+    await db.close()
+
+
 async def publish_agency_changes_after(
     request: Request, db: DbSession, redis: RedisClient
 ) -> AsyncIterator[None]:
@@ -356,6 +372,7 @@ async def publish_agency_changes_after(
     try:
         yield
     finally:
+        await _close_before_redis(db)
         await publish_agency_changes(db, redis, write=request.method in MUTATING_METHODS)
 
 
@@ -365,18 +382,9 @@ async def publish_marked_changes_after(db: DbSession, redis: RedisClient) -> Asy
     try:
         yield
     finally:
+        await _close_before_redis(db)
         await publish_agency_changes(db, redis)
-
-
-async def bump_agency_throttled_after(db: DbSession, redis: RedisClient) -> AsyncIterator[None]:
-    """Router dependency for searches: once the endpoint has returned (not when it raised),
-    bumps the session's bound agency, at most once per `search_bump_interval_s`."""
-    yield
-    bound: Any = db.info.get("agency_id")
-    if bound is not None:
-        await bump_agency_version_throttled(redis, bound)
 
 
 InvalidatesAgencyCache = Depends(publish_agency_changes_after, scope="function")
 PublishesMarkedAgencyChanges = Depends(publish_marked_changes_after, scope="function")
-ThrottledInvalidatesAgencyCache = Depends(bump_agency_throttled_after, scope="function")

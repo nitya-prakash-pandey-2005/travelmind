@@ -7,8 +7,13 @@ jobs are unique by default):
 - `expire_overdue_quotes_all`: every 5 minutes. Marks sent and viewed quotes whose share link
   has lapsed as expired, visiting only agencies that have such quotes (in random order, so a
   timeout never starves the same ones), and invalidates each changed agency's read cache.
+- `sweep_stuck_agent_runs`: every minute at :30. Fails agent runs whose job died without a
+  trace (`agent.service.sweep_stuck_runs`) and frees their slots.
 
-Queued jobs: `generate_demo_job` (one demo workspace; for the traveller app in a later step).
+Queued jobs: `generate_demo_job` (one demo workspace; for the traveller app in a later step) and
+`run_agent_job` (one agent run, until it answers, waits for the user or stops: `agent.service`;
+never retried, and cancelled after the run's time budget plus a margin, which marks the run
+failed).
 
 Worker database sessions get `SET LOCAL statement_timeout = '60s'` in every transaction (the API
 keeps its 5 s), through an `after_begin` hook that only `startup` installs. It is transaction
@@ -21,12 +26,15 @@ from typing import Any, ClassVar
 from uuid import UUID
 
 import structlog
-from arq import Retry, cron
+from arq import Retry, cron, func
 from arq.cron import CronJob
+from arq.worker import Function
 from redis.asyncio import Redis
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from travelmind.agent import service as agent_service
+from travelmind.agent.tools.external import warn_about_feed_settings
 from travelmind.cache import close_redis, get_shared_redis
 from travelmind.config import get_settings
 from travelmind.db import (
@@ -52,6 +60,7 @@ WORKER_STATEMENT_TIMEOUT = "60s"
 _SET_STATEMENT_TIMEOUT = text(f"SET LOCAL statement_timeout = '{WORKER_STATEMENT_TIMEOUT}'")
 DEMO_BUSY_RETRY_SECONDS = 15
 SWEEP_TIMEOUT_SECONDS = 240  # inside the 5-minute interval, so runs never overlap
+STUCK_RUNS_TIMEOUT_SECONDS = 50  # inside the minute
 CLEANUP_TIMEOUT_SECONDS = 900
 
 
@@ -72,7 +81,9 @@ def remove_statement_timeout() -> None:
 async def startup(ctx: dict[str, Any]) -> None:
     """Logging and the worker's statement timeout. The shared clients (DB engine, Redis pool,
     httpx clients) open lazily on first use."""
-    configure_logging(get_settings().log_level)
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    warn_about_feed_settings(settings)  # agent runs use the weather and place feeds here
     install_statement_timeout()
     log.info("worker_started")
 
@@ -82,6 +93,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
     even if an earlier one fails."""
     remove_statement_timeout()
     try:
+        await close_model_clients()
         await close_http_clients()
     finally:
         try:
@@ -180,6 +192,11 @@ async def _expire_until_broken(
     return []
 
 
+async def sweep_stuck_agent_runs(ctx: dict[str, Any]) -> int:
+    """Fail the agent runs whose job is gone; returns how many."""
+    return await agent_service.sweep_stuck_runs()
+
+
 async def generate_demo_job(ctx: dict[str, Any]) -> str:
     """Build one demo workspace; returns its agency id. When every generation slot is taken it
     retries later. The owner session it opens is never handed out and simply expires."""
@@ -198,12 +215,36 @@ async def generate_demo_job(ctx: dict[str, Any]) -> str:
     return str(agency.id)
 
 
+async def run_agent_job(ctx: dict[str, Any], run_id: str, agency_id: str) -> str:
+    """Run one agent run (queued by the API); returns its status afterwards."""
+    return await agent_service.drive_run(UUID(run_id), UUID(agency_id))
+
+
+async def close_model_clients() -> None:
+    """Close the Gemini SDK clients agent runs opened; a failure is only logged."""
+    from travelmind.agent import gemini
+
+    try:
+        await gemini.close_clients()
+    except Exception as exc:
+        log.warning("model_clients_close_failed", error_type=type(exc).__name__)
+
+
+AGENT_JOB_MARGIN_SECONDS = 60
+AGENT_JOB: Function = func(
+    run_agent_job,
+    name="run_agent_job",
+    timeout=get_settings().agent_run_timeout_s + AGENT_JOB_MARGIN_SECONDS,
+    max_tries=1,
+)
+
+
 class WorkerSettings:
     """Read by `arq travelmind.worker.WorkerSettings`."""
 
     # arq's own connection settings and pool (the read cache's shared pool is separate).
     redis_settings = arq_redis_settings()
-    functions: ClassVar[list[Any]] = [generate_demo_job]
+    functions: ClassVar[list[Any]] = [generate_demo_job, AGENT_JOB]
     cron_jobs: ClassVar[list[CronJob]] = [
         cron(
             cleanup_expired_demos,
@@ -218,6 +259,7 @@ class WorkerSettings:
             second=0,
             timeout=SWEEP_TIMEOUT_SECONDS,
         ),
+        cron(sweep_stuck_agent_runs, second=30, timeout=STUCK_RUNS_TIMEOUT_SECONDS),
     ]
     on_startup = startup
     on_shutdown = shutdown

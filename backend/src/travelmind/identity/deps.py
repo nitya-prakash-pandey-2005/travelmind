@@ -6,8 +6,10 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request, status
 
 from travelmind.config import get_settings
-from travelmind.db import DbSession, bind_tenant
+from travelmind.db import DbSession, bind_tenant, get_sessionmaker
 from travelmind.identity import service
+from travelmind.identity.sessioncache import session_cache
+from travelmind.identity.tokens import hash_token
 
 
 @dataclass(frozen=True)
@@ -20,25 +22,58 @@ class CurrentUser:
 
 
 async def get_current_user(request: Request, db: DbSession) -> CurrentUser:
+    """The signed-in user, from the per-process session cache (sessioncache) or the database."""
     token = request.cookies.get(get_settings().session_cookie_name)
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Please sign in.")
-    user = await service.get_user_for_session_token(db, token)
-    if user is None:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "Your session has expired. Please sign in again."
+    token_hash = hash_token(token)
+    cache = session_cache()
+    user = cache.get(token_hash)
+    if not isinstance(user, CurrentUser):
+        generation = cache.generation
+        found = await service.find_session_user(db, token_hash)
+        # End the lookup's transaction now: the endpoint's own statements begin a fresh one,
+        # which carries the tenant bound below (db.TenantSession re-applies it on every begin).
+        await db.commit()
+        if found is None:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "Your session has expired. Please sign in again."
+            )
+        user = CurrentUser(
+            id=found.id,
+            agency_id=found.agency_id,
+            email=found.email,
+            full_name=found.full_name,
+            role=found.role,
+        )
+        cache.put(
+            token_hash,
+            user,
+            user_id=user.id,
+            agency_id=user.agency_id,
+            expires_at=found.expires_at,
+            generation=generation,
         )
     await bind_tenant(db, user.agency_id)
-    return CurrentUser(
-        id=user.id,
-        agency_id=user.agency_id,
-        email=user.email,
-        full_name=user.full_name,
-        role=user.role,
-    )
+    return user
 
 
 AuthedUser = Annotated[CurrentUser, Depends(get_current_user)]
+
+
+async def session_is_live(token_hash: str) -> bool:
+    """Whether the session is still live (not revoked or expired, its user active): from the
+    session cache, else the database. For long requests (an event stream) that check again
+    while they run. A database error counts as live: the next check decides."""
+    if isinstance(session_cache().get(token_hash), CurrentUser):
+        return True
+    try:
+        async with get_sessionmaker()() as db:
+            found = await service.find_session_user(db, token_hash)
+            await db.commit()
+    except Exception:
+        return True
+    return found is not None
 
 
 def require_role(*roles: str) -> Callable[..., Awaitable[CurrentUser]]:

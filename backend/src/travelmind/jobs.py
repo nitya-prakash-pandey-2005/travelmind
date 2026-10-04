@@ -11,7 +11,8 @@ A request must never hang on the queue: `enqueue` and `job_status` each give up 
 only once (arq's default is 5 retries a second apart).
 
 Callers must map that TimeoutError to 503 Service Unavailable (the queue is unavailable), never
-let it surface as a 500. No HTTP endpoint calls these yet; the first one owns that mapping.
+let it surface as a 500: the agent API does (`agent.service.launch` fails the run and raises
+QueueUnavailable, which the router answers with 503).
 """
 
 import asyncio

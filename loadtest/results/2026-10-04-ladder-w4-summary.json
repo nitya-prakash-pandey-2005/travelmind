@@ -1,0 +1,292 @@
+{
+  "run_id": "2026-10-04-ladder-w4",
+  "stages": [
+    {
+      "duration": "1m",
+      "target": 200,
+      "hold": false
+    },
+    {
+      "duration": "2m",
+      "target": 200,
+      "hold": true
+    },
+    {
+      "duration": "1m",
+      "target": 500,
+      "hold": false
+    },
+    {
+      "duration": "3m",
+      "target": 500,
+      "hold": true
+    },
+    {
+      "duration": "1m",
+      "target": 750,
+      "hold": false
+    },
+    {
+      "duration": "3m",
+      "target": 750,
+      "hold": true
+    },
+    {
+      "duration": "1m",
+      "target": 1000,
+      "hold": false
+    },
+    {
+      "duration": "3m",
+      "target": 1000,
+      "hold": true
+    },
+    {
+      "duration": "30s",
+      "target": 0,
+      "hold": false
+    }
+  ],
+  "max_vus": 1000,
+  "duration_s": 554,
+  "total": {
+    "requests": 100794,
+    "rps": 181.9,
+    "error_rate": 0.00015873960751632043,
+    "iterations": 86582
+  },
+  "checks": {
+    "rate": 0.9998398430461852,
+    "passes": 99886,
+    "fails": 16
+  },
+  "kinds": {
+    "public": {
+      "requests": 25926,
+      "rps": 46.8,
+      "p50_ms": 13,
+      "p95_ms": 1105,
+      "p99_ms": 2151,
+      "max_ms": 5290,
+      "error_rate": 0.00008
+    },
+    "read": {
+      "requests": 39971,
+      "rps": 72.1,
+      "p50_ms": 185,
+      "p95_ms": 1989,
+      "p99_ms": 3502,
+      "max_ms": 7566,
+      "error_rate": 0.00023
+    },
+    "search": {
+      "requests": 13005,
+      "rps": 23.5,
+      "p50_ms": 261,
+      "p95_ms": 1602,
+      "p99_ms": 2619,
+      "max_ms": 5019,
+      "error_rate": 0.00015
+    },
+    "reprice": {
+      "requests": 12932,
+      "rps": 23.3,
+      "p50_ms": 171,
+      "p95_ms": 1490,
+      "p99_ms": 2507,
+      "max_ms": 5040,
+      "error_rate": 0.00008
+    },
+    "write": {
+      "requests": 8760,
+      "rps": 15.8,
+      "p50_ms": 249,
+      "p95_ms": 1648,
+      "p99_ms": 2640,
+      "max_ms": 5157,
+      "error_rate": 0.00023
+    }
+  },
+  "levels": {
+    "200": {
+      "hold_seconds": 120,
+      "requests": 12747,
+      "rps": 106.2,
+      "error_rate": 0,
+      "kinds": {
+        "public": {
+          "requests": 3342,
+          "rps": 27.9,
+          "p50_ms": 3,
+          "p95_ms": 56,
+          "p99_ms": 145,
+          "max_ms": 908,
+          "error_rate": 0
+        },
+        "read": {
+          "requests": 4902,
+          "rps": 40.9,
+          "p50_ms": 22,
+          "p95_ms": 80,
+          "p99_ms": 154,
+          "max_ms": 791,
+          "error_rate": 0
+        },
+        "search": {
+          "requests": 1675,
+          "rps": 14,
+          "p50_ms": 31,
+          "p95_ms": 70,
+          "p99_ms": 218,
+          "max_ms": 578,
+          "error_rate": 0
+        },
+        "reprice": {
+          "requests": 1674,
+          "rps": 14,
+          "p50_ms": 19,
+          "p95_ms": 46,
+          "p99_ms": 133,
+          "max_ms": 810,
+          "error_rate": 0
+        },
+        "write": {
+          "requests": 1154,
+          "rps": 9.6,
+          "p50_ms": 30,
+          "p95_ms": 68,
+          "p99_ms": 265,
+          "max_ms": 876,
+          "error_rate": 0
+        }
+      }
+    },
+    "500": {
+      "hold_seconds": 180,
+      "requests": 41295,
+      "rps": 229.4,
+      "error_rate": 0,
+      "kinds": {
+        "public": {
+          "requests": 10616,
+          "rps": 59,
+          "p50_ms": 16,
+          "p95_ms": 809,
+          "p99_ms": 1774,
+          "max_ms": 4584,
+          "error_rate": 0
+        },
+        "read": {
+          "requests": 16525,
+          "rps": 91.8,
+          "p50_ms": 192,
+          "p95_ms": 1360,
+          "p99_ms": 2949,
+          "max_ms": 5527,
+          "error_rate": 0
+        },
+        "search": {
+          "requests": 5287,
+          "rps": 29.4,
+          "p50_ms": 262,
+          "p95_ms": 1138,
+          "p99_ms": 2379,
+          "max_ms": 4179,
+          "error_rate": 0
+        },
+        "reprice": {
+          "requests": 5276,
+          "rps": 29.3,
+          "p50_ms": 170,
+          "p95_ms": 910,
+          "p99_ms": 1885,
+          "max_ms": 4107,
+          "error_rate": 0
+        },
+        "write": {
+          "requests": 3591,
+          "rps": 20,
+          "p50_ms": 252,
+          "p95_ms": 1103,
+          "p99_ms": 2387,
+          "max_ms": 4170,
+          "error_rate": 0
+        }
+      }
+    },
+    "750": {
+      "hold_seconds": 180,
+      "requests": 16995,
+      "rps": 94.4,
+      "error_rate": 0.00065,
+      "kinds": {
+        "public": {
+          "requests": 4442,
+          "rps": 24.7,
+          "p50_ms": 18,
+          "p95_ms": 1778,
+          "p99_ms": 2896,
+          "max_ms": 5290,
+          "error_rate": 0.00045
+        },
+        "read": {
+          "requests": 6659,
+          "rps": 37,
+          "p50_ms": 914,
+          "p95_ms": 3097,
+          "p99_ms": 4588,
+          "max_ms": 7566,
+          "error_rate": 0.00105
+        },
+        "search": {
+          "requests": 2207,
+          "rps": 12.3,
+          "p50_ms": 879,
+          "p95_ms": 2118,
+          "p99_ms": 3433,
+          "max_ms": 4989,
+          "error_rate": 0
+        },
+        "reprice": {
+          "requests": 2207,
+          "rps": 12.3,
+          "p50_ms": 794,
+          "p95_ms": 2201,
+          "p99_ms": 3503,
+          "max_ms": 5040,
+          "error_rate": 0.00045
+        },
+        "write": {
+          "requests": 1480,
+          "rps": 8.2,
+          "p50_ms": 891,
+          "p95_ms": 2391,
+          "p99_ms": 3642,
+          "max_ms": 5157,
+          "error_rate": 0.00068
+        }
+      }
+    },
+    "1000": {
+      "hold_seconds": 180,
+      "requests": 0,
+      "rps": 0,
+      "error_rate": 0,
+      "kinds": {
+        "public": null,
+        "read": null,
+        "search": null,
+        "reprice": null,
+        "write": null
+      }
+    }
+  },
+  "thresholds": {
+    "http_reqs{status:401} count<1": true,
+    "http_req_failed rate<0.01": true,
+    "http_req_duration{kind:public} p(95)<300": false,
+    "http_reqs{status:429} count<1": true,
+    "http_req_duration{kind:search} p(95)<2500": true,
+    "http_req_duration{kind:read} p(95)<300": false
+  }
+}

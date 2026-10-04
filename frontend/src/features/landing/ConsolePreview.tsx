@@ -514,18 +514,71 @@ export function SourceChips() {
   );
 }
 
-/** Compact results card: the sign-in panel and the closing band. */
-export function FareRowsCard({ rows, className }: { rows?: number; className?: string }) {
+/** The plotted route between two airports: a dashed great-circle style arc with a travelling dash. */
+export function RouteArc({ className }: { className?: string }) {
   return (
-    <div className={cn("rounded-lg border border-line-strong bg-bg p-3", className)}>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="font-mono text-sm font-medium text-ink">DEL → DXB</p>
-          <p className="text-[11px] text-dim">Fri 14 Nov · 1 adult · Economy · 4 results</p>
-        </div>
-        <SampleBadge />
+    <svg viewBox="0 0 240 56" className={cn("h-14 w-full", className)}>
+      {[14, 28, 42].map((gridY) => (
+        <line key={gridY} x1="0" x2="240" y1={gridY} y2={gridY} stroke="var(--tm-chart-grid)" strokeDasharray="2 6" />
+      ))}
+      <path d="M 12 46 Q 120 -6 228 46" fill="none" stroke="var(--tm-line-strong)" strokeWidth="1.25" />
+      <path d="M 12 46 Q 120 -6 228 46" fill="none" stroke="var(--tm-primary)" strokeWidth="1.75" strokeLinecap="round" className="tm-arc-flow" />
+      {[12, 228].map((cx) => (
+        <g key={cx}>
+          <circle cx={cx} cy="46" r="7" fill="var(--tm-primary)" opacity="0.15" />
+          <circle cx={cx} cy="46" r="3" fill="var(--tm-bg)" stroke="var(--tm-primary)" strokeWidth="1.5" />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * The fare search console in one frame: route header with its arc, the result rows, and fare
+ * insight beside supplier status. Nothing overlaps, so every row stays readable at any width.
+ */
+export function FareConsole({ rows = 3, className }: { rows?: number; className?: string }) {
+  return (
+    <div className={cn("overflow-hidden rounded-lg border border-line-strong bg-bg", className)}>
+      <div className="flex h-9 items-center gap-3 border-b border-line bg-surface px-3">
+        <span className="tm-micro">Fare search</span>
+        <span className="flex items-center gap-1.5 font-mono text-[10px] text-ok">
+          <span className="tm-live relative h-1.5 w-1.5 rounded-full bg-ok" />3 sources
+        </span>
+        <span className="ml-auto">
+          <SampleBadge />
+        </span>
       </div>
-      <FareTable variant="compact" rows={rows} />
+      <div className="grid gap-3 p-3">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
+          <div>
+            <p className="font-mono text-xl font-medium leading-6 text-ink">DEL</p>
+            <p className="text-[10px] text-faint">New Delhi</p>
+          </div>
+          <div className="min-w-0 text-center">
+            <RouteArc />
+            <p className="-mt-1 font-mono text-[10px] text-faint">2,192 km · 3h 40m nonstop</p>
+          </div>
+          <div className="text-right">
+            <p className="font-mono text-xl font-medium leading-6 text-ink">DXB</p>
+            <p className="text-[10px] text-faint">Dubai</p>
+          </div>
+        </div>
+        <p className="-mt-1 text-[11px] text-dim">Fri 14 Nov · 1 adult · Economy · 4 results, cheapest first</p>
+        <FareTable variant="compact" rows={rows} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FareInsightCard className="bg-surface" />
+          <SupplierStatusCard />
+        </div>
+      </div>
+      <div className="flex h-7 items-center gap-4 border-t border-line bg-surface px-3 font-mono text-[10px] text-faint">
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-ok" />
+          Search 1.2 s
+        </span>
+        <span className="hidden sm:inline">Prices include taxes</span>
+        <span className="ml-auto">09:42 UTC</span>
+      </div>
     </div>
   );
 }

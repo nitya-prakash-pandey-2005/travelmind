@@ -217,7 +217,7 @@ async def test_unreadable_hotels_only_is_unavailable(respx_mock):
 @pytest.mark.parametrize(
     ("checkin", "checkout", "message"),
     [
-        (-1, 2, "in the past"),
+        (-2, 2, "in the past"),
         (10, 10, "after check-in"),
         (10, 45, "at most 30 nights"),
         (361, 362, "360 days ahead"),
@@ -229,6 +229,22 @@ def test_request_validation(checkin, checkout, message):
             destination="BOM",
             checkin=TODAY + timedelta(days=checkin),
             checkout=TODAY + timedelta(days=checkout),
+        )
+
+
+def test_check_in_today_anywhere_on_earth_is_not_in_the_past():
+    from travelmind.offers.models import earliest_trip_date
+
+    earliest = earliest_trip_date()
+    stay = HotelSearchRequest(
+        destination="BOM", checkin=earliest, checkout=earliest + timedelta(days=1)
+    )
+    assert stay.nights == 1
+    with pytest.raises(ValueError, match="in the past"):
+        HotelSearchRequest(
+            destination="BOM",
+            checkin=earliest - timedelta(days=1),
+            checkout=earliest + timedelta(days=1),
         )
 
 

@@ -14,13 +14,22 @@ from travelmind.config import Settings, get_settings
 from travelmind.http import close_http_clients, get_http_client
 
 
-async def test_get_redis_reuses_one_pool():
-    first = await anext(get_redis())
-    second = await anext(get_redis())
-    assert first.connection_pool is second.connection_pool
-    assert get_shared_redis().connection_pool is first.connection_pool
+async def test_get_redis_reuses_one_client_and_pool():
+    """One client per process: requests never build their own (each costs CPU)."""
+    first = await get_redis()
+    second = await get_redis()
+    assert first is second is get_shared_redis()
     assert first.connection_pool.max_connections == 100
     assert await first.ping()
+
+
+async def test_close_redis_also_retires_the_shared_client():
+    before = get_shared_redis()
+    await close_redis()
+    after = get_shared_redis()
+    assert after is not before
+    assert after.connection_pool is not before.connection_pool
+    assert await after.ping()
 
 
 async def test_redis_pool_waits_for_a_free_connection_instead_of_failing(monkeypatch):
@@ -84,7 +93,10 @@ def captured_engine_kwargs(monkeypatch):
         return captured
 
     yield use
+    # Start the next test from a fresh engine *and* a sessionmaker bound to it (a sessionmaker
+    # left on the old engine would bypass listeners that tests attach to get_engine()).
     db_module.get_engine.cache_clear()
+    db_module.get_sessionmaker.cache_clear()
 
 
 def test_engine_pgbouncer_mode_disables_statement_cache(captured_engine_kwargs):
@@ -141,15 +153,21 @@ async def test_lifespan_starts_the_scheduler_only_when_enabled(monkeypatch, run_
 
     settings = Settings(_env_file=None, environment="development", run_scheduler=run_scheduler)  # type: ignore[call-arg]
     started: list[float] = []
+    swept: list[float] = []
 
     async def fake_cleanup_loop(interval_seconds: float) -> None:
         started.append(interval_seconds)
 
+    async def fake_sweep_loop(interval_seconds: float) -> None:
+        swept.append(interval_seconds)
+
     monkeypatch.setattr(main, "get_settings", lambda: settings)
     monkeypatch.setattr(main, "demo_cleanup_loop", fake_cleanup_loop)
+    monkeypatch.setattr(main, "stuck_agent_runs_loop", fake_sweep_loop)
     async with main.lifespan(main.create_app()):
         await asyncio.sleep(0)
     assert started == ([3600] if run_scheduler else [])
+    assert swept == ([60] if run_scheduler else [])  # the worker's minute sweep, in dev
 
 
 async def test_shared_http_client_keeps_no_cookies(respx_mock):

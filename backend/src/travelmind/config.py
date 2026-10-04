@@ -1,7 +1,7 @@
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import BeforeValidator
+from pydantic import BeforeValidator, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,9 +37,6 @@ class Settings(BaseSettings):
     read_cache_timeout_ms: int = 150
     read_cache_breaker_failures: int = 3
     read_cache_breaker_cooldown_s: float = 10.0
-    # A flight or hotel search refreshes the agency's dashboard (bumps its cache version) at most
-    # once per this many seconds per agency; 0 bumps on every search.
-    search_bump_interval_s: int = 5
     # Enqueueing a job or reading its status gives up after this (TimeoutError).
     job_queue_timeout_s: float = 2.0
     allowed_origins: list[str] = ["http://localhost:5173"]
@@ -77,11 +74,90 @@ class Settings(BaseSettings):
     supplier_breaker_threshold: int = 5
     supplier_breaker_reset_s: float = 30.0
     search_max_per_minute: int = 30
+    # Offers kept per agency for price checks and quote versions (offers.cache); past it, the
+    # soonest to expire go first.
+    offer_store_max_per_agency: int = 2000
     reprice_max_per_minute: int = 60  # price checks call the supplier too; a separate budget
     public_quote_max_per_minute: int = 60  # client quote page: per network and per link
+    # Agent engine (travelmind.agent). "auto": Gemini when a key is set, else the rule-based demo
+    # planner; production never falls back to the demo planner (the agent is unavailable).
+    agent_provider: Literal["gemini", "fake", "auto"] = "auto"
+    agent_model: str = "gemini-2.5-flash"  # the one place the model id is set
+    # Only from the environment (or .env): TM_GOOGLE_API_KEY, else (unset or blank) GOOGLE_API_KEY.
+    # A SecretStr, so reprs, dumps and logs of the settings show it masked.
+    google_api_key: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = None
+    # GOOGLE_API_KEY, read only to fill google_api_key (see _google_api_key_fallback).
+    google_api_key_fallback: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = Field(
+        default=None, validation_alias="GOOGLE_API_KEY", exclude=True, repr=False
+    )
+    agent_max_steps: int = 12
+    agent_step_timeout_s: float = 20.0
+    agent_run_timeout_s: float = 120.0
+    agent_run_token_cap: int = 60_000
+    agent_monthly_token_budget: int = 2_000_000
+    # Gemini's thinking tokens per model call (billed as output); 0 turns thinking off (Flash).
+    agent_thinking_budget: int = Field(1024, ge=0)
+    # A rate-limited model call (429) is retried this many times per step, after
+    # agent_rate_limit_backoff_s, then twice that, each plus up to a quarter of it as jitter.
+    agent_rate_limit_retries: int = Field(2, ge=0)
+    agent_rate_limit_backoff_s: float = Field(2.0, ge=0)
+    agent_max_concurrent_runs_per_agency: int = 3
+    # How long a run slot is held at most, counted from when it is taken (at run creation), so it
+    # covers the queue wait and the run itself (agent_run_timeout_s); a crashed holder's slot
+    # lapses after this. See travelmind.agent.budget for what Task 3 must decide around it.
+    agent_run_slot_ttl_s: float = 300.0
+    # New runs an agency may start per minute (each run is several model calls).
+    agent_runs_per_minute: int = 10
+    # Run agent jobs in the API process (an asyncio task) instead of the arq queue. None: inline in
+    # development and test only, so a dev API needs no worker; production queues them.
+    agent_inline: Annotated[bool | None, BeforeValidator(_blank_to_none)] = None
+    # Places and weather for the agent's tools (travelmind.agent.tools). Contact for the
+    # User-Agent sent to OpenStreetMap services (Nominatim, Overpass), whose usage policies ask
+    # for an identifiable client: a URL or email of whoever runs this deployment. Empty sends
+    # the product name only.
+    osm_contact: str = ""
+    # The public instances by default. Their policies (max 1 request/s for Nominatim, about
+    # 10,000 requests a day for Overpass, no heavy or backend use) suit development and light
+    # use; a busy production deployment should point these at its own or a paid instance.
+    osm_nominatim_url: str = "https://nominatim.openstreetmap.org"
+    osm_overpass_url: str = "https://overpass-api.de/api/interpreter"
+    # OpenTripMap replaces Overpass for find_places when set. Sent in the query string, so the
+    # URL is never logged.
+    opentripmap_key: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = None
+    # Open-Meteo's free API (api.open-meteo.com, archive-api.open-meteo.com) is for non-commercial
+    # use only. With a paid plan's key the weather tool uses the customer hosts
+    # (customer-api.open-meteo.com, customer-archive-api.open-meteo.com; historical weather needs
+    # the Professional plan or higher). Production without a key has no weather. The key travels
+    # in the query string, so URLs are never logged.
+    open_meteo_api_key: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = None
     log_level: str = "INFO"
     # Bearer token for GET /metrics. Empty: /metrics is served only outside production.
     metrics_token: str = ""
+
+    @model_validator(mode="after")
+    def _google_api_key_fallback(self) -> Self:
+        """A blank TM_GOOGLE_API_KEY= (as conftest and .env templates set) must not hide
+        GOOGLE_API_KEY: an unset or blank TM key falls back to it."""
+        if self.google_api_key is None:
+            self.google_api_key = self.google_api_key_fallback
+        return self
+
+    @model_validator(mode="after")
+    def _no_inline_agent_runs_in_production(self) -> Self:
+        """Inline runs live in an API process, with no job timeout or stuck-run recovery of their
+        own: production queues them for the worker. Refused at startup, not ignored."""
+        if self.environment == "production" and self.agent_inline:
+            raise ValueError(
+                "TM_AGENT_INLINE=true is not allowed in production: agent runs must go through "
+                "the worker queue. Unset TM_AGENT_INLINE (or set it to false)."
+            )
+        return self
+
+    @property
+    def agent_inline_enabled(self) -> bool:
+        if self.agent_inline is not None:
+            return self.agent_inline
+        return self.environment in ("development", "test")
 
     @property
     def sandbox_supplier_enabled(self) -> bool:

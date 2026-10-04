@@ -208,13 +208,21 @@ async def test_cleanup_job_removes_expired_demo(client, airports):
 
 def test_worker_settings_schedule_the_jobs():
     settings = worker.WorkerSettings
-    assert settings.functions == [worker.generate_demo_job]
+    assert settings.functions[0] is worker.generate_demo_job
+    assert [f.name for f in settings.functions[1:]] == ["run_agent_job"]
     crons = {job.name: job for job in settings.cron_jobs}
-    assert set(crons) == {"cron:cleanup_expired_demos", "cron:expire_overdue_quotes_all"}
+    assert set(crons) == {
+        "cron:cleanup_expired_demos",
+        "cron:expire_overdue_quotes_all",
+        "cron:sweep_stuck_agent_runs",
+    }
     cleanup, sweep = crons["cron:cleanup_expired_demos"], crons["cron:expire_overdue_quotes_all"]
+    stuck = crons["cron:sweep_stuck_agent_runs"]
     assert (cleanup.minute, cleanup.second, cleanup.run_at_startup) == (0, 0, True)
     assert sweep.minute == set(range(0, 60, 5)) and sweep.second == 0
-    assert cleanup.unique and sweep.unique  # one run per tick across worker replicas
+    assert stuck.minute is None and stuck.second == 30  # every minute
+    assert stuck.timeout_s is not None and stuck.timeout_s < 60  # never overlaps the next
+    assert cleanup.unique and sweep.unique and stuck.unique  # one run per tick across replicas
     assert settings.on_startup is worker.startup and settings.on_shutdown is worker.shutdown
     assert settings.redis_settings.database == 15  # from TM_REDIS_URL (the test database)
 
@@ -508,3 +516,17 @@ async def test_worker_shutdown_closes_the_job_queue():
     await worker.shutdown({})
     assert jobs._queue is None
     assert await jobs.queue() is not queue
+
+
+async def test_the_stuck_run_sweep_job_runs_the_sweeper(monkeypatch):
+    from travelmind.agent import service as agent_service
+
+    calls: list[str] = []
+
+    async def sweep(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append("swept")
+        return 2
+
+    monkeypatch.setattr(agent_service, "sweep_stuck_runs", sweep)
+    assert await worker.sweep_stuck_agent_runs({}) == 2
+    assert calls == ["swept"]

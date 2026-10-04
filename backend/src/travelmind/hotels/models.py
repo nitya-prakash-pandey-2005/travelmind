@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, model_validator
 
-from travelmind.offers.models import IataCode, Provenance
+from travelmind.offers.models import IataCode, Provenance, earliest_trip_date
 from travelmind.offers.money import Money
 
 MAX_NIGHTS = 30
@@ -29,7 +29,7 @@ class HotelSearchRequest(BaseModel):
     @model_validator(mode="after")
     def _check_stay(self) -> "HotelSearchRequest":
         today = datetime.now(UTC).date()
-        if self.checkin < today:
+        if self.checkin < earliest_trip_date():
             raise ValueError("The check-in date is in the past.")
         if self.checkin > today + timedelta(days=MAX_DAYS_AHEAD):
             raise ValueError(f"Hotels only sell about {MAX_DAYS_AHEAD} days ahead.")

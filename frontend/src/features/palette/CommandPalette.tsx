@@ -17,6 +17,7 @@ import {
   Sun,
   UserRound,
   Users,
+  Waypoints,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -97,6 +98,7 @@ export function CommandPalette() {
     { id: "nav-pipeline", group: "Navigate", label: "Pipeline", icon: SquareKanban, keywords: "enquiries board kanban stages leads won lost", run: () => void navigate({ to: "/app/pipeline" }) },
     { id: "nav-quotes", group: "Navigate", label: "Quotes", icon: FileText, keywords: "proposals offers markup send share link accepted", run: () => void navigate({ to: "/app/quotes" }) },
     { id: "nav-clients", group: "Navigate", label: "Clients", icon: UserRound, keywords: "customers travellers companies contacts", run: () => void navigate({ to: "/app/clients" }) },
+    { id: "nav-agent", group: "Navigate", label: "Agent", icon: Waypoints, keywords: "plan trip itinerary agent request runs", run: () => void navigate({ to: "/app/agent" }) },
     { id: "nav-fares", group: "Navigate", label: "Fare search", icon: Plane, keywords: "flights fares prices offers scan", run: () => void navigate({ to: "/app/fares" }) },
     { id: "nav-hotels", group: "Navigate", label: "Hotel search", icon: BedDouble, keywords: "hotels rooms stay accommodation scan", run: () => void navigate({ to: "/app/hotels" }) },
     { id: "nav-routes", group: "Navigate", label: "Route intel", icon: ChartLine, keywords: "route intelligence fare history trends median carriers", run: () => void navigate({ to: "/app/routes" }) },
@@ -116,6 +118,7 @@ export function CommandPalette() {
           } satisfies PaletteCommand,
         ]
       : []),
+    { id: "plan-trip", group: "Actions", label: "Plan a trip with the agent", icon: Waypoints, keywords: "new plan itinerary agent request", run: () => void navigate({ to: "/app/agent" }) },
     { id: "logout", group: "Actions", label: "Sign out", icon: LogOut, keywords: "logout exit leave", run: () => logout.mutate() },
   ];
   const needle = search.trim().toLowerCase();

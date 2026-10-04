@@ -282,3 +282,53 @@ async def test_cleanup_caps_batches_per_run_and_the_next_run_continues(monkeypat
     assert len(await _agency_names()) == 7
     assert await cleanup.run_demo_cleanup() == 5
     assert await _agency_names() == ["Live demo", "Real Co"]
+
+
+async def test_cleanup_publishes_one_eviction_per_batch(monkeypatch):
+    """Each committed batch's agencies go out in one message, not one message per agency."""
+    from travelmind.cache import get_shared_redis
+    from travelmind.identity.sessioncache import EVICT_CHANNEL
+
+    await _seed_demo_backlog(25)
+    monkeypatch.setattr(cleanup, "CLEANUP_BATCH_SIZE", 10)
+    listener = get_shared_redis().pubsub()
+    await listener.subscribe(EVICT_CHANNEL)
+    try:
+        assert await cleanup.run_demo_cleanup() == 25
+        messages: list[str] = []
+        for _ in range(20):  # the subscribe confirmation reads as None too
+            m = await listener.get_message(ignore_subscribe_messages=True, timeout=0.05)
+            if m is not None:
+                messages.append(m["data"].decode())
+    finally:
+        await listener.unsubscribe()
+        await listener.aclose()
+    assert [m.split(":", 1)[0] for m in messages] == ["agency"] * 3
+    assert [len(m.split(":", 1)[1].split(",")) for m in messages] == [10, 10, 5]
+
+
+async def test_cleanup_stops_publishing_after_a_failed_publish(monkeypatch):
+    """Redis being down costs one publish timeout per run, not one per batch; this process's
+    own cache is still evicted for every batch."""
+    from travelmind.identity import sessioncache
+
+    await _seed_demo_backlog(25)
+    monkeypatch.setattr(cleanup, "CLEANUP_BATCH_SIZE", 10)
+    attempts: list[str] = []
+    applied: list[str] = []
+
+    async def failing_publish(redis, kind, value) -> bool:  # type: ignore[no-untyped-def]
+        attempts.append(value)
+        return False
+
+    real_apply = sessioncache.SessionCache.apply
+
+    def recording_apply(self, message: str) -> None:  # type: ignore[no-untyped-def]
+        applied.append(message)
+        real_apply(self, message)
+
+    monkeypatch.setattr(cleanup, "publish_eviction", failing_publish)
+    monkeypatch.setattr(sessioncache.SessionCache, "apply", recording_apply)
+    assert await cleanup.run_demo_cleanup() == 25
+    assert len(attempts) == 1
+    assert len(applied) == 3
