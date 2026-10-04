@@ -341,11 +341,15 @@ async def test_ask_and_reply_through_the_api(client, monkeypatch):
         "call_id": "a1",
         "question": "How many adults?",
         "fields": [],
+        "unverified": False,
     }
     replied = await client.post(f"{RUNS}/{run_id}/reply", json={"text": "2 adults"})
     assert replied.status_code == 202 and replied.json()["status"] == "queued"
     done = await wait_for(client, run_id, "done")
     assert done["pending"] is None
+    reply = next(s for s in done["steps"] if s["kind"] == "user")
+    assert reply["payload"]["text"] == "2 adults"
+    assert "by_user_id" not in reply["payload"]  # stored for the audit, never sent
     again = await client.post(f"{RUNS}/{run_id}/reply", json={"text": "more"})
     assert again.status_code == 409
 
@@ -366,7 +370,9 @@ async def test_confirm_and_reject_through_the_api(client, monkeypatch):
     assert rejected.status_code == 202
     done = await wait_for(client, run_id, "done")
     assert (await client.get("/api/v1/enquiries")).json()["total"] == 0
-    assert any(s["kind"] == "user" for s in done["steps"])
+    decision = next(s for s in done["steps"] if s["kind"] == "user")
+    assert decision["payload"]["decision"] == "declined"
+    assert "by_user_id" not in decision["payload"]
 
 
 async def test_cancel_through_the_api(client, monkeypatch):

@@ -114,7 +114,7 @@ class CreateEnquiryArgs(Args):
     adults: int = Field(1, ge=1, le=MAX_PASSENGERS)
     children_ages: list[ChildAge] = Field(default_factory=list, max_length=8)
     cabin: Cabin = "economy"
-    budget_minor: int | None = Field(None, gt=0, description="Budget in minor units.")
+    budget_minor: int | None = Field(None, ge=1, description="Budget in minor units.")
     budget_currency: CurrencyCode | None = None
     notes: str | None = Field(None, max_length=2000)
 

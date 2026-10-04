@@ -312,6 +312,7 @@ async def test_loop_limits_max_steps(agency):
     assert status == "failed" and run.status == "failed"
     assert run.error == "The plan took too many steps."
     assert len(provider.requests) == 3
+    assert provider.requests[-1].tools == ()  # the last step is asked to answer, no tools
     assert await slot_holders(agency[0]) == []
 
 
@@ -1054,3 +1055,273 @@ async def test_the_sweeper_leaves_other_agencies_and_finished_runs_alone(agency)
     assert await _sweep(datetime.now(UTC) + timedelta(seconds=30)) == 0
     assert (await load(agency, done_run))[0].status == "done"
     assert (await load(other, fresh))[0].status == "queued"
+
+
+# --- live readiness: rate limits, unusable turns, the last step --------------------------------
+
+BUSY = "The planning model is busy right now. Try again shortly."
+
+
+def rate_limited() -> ProviderError:
+    return ProviderError("rate_limited")
+
+
+def finished(reason: str, text: str | None = None, *calls: ToolCall) -> Generation:
+    return Generation(
+        text=text, calls=calls, input_tokens=10, output_tokens=5, finish_reason=reason
+    )
+
+
+@pytest.fixture
+def naps(monkeypatch) -> list[float]:
+    """The loop's backoff sleeps, recorded instead of slept."""
+    from travelmind.agent import loop
+
+    slept: list[float] = []
+
+    async def nap(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr(loop, "_sleep", nap)
+    return slept
+
+
+async def test_a_rate_limited_call_is_retried_after_a_backoff(agency, naps):
+    provider, run, steps = await run_script(agency, [rate_limited(), rate_limited(), gen("Done.")])
+    assert run.status == "done" and run.error is None
+    assert len(provider.requests) == 3
+    assert len(naps) == 2 and 2.0 <= naps[0] <= 2.5 and 4.0 <= naps[1] <= 5.0
+    errors = [s.payload for s in steps if s.kind == "error"]
+    assert [e["code"] for e in errors] == ["rate_limited", "rate_limited"]
+    assert all("trying again" in e["message"] for e in errors)
+
+
+async def test_a_third_rate_limit_in_a_step_fails_the_run(agency, naps):
+    provider, run, steps = await run_script(
+        agency, [rate_limited(), rate_limited(), rate_limited(), gen("Never.")]
+    )
+    assert run.status == "failed" and run.error == BUSY
+    assert len(provider.requests) == 3 and len(naps) == 2
+    assert steps[-1].kind == "error" and steps[-1].payload["code"] == "rate_limited"
+
+
+async def test_each_step_gets_its_own_rate_limit_retries(agency, naps):
+    provider, run, _ = await run_script(
+        agency,
+        [
+            rate_limited(),
+            rate_limited(),
+            gen(None, tc("lookup_airport", query="Delhi")),
+            rate_limited(),
+            rate_limited(),
+            gen("Done."),
+        ],
+    )
+    assert run.status == "done" and len(naps) == 4 and len(provider.requests) == 6
+
+
+async def test_rate_limit_retries_are_not_steps(agency, naps):
+    _, run, _ = await run_script(
+        agency, [rate_limited(), rate_limited(), gen("Done.")], agent_max_steps=1
+    )
+    assert run.status == "done"
+
+
+async def test_a_backoff_never_outlasts_the_run(agency, naps):
+    provider, run, _ = await run_script(
+        agency,
+        [rate_limited(), gen("Never.")],
+        agent_run_timeout_s=1.0,
+        agent_rate_limit_backoff_s=5.0,
+    )
+    assert run.status == "failed" and run.error == BUSY  # not "took too long" after a wait
+    assert naps == [] and len(provider.requests) == 1
+
+
+async def test_an_empty_turn_is_retried_once_with_a_nudge(agency):
+    provider, run, steps = await run_script(agency, [gen(None), gen("Done.")])
+    assert run.status == "done" and run.grounded is True
+    nudge = provider.requests[1].messages[-1]
+    assert nudge.role == "user" and nudge.engine is True
+    assert "empty" in (nudge.text or "").lower()
+    assert [s.payload["code"] for s in steps if s.kind == "error"] == ["empty"]
+
+
+async def test_a_second_empty_turn_fails_the_run(agency):
+    provider, run, steps = await run_script(agency, [gen(None), gen(""), gen("Never.")])
+    assert run.status == "failed" and run.error == "The planning model gave no answer."
+    assert len(provider.requests) == 2
+    assert steps[-1].kind == "error" and steps[-1].payload["code"] == "empty"
+
+
+async def test_a_cut_off_answer_is_retried_with_a_be_brief_nudge(agency):
+    provider, run, _ = await run_script(
+        agency, [finished("MAX_TOKENS", "A very long answer that never"), gen("Short.")]
+    )
+    assert run.status == "done" and run.grounded is True
+    nudge = provider.requests[1].messages[-1]
+    assert nudge.engine is True and "brief" in (nudge.text or "").lower()
+    # the cut-off text is not part of the conversation
+    assert all("never" not in (m.text or "") for m in provider.requests[1].messages)
+
+
+async def test_a_second_cut_off_answer_falls_back_to_the_board(agency, airports):
+    _, run, steps = await run_script(
+        agency,
+        [
+            gen(None, tc("search_flights", **flights_args())),
+            finished("MAX_TOKENS", "The best fare is"),
+            finished("MAX_TOKENS", "The best"),
+        ],
+    )
+    assert run.status == "done" and run.grounded is False
+    assert run.result is not None and run.result["fallback"] is True
+    assert run.result["flights"][0]["offer_id"] == "F1"
+    assert steps[-2].kind == "guard" and steps[-2].payload["action"] == "fallback"
+
+
+async def test_a_second_cut_off_answer_with_nothing_found_fails(agency):
+    _, run, _ = await run_script(
+        agency, [finished("MAX_TOKENS", "Well"), finished("MAX_TOKENS", "Well")]
+    )
+    assert run.status == "failed"
+    assert run.error == "The planning model's answer was too long."
+
+
+async def test_a_cut_off_turn_with_whole_tool_calls_runs_them(agency):
+    _, run, steps = await run_script(
+        agency,
+        [finished("MAX_TOKENS", None, tc("lookup_airport", query="Delhi")), gen("Done.")],
+    )
+    assert run.status == "done"
+    assert kinds(steps)[:2] == ["tool_call", "tool_result"]
+
+
+@pytest.mark.parametrize(
+    ("reason", "said"),
+    [("UNEXPECTED_TOOL_CALL", "only the tools"), ("TOO_MANY_TOOL_CALLS", "at most 4")],
+)
+async def test_an_unusable_tool_call_turn_is_explained_and_retried(agency, reason, said):
+    provider, run, steps = await run_script(
+        agency, [finished(reason, None, tc("book_flight", offer_id="F1")), gen("Done.")]
+    )
+    assert run.status == "done"
+    assert "tool_call" not in kinds(steps)  # nothing from the unusable turn ran
+    nudge = provider.requests[1].messages[-1]
+    assert nudge.engine is True and said in (nudge.text or "")
+    assert [s.payload["code"] for s in steps if s.kind == "error"] == [reason.lower()]
+
+
+async def test_a_second_unusable_tool_call_turn_fails(agency):
+    _, run, _ = await run_script(
+        agency, [finished("UNEXPECTED_TOOL_CALL"), finished("UNEXPECTED_TOOL_CALL")]
+    )
+    assert run.status == "failed"
+    assert run.error == "The planning model gave an answer it could not use."
+
+
+async def test_the_last_step_answers_without_tools(agency, airports):
+    def final(messages):
+        nudge = messages[-1]
+        assert nudge.role == "user" and nudge.engine is True
+        assert "answer now" in (nudge.text or "").lower()
+        return grounded_answer(messages)
+
+    provider, run, _ = await run_script(
+        agency,
+        [
+            gen(None, tc("search_flights", **flights_args())),
+            gen(None, tc("lookup_airport", query="Mumbai")),
+            final,
+        ],
+        agent_max_steps=3,
+    )
+    assert run.status == "done" and run.grounded is True
+    assert all(request.tools for request in provider.requests[:2])
+    assert provider.requests[2].tools == ()
+
+
+async def test_running_out_of_steps_keeps_the_results(agency, airports):
+    def again(messages):
+        return gen(None, tc("search_flights", **flights_args(depart_date=day(30 + len(messages)))))
+
+    provider = FakeProvider(responder=again)
+    run_id = await start(agency, provider, agent_max_steps=2)
+    status = await drive(agency, run_id, provider, agent_max_steps=2)
+    run, steps = await load(agency, run_id)
+    assert status == "done" and run.status == "done" and run.grounded is False
+    assert run.result is not None and run.result["fallback"] is True
+    assert run.result["flights"] and run.result["summary"].startswith("DEL → BOM")
+    assert len(provider.requests) == 2 and provider.requests[1].tools == ()
+    assert len([s for s in steps if s.kind == "tool_call"]) == 1  # the last turn's calls don't run
+
+
+async def test_an_ungrounded_last_answer_falls_back_without_a_reprompt(agency, airports):
+    provider, run, steps = await run_script(
+        agency,
+        [gen(None, tc("search_flights", **flights_args())), gen("It is ₹1,111 on AI 999.")],
+        agent_max_steps=2,
+    )
+    assert run.status == "done" and run.grounded is False
+    assert [s.payload["action"] for s in steps if s.kind == "guard"] == ["fallback"]
+    assert len(provider.requests) == 2
+
+
+async def test_a_failed_last_step_keeps_the_results(agency, airports):
+    _, run, _ = await run_script(
+        agency,
+        [gen(None, tc("search_flights", **flights_args())), ProviderError("unavailable")],
+        agent_max_steps=2,
+    )
+    assert run.status == "done" and run.grounded is False
+    assert run.result is not None and run.result["flights"]
+
+
+async def test_an_unverified_question_is_masked_and_flagged(agency):
+    from travelmind.agent.schemas import pending_of
+
+    provider = FakeProvider(
+        [gen(None, tc("ask_user", question="Is ₹1,111 on AI 999 fine for 2 adults?"))]
+    )
+    run_id = await start(agency, provider)
+    assert await drive(agency, run_id, provider) == "waiting_for_user"
+    run, steps = await load(agency, run_id)
+    asked = steps[-1].payload
+    assert asked["unverified"] is True
+    assert asked["question"] == "Is … on … fine for 2 adults?"
+    state = RunState.from_json(run.state)
+    assert state.pending is not None and state.pending["question"] == asked["question"]
+    pending = pending_of(run)
+    assert pending is not None and pending["unverified"] is True
+    assert pending["question"] == asked["question"]
+
+
+async def test_a_grounded_question_is_shown_as_asked(agency):
+    provider = FakeProvider([gen(None, tc("ask_user", question="How many adults?"))])
+    run_id = await start(agency, provider)
+    await drive(agency, run_id, provider)
+    _, steps = await load(agency, run_id)
+    assert steps[-1].payload["question"] == "How many adults?"
+    assert steps[-1].payload["unverified"] is False
+
+
+async def test_the_model_sees_trimmed_results_and_the_trace_keeps_them_whole(agency, airports):
+    provider, run, steps = await run_script(
+        agency, [gen(None, tc("search_flights", **flights_args())), grounded_answer]
+    )
+    seen = last_results(provider.requests[1].messages)["search_flights"]["offers"][0]
+    stored = next(s for s in steps if s.kind == "tool_result").payload["data"]["offers"][0]
+    assert "provenance" in stored and "supplier_total_minor" in stored
+    assert "provenance" not in seen and "supplier_total_minor" not in seen
+    assert seen["total_formatted"] == stored["total_formatted"]
+    assert run.result is not None and "provenance" in run.result["flights"][0]  # the board's card
+    assert run.grounded is True
+
+
+async def test_the_system_prompt_states_the_budget_and_how_to_work(agency):
+    provider, _, _ = await run_script(agency, [gen("Hello.")], agent_max_steps=12)
+    system = provider.requests[0].system
+    assert "12 model turns" in system and "4 tool calls" in system
+    assert "lookup_airport" in system and "city names" in system
+    assert "in one turn" in system  # batch independent calls
+    assert "concise" in system.lower()

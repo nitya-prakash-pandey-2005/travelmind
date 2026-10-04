@@ -19,7 +19,10 @@ out of time counts as a failure:
   Travelpayouts). The supplier answered and our request
   was wrong, so it is healthy; the caller still logs it and returns its usual degraded result.
   401/403 (our credentials) and 429 (slow down) are failures, as are 5xx and timeouts. A
-  cancelled call has no outcome; if it was the half-open trial, the next call becomes the trial.
+  cancelled call has no outcome, and neither has an exception marked `breaker_neutral` (the
+  agent's Gemini rate limit, ProviderError of kind `rate_limited`: one key's quota, not an
+  outage; it neither counts as a failure nor clears the count). If a call without an outcome was
+  the half-open trial, the next call becomes the trial.
 - Each admitted call carries the breaker's epoch, which moves on every open and close. An
   outcome from an older epoch is ignored: a slow call admitted before the breaker opened can't
   close it without a trial, nor reopen it (or free the trial) while a trial is in flight.
@@ -241,7 +244,9 @@ class SupplierGuard:
             self._breaker.abandon(epoch)
             raise
         except BaseException as exc:
-            if _is_failure(exc):
+            if getattr(exc, "breaker_neutral", False):
+                self._breaker.abandon(epoch)  # no outcome either way (see the module docstring)
+            elif _is_failure(exc):
                 self._failed(exc, epoch)
             else:
                 self._succeeded(epoch)

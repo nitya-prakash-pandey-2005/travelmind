@@ -23,9 +23,26 @@ Pauses (status waiting_for_user, the run's slot handed back by the service):
   request.
 
 Limits, each ending the run with a clear status:
-- `agent_max_steps` model calls: failed, "The plan took too many steps."
+- `agent_max_steps` model calls. The last one is sent without tools, after a note that it is
+  the last turn ("answer now with what you have"); calls it makes anyway are not run. When that
+  answer can't be used (no text, ungrounded with no re-prompt left, a failed call) and the
+  searches found something, the run is done with the fallback board (grounded=false); with
+  nothing found, failed, "The plan took too many steps."
 - a model call over `agent_step_timeout_s`: an error step and one retry (after the cancel,
   step and budget checks again); a second: failed.
+- a rate-limited model call (429): an error step, then a retry after
+  `agent_rate_limit_backoff_s` (2 s), then after twice that, each plus up to a quarter of it as
+  jitter; at most `agent_rate_limit_retries` (2) per step. The model never ran, so a retry is
+  not a step, but the wait is running time: a backoff the run's time can't cover, or a third
+  429 in a step, fails the run with the rate-limit message.
+- a turn the model may redo (`REDO`): an empty one (no text, no calls), one cut off at the token
+  limit (finish reason MAX_TOKENS, no calls), one with a tool call it may not make
+  (UNEXPECTED_TOOL_CALL, TOO_MANY_TOOL_CALLS). Nothing in it is used: an error step, a note to
+  the model saying what went wrong (a user-role message the engine wrote), and one retry. The
+  same again before a usable turn: an empty turn fails the run ("The planning model gave no
+  answer."); the others end with the fallback board when the searches found something, and
+  fail otherwise. (Gemini's RECITATION, OTHER, SAFETY and the like are refused by the provider
+  itself: ProviderError "invalid", failed.)
 - `agent_run_timeout_s` of running time in all (time spent waiting for the user excluded):
   failed, "The plan took too long."
 - the run's token cap, or the agency's monthly budget (checked before every model call; every
@@ -38,11 +55,17 @@ not in the results is re-prompted once, then replaced by the plan's own summary 
 What is checked: the prose, the plan block's summary and next steps, and the itinerary the board
 would show (its days' titles, notes and dates are the model's words: `plan.itinerary_text`); on
 a fallback the itinerary keeps only its dates and items. Interim text with unverified values is
-not shown in the trace.
+not shown in the trace, and an ask_user question with unverified values is shown with each of
+them replaced by "…" and flagged (`unverified`).
+
+The model is sent each tool result trimmed (`tools.for_model`); the run keeps it whole for the
+trace, the board and the guard's facts.
 """
 
 import asyncio
 import json
+import math
+import random
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
@@ -57,7 +80,13 @@ from travelmind.agent.context import RunContext
 from travelmind.agent.facts import GroundFacts, facts_of
 from travelmind.agent.grounding import Violation, find_violations, reprompt_text, stated_facts
 from travelmind.agent.models import AgentRun
-from travelmind.agent.plan import build_result, fallback_summary, itinerary_text, split_answer
+from travelmind.agent.plan import (
+    PlanResult,
+    build_result,
+    fallback_summary,
+    itinerary_text,
+    split_answer,
+)
 from travelmind.agent.prompts import system_prompt
 from travelmind.agent.provider import (
     Generation,
@@ -66,6 +95,7 @@ from travelmind.agent.provider import (
     ProviderError,
     ToolCall,
     ToolResult,
+    ToolSpec,
 )
 from travelmind.agent.state import (
     RunState,
@@ -74,7 +104,7 @@ from travelmind.agent.state import (
     result_from_json,
     result_to_json,
 )
-from travelmind.agent.tools import execute, get_tool, specs_for
+from travelmind.agent.tools import execute, for_model, get_tool, specs_for
 from travelmind.agent.tools.base import ToolError, clean_text, display_date, format_money
 from travelmind.agent.tools.travel import check_codes
 from travelmind.agent.tools.workspace import find_enquiry
@@ -106,6 +136,32 @@ MODEL_TOO_SLOW = "The planning model took too long to answer."
 RETRYING = "The planning model took too long; trying again."
 TOKEN_CAP = "This plan reached its token limit."
 MONTHLY_BUDGET = "This month's agent budget is used up."
+BUSY_RETRYING = "The planning model is busy; trying again shortly."
+NO_ANSWER = "The planning model gave no answer."
+CUT_OFF = "The planning model's answer was too long."
+UNUSABLE = "The planning model gave an answer it could not use."
+ANSWER_NOW = (
+    "This is your last turn and no tools are left. Answer now with what you have, in the final "
+    "answer format."
+)
+# A turn the model may redo once, by its code: what the model is told, and the run's error when
+# it happens again (see the module docstring).
+REDO: dict[str, tuple[str, str]] = {
+    "empty": ("Your last turn was empty. Call a tool, or give the final answer.", NO_ANSWER),
+    "max_tokens": (
+        "Your answer was cut off: it was too long. Answer again, brief: a few short sentences "
+        "and the json block.",
+        CUT_OFF,
+    ),
+    "unexpected_tool_call": (
+        "That turn called a tool you can't use. Call only the tools listed, or answer.",
+        UNUSABLE,
+    ),
+    "too_many_tool_calls": (
+        f"That turn made too many tool calls. Make at most {MAX_CALLS_PER_TURN} per turn.",
+        UNUSABLE,
+    ),
+}
 
 LABELS = {
     "lookup_airport": "Looking up airports",
@@ -270,6 +326,24 @@ async def describe_action(ctx: RunContext, name: str, parsed: Any) -> str:
     return f"Run {_text(name) or 'a tool'}."
 
 
+async def _sleep(seconds: float) -> None:
+    await asyncio.sleep(seconds)
+
+
+def _problem(generation: Generation) -> str | None:
+    """The REDO code of a turn the model must redo; None for a usable one."""
+    reason = generation.finish_reason
+    if reason in ("UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS"):
+        return reason.lower()
+    if generation.calls:
+        return None  # whole calls, even in a turn cut off after them
+    if reason == "MAX_TOKENS":
+        return "max_tokens"
+    if not (generation.text or "").strip():
+        return "empty"
+    return None
+
+
 class _Loop:
     def __init__(
         self,
@@ -293,7 +367,11 @@ class _Loop:
             currency=ctx.currency,
             timezone=ctx.timezone,
             tools=self.specs,
+            max_steps=self.settings.agent_max_steps,
+            max_calls=MAX_CALLS_PER_TURN,
         )
+        self.redone: set[str] = set()  # REDO codes retried since the last usable turn
+        self.deadline = math.inf  # when the run's time runs out (time.monotonic)
 
     # --- the segment ----------------------------------------------------------------------
 
@@ -303,6 +381,7 @@ class _Loop:
         try:
             if remaining <= 0:
                 raise TimeoutError
+            self.deadline = started + remaining
             async with asyncio.timeout(remaining):
                 return await self._segment()
         except _Stop as stop:
@@ -355,7 +434,13 @@ class _Loop:
     async def _turn(self) -> LoopOutcome | None:
         await self._check_cancelled()
         await self._check_limits()
-        generation, took = await self._generate()
+        if self.state.turns + 1 >= self.settings.agent_max_steps:
+            return await self._last_turn()
+        generation, took = await self._generate(self.specs)
+        problem = _problem(generation)
+        if problem is not None:
+            return await self._redo(problem)
+        self.redone.clear()
         if generation.calls:
             if generation.text:
                 await self._thinking(generation.text, took)
@@ -375,8 +460,67 @@ class _Loop:
             return await self._run_calls(calls[:MAX_CALLS_PER_TURN], [], tail)
         return await self._answer(generation, took)
 
+    async def _last_turn(self) -> LoopOutcome:
+        """The last allowed model call: no tools, "answer now". An answer that can't be used
+        ends with the fallback board when there is one (see the module docstring)."""
+        self.state.messages.append(Message(role="user", text=ANSWER_NOW, engine=True))
+        try:
+            generation, took = await self._generate(())
+        except _Stop as stop:
+            board = self._board() if stop.outcome.status == "failed" else None
+            if board is None:
+                raise
+            return await self._finish(board, [], fallback=True)
+        if (generation.text or "").strip() and _problem(generation) is None:
+            outcome = await self._answer(replace(generation, calls=()), took, last=True)
+            assert outcome is not None  # the last answer is never re-prompted
+            return outcome
+        board = self._board()
+        if board is None:
+            await self._stop("failed", TOO_MANY_STEPS, "max_steps")
+        assert board is not None
+        return await self._finish(board, [], fallback=True, took=took)
+
+    async def _redo(self, problem: str) -> LoopOutcome | None:
+        """A turn the model may redo once (REDO): tell it what went wrong and go again."""
+        nudge, error = REDO[problem]
+        if problem in self.redone:
+            board = self._board() if problem != "empty" else None
+            if board is None:
+                await self._stop("failed", error, problem)
+            assert board is not None
+            await self._emit("error", {"code": problem, "message": error})
+            return await self._finish(board, [], fallback=True)
+        self.redone.add(problem)
+        retrying = f"{error.removesuffix('.')}; trying again."
+        await self._emit("error", {"code": problem, "message": retrying})
+        self.state.messages.append(Message(role="user", text=nudge, engine=True))
+        return None
+
+    def _board(self) -> PlanResult | None:
+        """The fallback board from what the searches found; None when they found nothing."""
+        result = build_result(
+            self.ctx.memory, self.state.results(), None, summary="", fallback=True
+        )
+        shown = (
+            result.trip,
+            result.flights,
+            result.hotels,
+            result.places,
+            result.itinerary,
+            result.budget,
+            result.weather,
+        )
+        if not any(shown):
+            return None
+        result.summary = fallback_summary(result)
+        return result
+
     async def _check_limits(self) -> None:
         if self.state.turns >= self.settings.agent_max_steps:
+            board = self._board()
+            if board is not None:
+                raise _Stop(await self._finish(board, [], fallback=True))
             await self._stop("failed", TOO_MANY_STEPS, "max_steps")
         if self.run.input_tokens + self.run.output_tokens >= self.settings.agent_run_token_cap:
             await self._stop("budget_exceeded", TOKEN_CAP, "token_cap")
@@ -392,8 +536,8 @@ class _Loop:
             await self._stop("budget_exceeded", MONTHLY_BUDGET, "monthly_budget")
         await release_connection(self.ctx.db)
 
-    async def _generate(self) -> tuple[Generation, int]:
-        timeouts = 0
+    async def _generate(self, tools: Sequence[ToolSpec]) -> tuple[Generation, int]:
+        timeouts = rate_limits = 0
         while True:
             self.state.turns += 1
             started = time.monotonic()
@@ -401,14 +545,19 @@ class _Loop:
                 async with asyncio.timeout(self.settings.agent_step_timeout_s):
                     generation = await self.provider.generate(
                         system=self.system,
-                        messages=list(self.state.messages),
-                        tools=self.specs,
+                        messages=[for_model(m) for m in self.state.messages],
+                        tools=tools,
                         timeout_s=self.settings.agent_step_timeout_s,
                     )
             except TimeoutError:
                 pass
             except ProviderError as exc:
                 await self._tokens(exc.input_tokens, exc.output_tokens)
+                if exc.kind == "rate_limited":
+                    self.state.turns -= 1  # the model never ran: not a step
+                    rate_limits += 1
+                    await self._back_off(rate_limits, exc, started)
+                    continue
                 if exc.kind != "timeout":
                     await self._stop("failed", exc.message, exc.kind)
             else:
@@ -419,6 +568,19 @@ class _Loop:
                 await self._stop("failed", MODEL_TOO_SLOW, "timeout")
             await self._emit("error", {"code": "timeout", "message": RETRYING}, _ms(started))
             await self._check_limits()  # steps, the run's tokens and the month's budget again
+
+    async def _back_off(self, attempt: int, exc: ProviderError, started: float) -> None:
+        """Wait before retrying a rate-limited call; or fail the run: a third 429 in a step,
+        or a wait the run's time can't cover."""
+        if attempt > self.settings.agent_rate_limit_retries:
+            await self._stop("failed", exc.message, exc.kind)
+        delay = self.settings.agent_rate_limit_backoff_s * 2 ** (attempt - 1)
+        delay += random.uniform(0, delay / 4)  # jitter, not a secret
+        if time.monotonic() + delay >= self.deadline:
+            await self._stop("failed", exc.message, exc.kind)
+        await self._emit("error", {"code": exc.kind, "message": BUSY_RETRYING}, _ms(started))
+        await _sleep(delay)
+        await self._check_cancelled()
 
     async def _tokens(self, input_tokens: int, output_tokens: int) -> None:
         input_tokens, output_tokens = max(0, input_tokens), max(0, output_tokens)
@@ -456,7 +618,9 @@ class _Loop:
         payload = {"text": None if unverified else text, "unverified": unverified}
         await self._emit("thinking", payload, took)
 
-    async def _answer(self, generation: Generation, took: int) -> LoopOutcome | None:
+    async def _answer(
+        self, generation: Generation, took: int, *, last: bool = False
+    ) -> LoopOutcome | None:
         text = (generation.text or "").strip()
         prose, plan = split_answer(text)
         checked = "\n".join(
@@ -470,7 +634,7 @@ class _Loop:
             violations = await self._violations(checked)
             violations += await self._violations(itinerary_text(draft.itinerary), within_trip=True)
         said = Message(role="model", text=generation.text, text_signature=generation.text_signature)
-        if violations and not self.state.reprompted:
+        if violations and not self.state.reprompted and not last:
             await self._emit(
                 "guard",
                 {
@@ -484,6 +648,22 @@ class _Loop:
             self.state.reprompted = True
             return None
         fallback = bool(violations) or not text
+        result = draft
+        if fallback:
+            result = build_result(memory, results, plan, summary=summary, fallback=True)
+            result.summary = fallback_summary(result)
+        self.state.messages.append(said)
+        return await self._finish(result, violations, fallback=fallback, took=took)
+
+    async def _finish(
+        self,
+        result: PlanResult,
+        violations: list[Violation],
+        *,
+        fallback: bool,
+        took: int | None = None,
+    ) -> LoopOutcome:
+        """The guard's verdict and the answer: the run is done."""
         await self._emit(
             "guard",
             {
@@ -492,11 +672,6 @@ class _Loop:
                 "violations": [v.to_json() for v in violations],
             },
         )
-        result = draft
-        if fallback:
-            result = build_result(memory, results, plan, summary=summary, fallback=True)
-            result.summary = fallback_summary(result)
-        self.state.messages.append(said)
         await self._emit(
             "answer",
             {"text": result.summary, "grounded": not fallback, "fallback": fallback},
@@ -605,7 +780,15 @@ class _Loop:
         if "error" in data:  # a question that didn't validate: the model sees why
             done.append(result)
             return None
-        shown = {"question": data["question"], "fields": data.get("fields") or []}
+        question = str(data["question"])
+        violations = await self._violations(question)
+        for violation in violations:  # values no tool returned are not shown as asked
+            question = question.replace(violation.text, "…")
+        shown = {
+            "question": question,
+            "fields": data.get("fields") or [],
+            "unverified": bool(violations),
+        }
         self.state.pending = self._pending("question", call, queue, done, tail, **shown)
         await self._emit("ask_user", {"kind": "question", "call_id": call.id, **shown})
         return LoopOutcome("waiting_for_user")

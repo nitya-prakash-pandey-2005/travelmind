@@ -95,6 +95,12 @@ class Settings(BaseSettings):
     agent_run_timeout_s: float = 120.0
     agent_run_token_cap: int = 60_000
     agent_monthly_token_budget: int = 2_000_000
+    # Gemini's thinking tokens per model call (billed as output); 0 turns thinking off (Flash).
+    agent_thinking_budget: int = Field(1024, ge=0)
+    # A rate-limited model call (429) is retried this many times per step, after
+    # agent_rate_limit_backoff_s, then twice that, each plus up to a quarter of it as jitter.
+    agent_rate_limit_retries: int = Field(2, ge=0)
+    agent_rate_limit_backoff_s: float = Field(2.0, ge=0)
     agent_max_concurrent_runs_per_agency: int = 3
     # How long a run slot is held at most, counted from when it is taken (at run creation), so it
     # covers the queue wait and the run itself (agent_run_timeout_s); a crashed holder's slot

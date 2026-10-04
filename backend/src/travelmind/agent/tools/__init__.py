@@ -19,24 +19,40 @@ result vouches for (prices, flight numbers, dates, codes, names) and skips the f
 wrote itself (`MODEL_AUTHORED_PATHS`: itinerary titles, notes and dates, ask_user's question)
 and every error.
 
+`for_model(message)` is what the model is sent of a message's results: the data less what it
+needs no words for (the supplier's own total and the rates' date when nothing was converted,
+provenance, attribution, sources that answered normally, empty fields). The run keeps the whole
+result: the trace, the board's cards and the guard's facts read that, so every value the model
+is sent is also a value the guard accepts.
+
 `confirm` marks the write tools the engine must get the user's approval for before calling
 `execute`; `ends_turn` marks ask_user, after which the run waits for the user.
 """
 
 import asyncio
 import json
+from dataclasses import replace
 from typing import Any
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.agent.context import ROLES, RunContext
-from travelmind.agent.provider import ToolCall, ToolResult, ToolSpec
+from travelmind.agent.provider import Message, ToolCall, ToolResult, ToolSpec
 from travelmind.agent.tools import places, planning, travel, weather, workspace
 from travelmind.agent.tools.base import Tool, ToolError, TypedTool, clean_text
 from travelmind.db import release_connection
 
-__all__ = ["TOOLS", "Tool", "ToolError", "execute", "get_tool", "specs_for", "tools_for"]
+__all__ = [
+    "TOOLS",
+    "Tool",
+    "ToolError",
+    "execute",
+    "for_model",
+    "get_tool",
+    "specs_for",
+    "tools_for",
+]
 
 log = structlog.get_logger()
 
@@ -147,6 +163,51 @@ TOOLS: tuple[Tool, ...] = (
         confirm=True,
     ),
 )
+
+
+# What a result keeps only for the run (the trace, the board, the guard): never for wording.
+_NOT_FOR_MODEL = frozenset(
+    {
+        "provenance",
+        "attribution",
+        "source",
+        "fx_as_of",
+        "supplier_total_minor",
+        "supplier_total_formatted",
+    }
+)
+
+
+def _trimmed(node: Any) -> Any:
+    if isinstance(node, list):
+        return [_trimmed(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    converted = node.get("converted") is True
+    kept: dict[str, Any] = {}
+    for key, value in node.items():
+        if value is None or key in _NOT_FOR_MODEL:
+            continue
+        if key in ("converted", "supplier_total_currency") and not converted:
+            continue  # the same as the shown total: nothing to say
+        if key == "sources" and isinstance(value, list):
+            value = [s for s in value if not (isinstance(s, dict) and s.get("status") == "ok")]
+            if not value:
+                continue
+        kept[key] = _trimmed(value)
+    return kept
+
+
+def for_model(message: Message) -> Message:
+    """`message` as the model is sent it: each result's data trimmed (see the module
+    docstring); an error is sent whole."""
+    if not message.results:
+        return message
+    results = tuple(
+        result if "error" in result.data else replace(result, data=_trimmed(result.data))
+        for result in message.results
+    )
+    return replace(message, results=results)
 
 
 def tools_for(role: str) -> list[Tool]:

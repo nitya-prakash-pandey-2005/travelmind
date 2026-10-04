@@ -434,7 +434,7 @@ def test_the_finish_reason_is_exposed():
     assert from_response(types.GenerateContentResponse.model_validate({})).finish_reason is None
 
 
-@pytest.mark.parametrize("reason", ["MALFORMED_FUNCTION_CALL", "SAFETY"])
+@pytest.mark.parametrize("reason", ["MALFORMED_FUNCTION_CALL", "SAFETY", "RECITATION", "OTHER"])
 def test_a_malformed_or_unsafe_answer_is_invalid_and_keeps_its_tokens(reason):
     with pytest.raises(ProviderError) as caught:
         from_response(_finished(reason, [{"text": "partial"}]))
@@ -473,3 +473,130 @@ def test_a_text_part_signature_round_trips():
     assert part.text == "Planning." and part.thought_signature == b"text-sig"
     # equality ignores the opaque signature, as for tool calls
     assert generation == Generation(text="Planning.", calls=(), input_tokens=0, output_tokens=0)
+
+
+@pytest.mark.parametrize("reason", ["MAX_TOKENS", "UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS"])
+def test_a_cut_off_or_misdirected_turn_reaches_the_engine(reason):
+    """The engine retries these with a nudge (agent.loop), so they come back as a Generation."""
+    generation = from_response(_finished(reason, [{"text": "Half an ans"}]))
+    assert generation.finish_reason == reason and generation.text == "Half an ans"
+
+
+# --- the reply to a question, and turns the engine adds ----------------------------------
+
+
+def test_a_reply_sends_the_function_response_before_the_users_text():
+    asked = ToolCall(id="q-1", name="ask_user", args={"question": "How many adults?"})
+    answer = ToolResult(call_id="q-1", name="ask_user", data={"answer": "2 adults"})
+    contents = to_contents(
+        [
+            Message(role="user", text="Plan DEL to BOM"),
+            Message(role="model", calls=(asked,)),
+            Message(role="user", text="2 adults", results=(answer,)),
+        ]
+    )
+    assert [c.role for c in contents] == ["user", "model", "user"]
+    response_part, text_part = contents[2].parts or []
+    assert response_part.function_response is not None
+    assert response_part.function_response.id == "q-1"
+    assert text_part.text == "2 adults"
+
+
+def test_consecutive_turns_of_one_role_are_sent_as_one():
+    contents = to_contents(
+        [
+            Message(role="user", text="Plan DEL to BOM"),
+            Message(role="model", calls=(CALL,)),
+            Message(role="tool", results=(RESULT,)),
+            Message(role="user", text="Answer now.", engine=True),
+            Message(role="model", text=""),  # nothing to send
+            Message(role="user", text="Briefly.", engine=True),
+        ]
+    )
+    assert [c.role for c in contents] == ["user", "model", "user"]
+    parts = contents[2].parts or []
+    assert parts[0].function_response is not None
+    assert [p.text for p in parts[1:]] == ["Answer now.", "Briefly."]
+
+
+async def test_a_reply_request_body_puts_the_function_response_first(respx_mock):
+    route = respx_mock.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_response([{"text": "Noted."}]))
+    )
+    asked = ToolCall(id="q-1", name="ask_user", args={"question": "How many adults?"})
+    answer = ToolResult(call_id="q-1", name="ask_user", data={"answer": "2 adults"})
+    await _generate(
+        GeminiProvider(api_key=SecretStr(KEY), model=MODEL),
+        [
+            Message(role="user", text="Plan DEL to BOM"),
+            Message(role="model", calls=(asked,)),
+            Message(role="user", text="2 adults", results=(answer,)),
+        ],
+    )
+    body = json.loads(route.calls[0].request.content)
+    last = body["contents"][-1]
+    assert last["role"] == "user"
+    assert list(last["parts"][0]) == ["functionResponse"]
+    assert last["parts"][0]["functionResponse"]["response"] == {"data": {"answer": "2 adults"}}
+    assert last["parts"][1] == {"text": "2 adults"}
+
+
+# --- thinking, and rate limits ------------------------------------------------------------
+
+
+def test_the_config_sets_the_thinking_budget():
+    config = build_config(system="s", tools=[SPEC], timeout_s=20, thinking_budget=1024)
+    assert config.thinking_config == types.ThinkingConfig(thinking_budget=1024)
+    off = build_config(system="s", tools=[SPEC], timeout_s=20, thinking_budget=0)
+    assert off.thinking_config == types.ThinkingConfig(thinking_budget=0)
+    assert build_config(system="s", tools=[SPEC], timeout_s=20).thinking_config is None
+
+
+async def test_the_thinking_budget_is_sent(respx_mock):
+    route = respx_mock.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_response([{"text": "Hi."}]))
+    )
+    await _generate(GeminiProvider(api_key=SecretStr(KEY), model=MODEL, thinking_budget=512))
+    body = json.loads(route.calls[0].request.content)
+    # The SDK copies the config as is; the API reads proto JSON, which takes either spelling.
+    thinking = body["generationConfig"]["thinkingConfig"]
+    assert thinking in ({"thinkingBudget": 512}, {"thinking_budget": 512})
+
+
+def test_the_thinking_budget_comes_from_settings(monkeypatch):
+    from travelmind.agent.provider import get_provider
+    from travelmind.config import Settings
+
+    settings = Settings(_env_file=None).model_copy(
+        update={"agent_provider": "gemini", "google_api_key": SecretStr(KEY)}
+    )
+    assert settings.agent_thinking_budget == 1024
+    provider = get_provider(settings.model_copy(update={"agent_thinking_budget": 256}))
+    assert isinstance(provider, GeminiProvider) and provider.thinking_budget == 256
+
+
+async def test_rate_limits_never_open_the_breaker(respx_mock):
+    route = respx_mock.post(ENDPOINT).mock(
+        return_value=httpx.Response(429, json={"error": {"code": 429, "message": "slow down"}})
+    )
+    provider = GeminiProvider(api_key=SecretStr(KEY), model=MODEL)
+    for _ in range(get_settings().supplier_breaker_threshold + 2):
+        with pytest.raises(ProviderError) as caught:
+            await _generate(provider)
+        assert caught.value.kind == "rate_limited"
+    assert guard_for("gemini").state == "closed"
+    assert route.call_count == get_settings().supplier_breaker_threshold + 2
+
+
+async def test_a_rate_limit_neither_counts_nor_clears_failures(respx_mock):
+    statuses = iter([503] * (get_settings().supplier_breaker_threshold - 1) + [429, 503])
+    respx_mock.post(ENDPOINT).mock(
+        side_effect=lambda request: httpx.Response(
+            (code := next(statuses)), json={"error": {"code": code, "message": "no"}}
+        )
+    )
+    provider = GeminiProvider(api_key=SecretStr(KEY), model=MODEL)
+    for _ in range(get_settings().supplier_breaker_threshold + 1):
+        with pytest.raises(ProviderError):
+            await _generate(provider)
+    assert guard_for("gemini").state == "open"  # the 429 in between didn't reset the count

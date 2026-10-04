@@ -749,6 +749,23 @@ cases:
       error_code: max_steps
       max_turns: 4
 
+  - id: limits_out_of_steps_keeps_what_was_found
+    category: limits
+    prompt: *del_bom
+    settings: {agent_max_steps: 3}
+    script:
+      - *search_del_bom
+      - calls:
+          - name: lookup_airport
+            args: {query: Mumbai}
+        repeat: true
+    expect:
+      status: done
+      grounded: false
+      fallback: true
+      final_guard: fallback
+      max_turns: 3
+
   - id: limits_a_slow_tool
     category: limits
     prompt: "What's the weather like in Goa from {{+30:dm}} to {{+33:dm}}?"

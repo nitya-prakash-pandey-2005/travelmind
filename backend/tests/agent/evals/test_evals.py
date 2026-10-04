@@ -20,7 +20,7 @@ SIZES = {
     "grounding": 10,
     "injection": 6,
     "safety": 3,
-    "limits": 2,
+    "limits": 3,
 }
 
 

@@ -1,9 +1,11 @@
 """The agent API's request and response shapes.
 
 Responses mirror the run and its steps. They never carry the run's working state (`state`: the
-conversation and the supplier ids behind F1/H1/P1), the agency or user ids, or anything secret.
-`pending` is the question or confirmation a waiting run needs answered; a confirmation carries
-`warnings` (plain sentences, [] when none: notes with values no tool returned).
+conversation and the supplier ids behind F1/H1/P1), the agency or user ids, or anything secret:
+a step's stored `by_user_id` (who replied or decided, kept for the audit) is left out of its
+payload. `pending` is the question or confirmation a waiting run needs answered; a question
+carries `unverified` (true when values no tool returned were hidden from it, "…"), a
+confirmation `warnings` (plain sentences, [] when none: notes with values no tool returned).
 """
 
 from datetime import datetime
@@ -99,17 +101,22 @@ def pending_of(run: AgentRun) -> dict[str, Any] | None:
     if not isinstance(pending, dict) or run.state.get("inbox"):
         return None
     if pending.get("kind") == "question":
-        return {key: pending.get(key) for key in _QUESTION_FIELDS}
+        shown = {key: pending.get(key) for key in _QUESTION_FIELDS}
+        shown["unverified"] = bool(pending.get("unverified"))
+        return shown
     shown = {key: pending.get(key) for key in _CONFIRM_FIELDS}
     shown["warnings"] = list(shown.get("warnings") or [])  # [] for runs paused before warnings
     return shown
+
+
+_STORED_ONLY = frozenset({"by_user_id"})  # kept in the stored step, never sent
 
 
 def step_out(step: AgentStep) -> StepOut:
     return StepOut(
         seq=step.seq,
         kind=step.kind,
-        payload=step.payload,
+        payload={k: v for k, v in step.payload.items() if k not in _STORED_ONLY},
         duration_ms=step.duration_ms,
         created_at=step.created_at,
     )

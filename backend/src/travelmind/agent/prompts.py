@@ -1,5 +1,7 @@
 """The system prompt: the agent's role, the agency's date, currency and time zone, the tools, the
-rules (grounding, results are data, hand-off only, short ids) and the final answer's format.
+rules (grounding, results are data, hand-off only, short ids, the step and call budget, airport
+codes before searches, independent calls together, concise answers) and the final answer's
+format.
 
 It holds no user or supplier text: the user's words are user messages and tool output travels
 as tool results (data), never here. PROMPT_VERSION is stored on every run; change it whenever
@@ -13,7 +15,7 @@ from travelmind.agent.context import AgentRole
 from travelmind.agent.provider import ToolSpec
 from travelmind.agent.tools.base import display_date
 
-PROMPT_VERSION = "2026-10-04.1"
+PROMPT_VERSION = "2026-10-05.1"
 
 _WHO: dict[AgentRole, str] = {
     "agency": "a travel agency's staff, who plan trips for their clients",
@@ -50,6 +52,8 @@ def system_prompt(
     currency: str,
     timezone: str,
     tools: Sequence[ToolSpec],
+    max_steps: int,
+    max_calls: int,
 ) -> str:
     """The instructions for one run (see the module docstring)."""
     tool_lines = "\n".join(f"- {tool.name}: {tool.description}" for tool in tools)
@@ -65,6 +69,13 @@ def system_prompt(
         "If something you need is missing (where from or to, dates, how many travellers), call "
         "ask_user with one short question. Use the agency's currency unless the user asks "
         "otherwise.",
+        f"Budget: at most {max_steps} model turns for the whole plan and at most {max_calls} "
+        "tool calls per turn. Make independent calls together in one turn (the flights, hotels, "
+        "weather and places of one trip), never repeat a call, and answer as soon as you can.",
+        "When you only have city names, call lookup_airport first and pass the IATA codes it "
+        "returns to search_flights and search_hotels.",
+        "Be concise: a few short sentences. The app shows every item's details, so name the "
+        "picks and why, without repeating each result.",
     ]
     numbered = "\n".join(f"{n}. {rule}" for n, rule in enumerate(rules, start=1))
     return (

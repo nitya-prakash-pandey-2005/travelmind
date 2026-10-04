@@ -6,8 +6,10 @@ function calls come back to the engine as `ToolCall`s, and their results go back
 its own part, never text in the instructions.
 
 Each call goes through the "gemini" supplier guard (concurrency limit and circuit breaker) and is
-timed as supplier "gemini". Errors become `ProviderError(kind=...)`. The key is sent only in the
-SDK's `x-goog-api-key` header; it is never logged, put in a label or in an error message.
+timed as supplier "gemini". A 429 (a per-key rate limit, not an outage) leaves the breaker as it
+was; the engine retries it after a short backoff (agent.loop). Errors become
+`ProviderError(kind=...)`. The key is sent only in the SDK's `x-goog-api-key` header; it is never
+logged, put in a label or in an error message.
 
 One SDK client per key per process, made on first use (building one costs ~20 ms and opens its
 own HTTP pool); `close_clients()` closes them at shutdown. The client is pinned to the Gemini
@@ -106,22 +108,30 @@ def _result_part(result: ToolResult) -> types.Part:
 
 def to_contents(messages: Sequence[Message]) -> list[types.Content]:
     """The conversation as Gemini contents. Tool results are sent in a user-role turn of
-    function_response parts (the Gemini API's convention)."""
+    function_response parts (the Gemini API's convention); a user turn that also carries text
+    (the reply to ask_user) sends its function responses first, then the text. Consecutive
+    turns of one role (tool results, then a note the engine adds) are sent as one turn, and a
+    turn with nothing to send is left out, so user and model turns alternate."""
     contents: list[types.Content] = []
     for message in messages:
-        parts: list[types.Part] = []
+        text: list[types.Part] = []
         if message.text:
             signature = message.text_signature
-            parts.append(
+            text.append(
                 types.Part(
                     text=message.text,
                     thought_signature=base64.b64decode(signature) if signature else None,
                 )
             )
-        parts += [_call_part(call) for call in message.calls]
-        parts += [_result_part(result) for result in message.results]
-        if parts:
-            role = "model" if message.role == "model" else "user"
+        calls = [_call_part(call) for call in message.calls]
+        results = [_result_part(result) for result in message.results]
+        role = "model" if message.role == "model" else "user"
+        parts = text + calls if role == "model" else results + text
+        if not parts:
+            continue
+        if contents and contents[-1].role == role:
+            contents[-1].parts = [*(contents[-1].parts or []), *parts]
+        else:
             contents.append(types.Content(role=role, parts=parts))
     return contents
 
@@ -142,13 +152,24 @@ def to_tools(specs: Sequence[ToolSpec]) -> list[types.Tool]:
 
 
 def build_config(
-    *, system: str, tools: Sequence[ToolSpec], timeout_s: float
+    *,
+    system: str,
+    tools: Sequence[ToolSpec],
+    timeout_s: float,
+    thinking_budget: int | None = None,
 ) -> types.GenerateContentConfig:
+    """The call's config. `thinking_budget` caps the model's thinking tokens (0 turns thinking
+    off on the Flash models); None leaves the model's default."""
     return types.GenerateContentConfig(
         system_instruction=system,
         tools=to_tools(tools) if tools else None,  # type: ignore[arg-type]
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         http_options=types.HttpOptions(timeout=max(1, round(timeout_s * 1000))),
+        thinking_config=(
+            types.ThinkingConfig(thinking_budget=thinking_budget)
+            if thinking_budget is not None
+            else None
+        ),
     )
 
 
@@ -157,10 +178,16 @@ def _tokens(value: int | None) -> int:
 
 
 _DECLINED = "The planning model declined this request."
-# Finish reasons whose turn can't be used: an unusable tool call, or an answer withheld as unsafe.
-# Safe messages only: the reason itself stays in our logs, not in what the user is shown.
+_UNUSABLE = "The planning model gave an answer it could not use."
+# Finish reasons whose turn can't be used: an unusable tool call, an answer withheld as unsafe
+# or as recitation, or stopped for no stated reason. Safe messages only: the reason itself stays
+# in our logs, not in what the user is shown. A turn cut off at the token limit (MAX_TOKENS) or
+# with a tool call it may not make (UNEXPECTED_TOOL_CALL, TOO_MANY_TOOL_CALLS) comes back as a
+# Generation with its finish_reason: the engine tells the model and retries (agent.loop).
 _REJECTED_FINISH: dict[str, str] = {
-    "MALFORMED_FUNCTION_CALL": "The planning model gave an answer it could not use.",
+    "MALFORMED_FUNCTION_CALL": _UNUSABLE,
+    "RECITATION": _UNUSABLE,
+    "OTHER": _UNUSABLE,
     "SAFETY": _DECLINED,
     "PROHIBITED_CONTENT": _DECLINED,
     "BLOCKLIST": _DECLINED,
@@ -279,8 +306,11 @@ def map_error(exc: BaseException) -> ProviderError:
 class GeminiProvider:
     name = "gemini"
 
-    def __init__(self, *, api_key: SecretStr, model: str) -> None:
+    def __init__(
+        self, *, api_key: SecretStr, model: str, thinking_budget: int | None = None
+    ) -> None:
         self.model = model
+        self.thinking_budget = thinking_budget
         self._api_key = api_key  # unwrapped only to build the SDK client (_client)
 
     def __repr__(self) -> str:
@@ -295,7 +325,12 @@ class GeminiProvider:
         timeout_s: float,
     ) -> Generation:
         contents: Any = to_contents(messages)
-        config = build_config(system=system, tools=tools, timeout_s=timeout_s)
+        config = build_config(
+            system=system,
+            tools=tools,
+            timeout_s=timeout_s,
+            thinking_budget=self.thinking_budget,
+        )
         try:
             async with guarded(SUPPLIER):  # outside the deadline: a timeout is a failure
                 with supplier_call(SUPPLIER):

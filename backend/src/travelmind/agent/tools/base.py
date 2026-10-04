@@ -13,6 +13,7 @@ currency code and a formatted string (`format_money`, the app's style: "₹2,16,
 "$1,234.56"), dates as ISO and as displayed ("3 Dec 2026"), flight numbers as "AI 101".
 """
 
+import math
 import unicodedata
 from collections.abc import Awaitable, Callable
 from datetime import date
@@ -109,11 +110,82 @@ def _inline(node: Any, defs: dict[str, Any]) -> Any:
     return inlined
 
 
+# The JSON Schema keywords a function declaration keeps: the subset Gemini's function
+# declarations accept (google-genai's JSONSchema, less what its Schema can't carry: oneOf,
+# uniqueItems). Anything else Pydantic writes (exclusiveMinimum, const, examples, ...) would
+# make the request a 400, so `json_schema` rewrites or drops it. The arguments are validated by
+# the tool's own model anyway: the schema only guides the model.
+SCHEMA_KEYWORDS = frozenset(
+    {
+        "type",
+        "format",
+        "description",
+        "default",
+        "enum",
+        "items",
+        "minItems",
+        "maxItems",
+        "properties",
+        "required",
+        "additionalProperties",
+        "anyOf",
+        "minimum",
+        "maximum",
+        "minLength",
+        "maxLength",
+        "pattern",
+    }
+)
+SCHEMA_FORMATS = frozenset({"date", "date-time", "time"})  # others ("uuid") are dropped
+
+
+def _bound(value: Any, step: int) -> int | None:
+    """An integer's exclusive bound as an inclusive one: the first integer above an
+    exclusiveMinimum (step 1: 0 → 1), the last below an exclusiveMaximum (step -1: 10 → 9)."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return math.floor(value) + 1 if step > 0 else math.ceil(value) - 1
+
+
+def _portable(node: Any) -> Any:
+    """A schema node with only SCHEMA_KEYWORDS: `const` as a one-value `enum`, an integer's
+    exclusive bounds as inclusive ones, other keywords and formats dropped."""
+    if isinstance(node, list):
+        return [_portable(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    node = dict(node)
+    if "const" in node and "enum" not in node:
+        node["enum"] = [node["const"]]
+    if node.get("type") == "integer":
+        low, high = (
+            _bound(node.get("exclusiveMinimum"), 1),
+            _bound(node.get("exclusiveMaximum"), -1),
+        )
+        if low is not None:
+            node["minimum"] = max(low, node.get("minimum", low))
+        if high is not None:
+            node["maximum"] = min(high, node.get("maximum", high))
+    if node.get("format") not in SCHEMA_FORMATS:
+        node.pop("format", None)
+    kept: dict[str, Any] = {}
+    for key, value in node.items():
+        if key not in SCHEMA_KEYWORDS:
+            continue
+        if key == "properties" and isinstance(value, dict):
+            kept[key] = {name: _portable(field) for name, field in value.items()}
+        elif key in ("items", "anyOf", "additionalProperties"):
+            kept[key] = _portable(value)
+        else:
+            kept[key] = value
+    return kept
+
+
 def json_schema(model: type[BaseModel]) -> dict[str, Any]:
-    """The model's JSON Schema with references inlined and titles dropped: plain enough for any
-    provider's function declarations."""
+    """The model's JSON Schema with references inlined, titles dropped and only the keywords
+    every provider's function declarations accept (SCHEMA_KEYWORDS)."""
     schema = model.model_json_schema()
-    inlined: dict[str, Any] = _inline(schema, schema.get("$defs", {}))
+    inlined: dict[str, Any] = _portable(_inline(schema, schema.get("$defs", {})))
     inlined.setdefault("properties", {})
     return inlined
 

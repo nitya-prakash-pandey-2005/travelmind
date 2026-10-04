@@ -107,7 +107,8 @@ class ProviderError(SupplierError):
     """A model call failed. `kind` says how; `message` is safe to show (it never carries the
     provider's own error text, which may echo the request). `input_tokens` and `output_tokens`
     are what the failed call still cost (a blocked prompt is billed for its input), for the
-    engine to record against the budget like any other call."""
+    engine to record against the budget like any other call. A rate limit is not an outage:
+    `breaker_neutral` keeps it out of the supplier breaker's count (resilience)."""
 
     def __init__(
         self,
@@ -119,6 +120,7 @@ class ProviderError(SupplierError):
     ) -> None:
         super().__init__(_CODES[kind], message or _MESSAGES[kind])
         self.kind: ProviderErrorKind = kind
+        self.breaker_neutral = kind == "rate_limited"
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
 
@@ -146,7 +148,11 @@ def get_provider(settings: Settings) -> LLMProvider:
     if choice == "gemini":
         if key is None:
             raise AgentUnavailable
-        return GeminiProvider(api_key=key, model=settings.agent_model)
+        return GeminiProvider(
+            api_key=key,
+            model=settings.agent_model,
+            thinking_budget=settings.agent_thinking_budget,
+        )
     if settings.environment == "production":
         raise AgentUnavailable
     return FakeProvider.planner()
