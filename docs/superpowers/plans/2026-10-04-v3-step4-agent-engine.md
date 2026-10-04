@@ -51,7 +51,7 @@
   - `agent/fake.py`
   - `agent/models.py` (ORM)
   - `agent/budget.py`
-  - migration `backend/migrations/versions/0011_agent_runs.py`
+  - migration `backend/migrations/versions/0012_agent_runs.py` (0011 is taken by the perf round)
 - Modify:
   - `config.py` (`agent_provider: Literal["gemini","fake","auto"]="auto"`, `agent_model`, `google_api_key` via AliasChoices `TM_GOOGLE_API_KEY`/`GOOGLE_API_KEY`, `agent_max_steps=12`, `agent_step_timeout_s=20`, `agent_run_timeout_s=120`, `agent_run_token_cap=60000`, `agent_monthly_token_budget=2_000_000`, `agent_max_concurrent_runs_per_agency=3`)
   - `pyproject.toml` (`uv add google-genai`)
@@ -119,7 +119,7 @@ def get_provider(settings: Settings) -> LLMProvider  # "auto" = gemini if a key 
 - `FakeProvider(script: list[Generation | Callable[[Sequence[Message]], Generation]])` returns the scripted turns in order.
 - `FakeProvider.planner()` is a small rule-based planner used in dev/e2e when no key is set. It extracts origin/destination/dates/travellers with regexes plus the airport index; it calls `lookup_airport`, `search_flights`, `search_hotels` and `weather_forecast`, then writes a short grounded summary. This keeps the product demo working without a key, and the UI labels such runs "Demo planner".
 
-**Migration 0011:**
+**Migration 0012:**
 - `agent_runs`:
   - columns: `id`, `agency_id`, `user_id`, `kind` (`agency|traveller`), `status` (`queued|running|waiting_for_user|done|failed|cancelled|budget_exceeded`), `prompt`, `result jsonb null`, `error text null`, `provider`, `model`, `input_tokens`, `output_tokens`, `grounded bool null`, `created_at`, `started_at`, `finished_at`;
   - index `(agency_id, created_at desc)`.
