@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import BeforeValidator
+from pydantic import AliasChoices, BeforeValidator, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -79,6 +79,21 @@ class Settings(BaseSettings):
     offer_store_max_per_agency: int = 2000
     reprice_max_per_minute: int = 60  # price checks call the supplier too; a separate budget
     public_quote_max_per_minute: int = 60  # client quote page: per network and per link
+    # Agent engine (travelmind.agent). "auto": Gemini when a key is set, else the rule-based demo
+    # planner; production never falls back to the demo planner (the agent is unavailable).
+    agent_provider: Literal["gemini", "fake", "auto"] = "auto"
+    agent_model: str = "gemini-2.5-flash"  # the one place the model id is set
+    # Only from the environment (or .env): TM_GOOGLE_API_KEY, else GOOGLE_API_KEY. A SecretStr, so
+    # reprs, dumps and logs of the settings show it masked.
+    google_api_key: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = Field(
+        default=None, validation_alias=AliasChoices("TM_GOOGLE_API_KEY", "GOOGLE_API_KEY")
+    )
+    agent_max_steps: int = 12
+    agent_step_timeout_s: float = 20.0
+    agent_run_timeout_s: float = 120.0
+    agent_run_token_cap: int = 60_000
+    agent_monthly_token_budget: int = 2_000_000
+    agent_max_concurrent_runs_per_agency: int = 3
     log_level: str = "INFO"
     # Bearer token for GET /metrics. Empty: /metrics is served only outside production.
     metrics_token: str = ""

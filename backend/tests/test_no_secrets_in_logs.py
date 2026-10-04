@@ -3,7 +3,8 @@
 Each adapter makes one successful (mocked) call with `configure_logging("INFO")` applied and the
 root logger capturing at DEBUG; no stdlib record (message or args) and nothing structlog prints may
 contain the secret. The ECB feed has no credential, so its case puts a token in the feed URL: the
-same shape as the old TIM `?key=` bug, which httpx's INFO request log used to print in full.
+same shape as the old TIM `?key=` bug, which httpx's INFO request log used to print in full. The
+Gemini case reads its key from TM_GOOGLE_API_KEY, as the agent does.
 """
 
 import json
@@ -19,6 +20,8 @@ import structlog
 from redis.asyncio import Redis
 
 from tests.offers.offer_factory import make_offer
+from travelmind.agent.provider import Message, get_provider
+from travelmind.config import Settings
 from travelmind.db import get_sessionmaker
 from travelmind.fareintel.travelpayouts import TP_PRICES_URL, seed_route
 from travelmind.hotels.liteapi import LITEAPI_BASE_URL, LiteApiHotelSupplier
@@ -132,12 +135,33 @@ async def _ecb(respx_mock) -> None:
     assert rates is not None
 
 
+async def _gemini(respx_mock) -> None:
+    respx_mock.post(url__startswith="https://generativelanguage.googleapis.com/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "candidates": [{"content": {"role": "model", "parts": [{"text": "Hello."}]}}],
+                "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 2},
+            },
+        )
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("GOOGLE_API_KEY", raising=False)
+        patch.setenv("TM_GOOGLE_API_KEY", f"AIza{SECRET}")
+        provider = get_provider(Settings(_env_file=None))
+    generation = await provider.generate(
+        system="You plan trips.", messages=[Message(role="user", text="hi")], tools=[], timeout_s=5
+    )
+    assert provider.name == "gemini" and generation.text == "Hello."
+
+
 CALLS: dict[str, Callable[..., Awaitable[None]]] = {
     "duffel": _duffel,
     "liteapi": _liteapi,
     "tim": _tim,
     "travelpayouts": _travelpayouts,
     "ecb": _ecb,
+    "gemini": _gemini,
 }
 
 

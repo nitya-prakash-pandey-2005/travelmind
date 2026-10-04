@@ -46,6 +46,26 @@ class SemaphoreBusy(Exception):
     """No slot came free within the wait."""
 
 
+async def take_slot(
+    redis: Redis, key: str, holder: str, *, limit: int, ttl_s: float
+) -> bool | None:
+    """One attempt to take a slot under `key` for `holder`: True when taken, False when all
+    `limit` are held, None when Redis failed (fail open; any slot the attempt may have taken is
+    handed back). For a slot held across processes (taken here, released elsewhere by holder)."""
+    acquire = redis.register_script(_ACQUIRE)
+    try:
+        return bool(await acquire(keys=[key], args=[holder, limit, int(ttl_s * 1000)]))
+    except (RedisError, OSError) as exc:
+        log.warning("semaphore_unavailable", key=key, error_type=type(exc).__name__)
+        # The script may have run and taken a slot before the reply was lost (a dropped
+        # connection, a socket timeout): hand it back, then fail open.
+        await asyncio.shield(release_slot(redis, key, holder))
+        return None
+    except BaseException:  # cancelled mid-acquire: the slot may be ours already
+        await asyncio.shield(release_slot(redis, key, holder))
+        raise
+
+
 @asynccontextmanager
 async def redis_semaphore(
     redis: Redis, key: str, *, limit: int, ttl_s: float, wait_s: float
@@ -53,23 +73,12 @@ async def redis_semaphore(
     """Hold one of `limit` slots under `key` for the block. Waits up to `wait_s` for a slot, then
     raises SemaphoreBusy. A slot is held for at most `ttl_s` (a crashed holder's lapses)."""
     holder = uuid4().hex
-    acquire = redis.register_script(_ACQUIRE)
     deadline = time.monotonic() + wait_s
-    acquired = False
     while True:
-        try:
-            if await acquire(keys=[key], args=[holder, limit, int(ttl_s * 1000)]):
-                acquired = True
-                break
-        except (RedisError, OSError) as exc:
-            log.warning("semaphore_unavailable", key=key, error_type=type(exc).__name__)
-            # The script may have run and taken a slot before the reply was lost (a dropped
-            # connection, a socket timeout): hand it back, then fail open.
-            await asyncio.shield(_release(redis, key, holder))
+        taken = await take_slot(redis, key, holder, limit=limit, ttl_s=ttl_s)
+        if taken is not False:
+            acquired = bool(taken)  # None: Redis is down, run without a slot
             break
-        except BaseException:  # cancelled mid-acquire: the slot may be ours already
-            await asyncio.shield(_release(redis, key, holder))
-            raise
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise SemaphoreBusy
@@ -78,11 +87,13 @@ async def redis_semaphore(
         yield
     finally:
         if acquired:
-            await asyncio.shield(_release(redis, key, holder))
+            await asyncio.shield(release_slot(redis, key, holder))
 
 
-async def _release(redis: Redis, key: str, holder: str) -> None:
+async def release_slot(redis: Redis, key: str, holder: str) -> None:
+    """Hand back `holder`'s slot (a no-op for one never taken). A failure is only logged: the
+    slot lapses after its TTL."""
     try:
         await redis.zrem(key, holder)
-    except (RedisError, OSError) as exc:  # the slot lapses after its TTL
+    except (RedisError, OSError) as exc:
         log.warning("semaphore_release_failed", key=key, error_type=type(exc).__name__)

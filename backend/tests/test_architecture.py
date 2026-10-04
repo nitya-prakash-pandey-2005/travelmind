@@ -145,7 +145,13 @@ async def test_every_tenant_table_has_forced_rls_in_the_migrated_schema():
     for name in NON_RLS_TABLES_WITH_AGENCY_ID:
         tenant_tables.pop(name, None)
     # Guard against a vacuous pass (e.g. wrong schema or database).
-    assert {"invitations", "audit_log"} <= tenant_tables.keys()
+    assert {
+        "invitations",
+        "audit_log",
+        "agent_runs",
+        "agent_steps",
+        "agent_usage_monthly",
+    } <= tenant_tables.keys()
     offenders = [
         f"{name}: rls={row.relrowsecurity} force={row.relforcerowsecurity} "
         f"tenant_isolation={row.has_policy}"
