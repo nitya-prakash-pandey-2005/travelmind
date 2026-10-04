@@ -1,21 +1,27 @@
 import { Link } from "@tanstack/react-router";
 import {
-  Circle,
+  BedDouble,
+  CalendarDays,
   CircleAlert,
-  CircleCheck,
+  CloudSun,
   FilePlus2,
   Inbox,
-  LoaderCircle,
+  Landmark,
+  ListChecks,
+  Map as MapIcon,
   Plane,
   Plus,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import type { AgentRunDetail, AgentTool, AgentTrip, PlanResult, ToolResultStep } from "../../api/agent";
 import { isWorking } from "../../api/agent";
 import type { Airport } from "../../api/types";
+import { MiniRing } from "../../kit";
+import { Badge, type BadgeTone } from "../../ui/Badge";
 import { Button, buttonClasses } from "../../ui/Button";
 import { cn } from "../../ui/cn";
 import { Panel } from "../../ui/Panel";
@@ -53,7 +59,7 @@ export function VerificationBanner({ verified }: { verified: boolean }) {
     <p
       data-verified={verified}
       className={cn(
-        "tm-tint flex items-start gap-2 rounded-md border px-3 py-2 text-[13px] font-medium leading-5",
+        "tm-tint flex items-start gap-2 rounded-[14px] border px-3.5 py-2.5 text-[13px] font-medium leading-5",
         verified ? "text-ok" : "text-warn",
       )}
     >
@@ -66,7 +72,7 @@ export function VerificationBanner({ verified }: { verified: boolean }) {
 function Fact({ label, children, mono = false }: { label: string; children: ReactNode; mono?: boolean }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <dt className="tm-micro">{label}</dt>
+      <dt className="hud">{label}</dt>
       <dd className={cn("min-w-0 truncate text-[13px] leading-5 text-ink", mono && "font-mono")}>{children}</dd>
     </div>
   );
@@ -118,13 +124,13 @@ function TripPanel({ trip }: { trip: AgentTrip }) {
   const description = routeText(trip) ?? undefined;
   if (arcs.length === 0) {
     return (
-      <Panel title="Trip" description={description}>
+      <Panel title="Trip" icon={MapIcon} description={description}>
         <TripFacts trip={trip} />
       </Panel>
     );
   }
   return (
-    <GlobePanel arcs={arcs} title="Trip" description={description} compact>
+    <GlobePanel arcs={arcs} title="Trip" icon={MapIcon} description={description} compact>
       <div className="mt-4 border-t border-line pt-4">
         <TripFacts trip={trip} />
       </div>
@@ -151,15 +157,11 @@ function ExtendPanel({ result, onExtend }: { result: PlanResult; onExtend: (prom
   if (result.itinerary.length === 0) ideas.push({ label: "Build a day-by-day plan", prompt: `${base}. Build a day-by-day itinerary` });
   if (ideas.length === 0) return null;
   return (
-    <Panel title="Extend this plan" description="Starts a new request in the composer; nothing is sent until you choose">
+    <Panel title="Extend this plan" icon={Sparkles} description="Starts a new request in the composer; nothing is sent until you choose">
       <ul className="flex flex-wrap gap-2">
         {ideas.map((idea) => (
           <li key={idea.label}>
-            <button
-              type="button"
-              onClick={() => onExtend(idea.prompt)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line-strong bg-surface-2 px-2.5 text-[13px] font-medium text-ink transition-colors duration-150 ease-tm hover:border-faint hover:bg-hover"
-            >
+            <button type="button" onClick={() => onExtend(idea.prompt)} className="chip min-h-9 text-ink">
               <Plus size={13} aria-hidden="true" className="text-primary" />
               {idea.label}
             </button>
@@ -175,13 +177,13 @@ function PlanHeader({ run, result, actions }: { run: AgentRunDetail; result: Pla
   const fares = result.trip ? fareSearchFor(result.trip) : null;
   const busy = isWorking(run.status) || run.status === "waiting_for_user" || actions.blockedReason !== null;
   return (
-    <Panel title="Plan" description={result.trip ? (routeText(result.trip) ?? undefined) : "From this run's results"}>
+    <Panel title="Plan" icon={ListChecks} description={result.trip ? (routeText(result.trip) ?? undefined) : "From this run's results"}>
       <div className="flex flex-col gap-3">
         <VerificationBanner verified={verified} />
         <p className="whitespace-pre-wrap text-[13px] leading-5 text-ink">{result.summary}</p>
         {result.next_steps.length > 0 && (
           <div>
-            <p className="tm-micro mb-1">Next steps</p>
+            <p className="hud mb-1">Next steps</p>
             <ol className="flex list-decimal flex-col gap-0.5 pl-5 text-[13px] leading-5 text-dim">
               {result.next_steps.map((step, index) => (
                 <li key={index}>{step}</li>
@@ -240,7 +242,7 @@ function ResultBoard({ run, result, actions }: { run: AgentRunDetail; result: Pl
       <PlanHeader run={run} result={result} actions={actions} />
       {result.trip && <TripPanel trip={result.trip} />}
       {result.flights.length > 0 && (
-        <Panel title="Flights" description={`${result.flights.length} option${result.flights.length === 1 ? "" : "s"} · totals for all travellers`}>
+        <Panel title="Flights" icon={Plane} description={`${result.flights.length} option${result.flights.length === 1 ? "" : "s"} · totals for all travellers`}>
           <div className="flex flex-col gap-2.5">
             {result.flights.map((offer) => (
               <FlightOptionCard key={offer.offer_id} offer={offer} travellers={travellers} />
@@ -249,7 +251,7 @@ function ResultBoard({ run, result, actions }: { run: AgentRunDetail; result: Pl
         </Panel>
       )}
       {result.hotels.length > 0 && (
-        <Panel title="Hotels" description={`${result.hotels.length} option${result.hotels.length === 1 ? "" : "s"} · totals for the stay`}>
+        <Panel title="Hotels" icon={BedDouble} description={`${result.hotels.length} option${result.hotels.length === 1 ? "" : "s"} · totals for the stay`}>
           <div className="flex flex-col gap-2.5">
             {result.hotels.map((hotel) => (
               <HotelOptionCard key={hotel.hotel_id} hotel={hotel} />
@@ -260,12 +262,9 @@ function ResultBoard({ run, result, actions }: { run: AgentRunDetail; result: Pl
       {result.weather && (
         <Panel
           title="Weather"
+          icon={CloudSun}
           description={result.weather.place.name}
-          actions={
-            <span className="tm-tint inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium text-info">
-              {result.weather.label === "forecast" ? "Forecast" : "Typical for these dates"}
-            </span>
-          }
+          actions={<Badge tone="info">{result.weather.label === "forecast" ? "Forecast" : "Typical for these dates"}</Badge>}
         >
           <WeatherStrip weather={result.weather} />
         </Panel>
@@ -273,6 +272,7 @@ function ResultBoard({ run, result, actions }: { run: AgentRunDetail; result: Pl
       {days.length > 0 && (
         <Panel
           title="Day by day"
+          icon={CalendarDays}
           description={built ? "The itinerary this plan built" : "Each date with the flights and weather the results give for it"}
         >
           <DayTimeline days={days} undated={undated} />
@@ -280,7 +280,7 @@ function ResultBoard({ run, result, actions }: { run: AgentRunDetail; result: Pl
       )}
       {result.budget ? <BudgetPanel budget={result.budget} /> : result.flights.length > 1 ? <FareComparison flights={result.flights} /> : null}
       {result.places.length > 0 && (
-        <Panel title="Places" description={`${result.places.length} to consider`}>
+        <Panel title="Places" icon={Landmark} description={`${result.places.length} to consider`}>
           <PlaceList places={result.places} attribution={placesAttribution} />
         </Panel>
       )}
@@ -298,6 +298,16 @@ const CHECKLIST: { tool: AgentTool; label: string }[] = [
   { tool: "estimate_budget", label: "Budget" },
 ];
 
+/** A section's state on the progress board, as a kit badge in its tone. */
+function StateBadge({ tone, label, live = false }: { tone: BadgeTone; label: string; live?: boolean }) {
+  return (
+    <Badge tone={tone} className="px-2 font-mono text-[10.5px]">
+      <span aria-hidden="true" className={cn("dot h-1.5! w-1.5!", live && "tm-live")} />
+      {label}
+    </Badge>
+  );
+}
+
 /** Before a result exists: what the plan has gathered so far, section by section. */
 function ProgressBoard({ run }: { run: AgentRunDetail }) {
   const working = isWorking(run.status);
@@ -308,6 +318,7 @@ function ProgressBoard({ run }: { run: AgentRunDetail }) {
     if (step.kind === "tool_result") latest.set(step.payload.tool, { summary: step.payload.summary, ok: step.payload.ok });
   }
   const guard = [...run.steps].reverse().find((s) => s.kind === "guard");
+  const gathered = CHECKLIST.filter(({ tool }) => typeof latest.get(tool) === "object").length;
   const description =
     run.status === "waiting_for_user"
       ? "Waiting for your answer before it continues"
@@ -315,44 +326,54 @@ function ProgressBoard({ run }: { run: AgentRunDetail }) {
         ? "Filling in from live results as they arrive"
         : "This run ended without a plan";
   return (
-    <Panel title="Plan" description={description} busy={working}>
-      <ul className="flex flex-col divide-y divide-line">
+    <Panel
+      title="Plan"
+      icon={ListChecks}
+      description={description}
+      busy={working}
+      actions={
+        <div role="img" aria-label={`${gathered} of ${CHECKLIST.length} sections gathered`}>
+          <MiniRing value={gathered} max={CHECKLIST.length} size={44} color="var(--tm-primary)" label={`${gathered}/${CHECKLIST.length}`} />
+        </div>
+      }
+    >
+      <ul className="list">
         {CHECKLIST.map(({ tool, label }) => {
           const state = latest.get(tool);
           const Icon: LucideIcon = TOOL_ICON[tool];
           const running = state === "running" && working;
           const done = typeof state === "object";
           return (
-            <li key={tool} className="flex items-center gap-3 py-2.5">
-              <span aria-hidden="true" className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-line bg-surface-2 text-dim">
-                <Icon size={14} strokeWidth={1.75} />
+            <li key={tool} className="li gap-3 py-2.5">
+              <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-card-2 text-dim">
+                <Icon size={15} strokeWidth={1.75} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] leading-5 text-ink">{label}</span>
+                <span className="block text-[13px] font-medium leading-5 text-ink">{label}</span>
                 <span className={cn("block truncate text-xs leading-4", done && !state.ok ? "text-danger" : "text-dim")}>
                   {done ? state.summary : running ? "Searching…" : open ? "Not yet" : "Not part of this run"}
                 </span>
               </span>
               {done ? (
                 state.ok ? (
-                  <CircleCheck size={15} aria-label="Done" className="shrink-0 text-ok" />
+                  <StateBadge tone="ok" label="Done" />
                 ) : (
-                  <CircleAlert size={15} aria-label="Failed" className="shrink-0 text-danger" />
+                  <StateBadge tone="danger" label="Failed" />
                 )
               ) : running ? (
-                <LoaderCircle size={15} aria-label="In progress" className="tm-spin shrink-0 text-primary" />
+                <StateBadge tone="primary" label="In progress" live />
               ) : (
-                <Circle size={15} aria-label="Waiting" className="shrink-0 text-faint" />
+                <StateBadge tone="neutral" label="Waiting" />
               )}
             </li>
           );
         })}
-        <li className="flex items-center gap-3 py-2.5">
-          <span aria-hidden="true" className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-line bg-surface-2 text-dim">
-            <ShieldCheck size={14} strokeWidth={1.75} />
+        <li className="li gap-3 py-2.5">
+          <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-card-2 text-dim">
+            <ShieldCheck size={15} strokeWidth={1.75} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[13px] leading-5 text-ink">Price check</span>
+            <span className="block text-[13px] font-medium leading-5 text-ink">Price check</span>
             <span className="block text-xs leading-4 text-dim">
               {guard && guard.kind === "guard"
                 ? guard.payload.passed
@@ -363,12 +384,12 @@ function ProgressBoard({ run }: { run: AgentRunDetail }) {
           </span>
           {guard && guard.kind === "guard" ? (
             guard.payload.passed ? (
-              <CircleCheck size={15} aria-label="Done" className="shrink-0 text-ok" />
+              <StateBadge tone="ok" label="Done" />
             ) : (
-              <ShieldAlert size={15} aria-label="Not verified" className="shrink-0 text-warn" />
+              <StateBadge tone="warn" label="Not verified" />
             )
           ) : (
-            <Circle size={15} aria-label="Waiting" className="shrink-0 text-faint" />
+            <StateBadge tone="neutral" label="Waiting" />
           )}
         </li>
       </ul>

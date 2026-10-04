@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { History, Plane } from "lucide-react";
+import { CalendarClock, ChartLine, History, Plane } from "lucide-react";
 import { useState } from "react";
 import type { Cabin } from "../../api/offers";
 import type { CarrierFares, RouteIntel } from "../../api/routeIntel";
@@ -67,6 +67,21 @@ function medianDelta(intel: RouteIntel): KpiDelta | undefined {
   return { pct, direction, good: pct <= 0 };
 }
 
+/**
+ * The kit's KPI row (`g4 keep-2`): four columns on desktops, two on tablets and phones, at the kit gap. Five figures
+ * fill it with spans: the median (with its trend) takes two cells, and on desktops the booking window and freshness
+ * share the second row.
+ */
+export const FIGURES_GRID = "mb-4 [&>div]:grid-cols-2 [&>div]:gap-4 max-sm:[&>div]:gap-3 min-[1181px]:[&>div]:grid-cols-4";
+
+// The strip widens a lone last tile on phones; here the fifth tile already has a partner (the median spans two).
+const FIGURE_SPANS = ["col-span-2", "", "", "min-[1181px]:col-span-2", "max-sm:col-span-1! min-[1181px]:col-span-2"];
+
+/** Grid cell for the figure at `index`. */
+export function figureCell(index: number): string {
+  return cn("grid min-w-0", FIGURE_SPANS[index]);
+}
+
 /** Median now, the typical range, sample count, the cheapest booking window and freshness. */
 export function RouteFigures({ intel, timeZone, now }: { intel: RouteIntel; timeZone: string; now: Date }) {
   const last = latestDay(intel);
@@ -74,46 +89,60 @@ export function RouteFigures({ intel, timeZone, now }: { intel: RouteIntel; time
   const best = cheapestBucket(intel);
   const days = intel.daily.length;
   return (
-    <KpiStrip label="Route figures" columns={5} className="mb-4">
+    <KpiStrip label="Route figures" columns={4} className={FIGURES_GRID}>
+      <div className={figureCell(0)}>
       <KpiTile
         label="Median now"
         value={last ? money(last.median_minor, intel.currency) : "—"}
         delta={medianDelta(intel)}
         hint={last ? `${formatDayMonth(last.date)} · ${before ? `vs ${formatDayMonth(before.date)}` : plural(last.samples, "fare")}` : "No fares yet"}
+        series={days > 1 ? intel.daily.map((day) => day.median_minor) : undefined}
+        trendLabel={days > 1 ? "Daily median on days with fares" : undefined}
       />
+      </div>
+      <div className={figureCell(1)}>
       <KpiTile
         label="Typical range"
         value={last ? money(last.p25_minor, intel.currency) : "—"}
         unit={last ? `to ${money(last.p75_minor, intel.currency)}` : undefined}
         hint={last ? `Middle half of ${plural(last.samples, "fare")} on ${formatDayMonth(last.date)}` : "No fares yet"}
       />
+      </div>
+      <div className={figureCell(2)}>
       <KpiTile
         label="Fares seen"
         value={totalSamples(intel).toLocaleString("en-US")}
         hint={`${plural(days, "day")} with fares · last ${WINDOW_DAYS} days`}
       />
+      </div>
+      <div className={figureCell(3)}>
       <KpiTile
         label="Best time to book"
         value={best ? bucketRange(best.bucket) : "—"}
         unit={best ? "days out" : undefined}
         hint={best ? `Median ${money(best.median_minor, intel.currency)} · ${plural(best.samples, "fare")}` : "Not enough fares yet"}
       />
+      </div>
+      <div className={figureCell(4)}>
       <KpiTile
         label="Last updated"
         value={intel.updated_at ? formatRelativeTime(intel.updated_at, now) : "—"}
         hint={intel.updated_at ? `${agencyStamp(intel.updated_at, timeZone)} · to the hour` : "No fares yet"}
       />
+      </div>
     </KpiStrip>
   );
 }
 
 /** The daily median as a line over the shaded 25th–75th percentile band. */
-export function TrendPanel({ intel }: { intel: RouteIntel }) {
+export function TrendPanel({ intel, className }: { intel: RouteIntel; className?: string }) {
   const format = (value: number) => money(value, intel.currency);
   const days = calendarDays(intel.daily);
   return (
     <Panel
       title="Daily median fare"
+      icon={ChartLine}
+      className={className}
       description={`Per traveller, one way, in ${intel.currency} · shaded band is the middle half of each day's fares (25th–75th percentile)`}
     >
       <AreaTrend
@@ -141,10 +170,12 @@ export function TrendPanel({ intel }: { intel: RouteIntel }) {
 }
 
 /** Median fare by how far ahead of departure it was seen. */
-export function DaysOutPanel({ intel }: { intel: RouteIntel }) {
+export function DaysOutPanel({ intel, className }: { intel: RouteIntel; className?: string }) {
   const best = cheapestBucket(intel);
   return (
-    <Panel title="By days before departure" description="Median fare by how far ahead the fare was seen">
+    <Panel title="By days before departure" icon={CalendarClock} description="Median fare by how far ahead the fare was seen" className={className}>
+      {/* Relative and clipped: the chart's screen-reader table is wider than a phone column. */}
+      <div className="relative overflow-hidden">
       <BarList
         label="Median fare by days before departure"
         valueFormat={(value) => money(value, intel.currency)}
@@ -154,12 +185,13 @@ export function DaysOutPanel({ intel }: { intel: RouteIntel }) {
           hint: `${plural(bucket.samples, "fare")}${bucket.bucket === best?.bucket ? " · lowest" : ""}`,
         }))}
       />
+      </div>
     </Panel>
   );
 }
 
 /** The busiest carriers on the route, with their share of fares and their median. */
-export function CarriersPanel({ intel }: { intel: RouteIntel }) {
+export function CarriersPanel({ intel, className }: { intel: RouteIntel; className?: string }) {
   const counted = intel.carriers.reduce((sum, carrier) => sum + carrier.samples, 0);
   const cheapest = intel.carriers.reduce<CarrierFares | undefined>(
     (best, carrier) => (best === undefined || carrier.median_minor < best.median_minor ? carrier : best),
@@ -172,7 +204,7 @@ export function CarriersPanel({ intel }: { intel: RouteIntel }) {
       header: "Carrier",
       cell: (carrier) => (
         <span className="inline-flex items-center gap-2">
-          <span className="inline-flex h-6 min-w-9 items-center justify-center rounded-[4px] bg-surface-2 px-1.5 font-mono text-[13px] font-semibold text-ink">
+          <span className="inline-flex h-7 min-w-10 items-center justify-center rounded-[8px] bg-card-2 px-1.5 font-mono text-[13px] font-semibold text-ink">
             {carrier.code}
           </span>
           {carrier === cheapest && intel.carriers.length > 1 && <Badge tone="ok">Lowest median</Badge>}
@@ -193,8 +225,8 @@ export function CarriersPanel({ intel }: { intel: RouteIntel }) {
       align: "right",
       cell: (carrier) => (
         <span className="inline-flex items-center justify-end gap-2">
-          <span aria-hidden="true" className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-line sm:block">
-            <span className="block h-full rounded-full bg-primary" style={{ width: `${share(carrier)}%` }} />
+          <span aria-hidden="true" className="progress hidden h-1.5 w-16 sm:block">
+            <i style={{ width: `${share(carrier)}%` }} />
           </span>
           <span className="w-9 text-right">{share(carrier)}%</span>
         </span>
@@ -213,13 +245,15 @@ export function CarriersPanel({ intel }: { intel: RouteIntel }) {
     <Panel
       title="Carriers"
       description={`The ${plural(intel.carriers.length, "carrier")} seen most often · share of their fares`}
+      icon={Plane}
       flush
+      className={cn("overflow-hidden", className)}
     >
       {intel.carriers.length > 0 && (
-        <ul aria-label={`Carriers on ${routeName(intel.origin, intel.destination)}`} className="flex flex-col border-t border-line sm:hidden">
+        <ul aria-label={`Carriers on ${routeName(intel.origin, intel.destination)}`} className="list border-t border-line px-[18px] sm:hidden">
           {intel.carriers.map((carrier) => (
-            <li key={carrier.code} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0">
-              <span className="inline-flex h-6 min-w-9 items-center justify-center rounded-[4px] bg-surface-2 px-1.5 font-mono text-[13px] font-semibold text-ink">
+            <li key={carrier.code} className="li gap-3 px-0">
+              <span className="inline-flex h-7 min-w-10 items-center justify-center rounded-[8px] bg-card-2 px-1.5 font-mono text-[13px] font-semibold text-ink">
                 {carrier.code}
               </span>
               <span className="flex min-w-0 flex-1 flex-col">
@@ -249,7 +283,7 @@ export function CarriersPanel({ intel }: { intel: RouteIntel }) {
 const SEARCHES_SHOWN = 6;
 
 /** The agency's own recent one-way, adults-only searches of the route, per traveller. */
-export function SearchesPanel({ intel, cabin, now }: { intel: RouteIntel; cabin: Cabin; now: Date }) {
+export function SearchesPanel({ intel, cabin, now, className }: { intel: RouteIntel; cabin: Cabin; now: Date; className?: string }) {
   const median = latestDay(intel)?.median_minor;
   const [expanded, setExpanded] = useState(false);
   const total = intel.your_searches.length;
@@ -257,6 +291,8 @@ export function SearchesPanel({ intel, cabin, now }: { intel: RouteIntel; cabin:
   return (
     <Panel
       title="Your searches"
+      icon={History}
+      className={className}
       description={`Your agency's one-way searches of this route in ${intel.currency}, cheapest fare per traveller`}
     >
       {intel.your_searches.length === 0 ? (
@@ -268,13 +304,13 @@ export function SearchesPanel({ intel, cabin, now }: { intel: RouteIntel; cabin:
           <ScanFaresLink intel={intel} cabin={cabin} variant="secondary" />
         </div>
       ) : (
-        <ul className="-my-1 flex flex-col">
+        <ul className="list -my-1">
           {shown.map((search, index) => {
             const pct = median === undefined ? null : changePct(search.cheapest_minor, median);
             return (
               <li
                 key={`${index}-${search.created_at}`}
-                className="flex items-center justify-between gap-3 border-b border-line py-2 last:border-b-0"
+                className="li justify-between gap-3 px-0 py-2.5"
               >
                 <span className="flex min-w-0 flex-col">
                   <time dateTime={search.created_at} title={formatDate(search.created_at)} className="text-[13px] text-ink">

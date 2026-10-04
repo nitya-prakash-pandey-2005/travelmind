@@ -27,7 +27,7 @@ function Code({ code, className }: { code: string; className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex h-6 min-w-11 shrink-0 items-center justify-center rounded-[4px] px-1.5",
+        "inline-flex h-7 min-w-11 shrink-0 items-center justify-center rounded-[8px] px-1.5",
         "font-mono text-[13px] font-semibold tracking-[0.04em]",
         className,
       )}
@@ -74,7 +74,7 @@ export function AirportPicker({
         <div
           title={`${value.iata_code} · ${value.name}${place(value) ? ` · ${place(value)}` : ""}`}
           className={cn(
-            "flex h-9 min-w-0 items-center gap-2 rounded-md border bg-surface-2 pl-1.5 pr-1",
+            "flex h-10 min-w-0 items-center gap-2 rounded-md border bg-bg pl-1.5 pr-1",
             invalid ? "border-danger" : "border-line-strong",
           )}
         >
@@ -92,7 +92,7 @@ export function AirportPicker({
               pendingFocus.current = "input";
               onChange(null);
             }}
-            className="h-7 shrink-0 rounded-[4px] px-2 text-xs font-medium text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink"
+            className="h-8 shrink-0 rounded-[8px] px-2.5 text-xs font-medium text-dim transition-colors duration-150 ease-tm hover:bg-card-2 hover:text-ink"
           >
             Change
           </button>
@@ -187,7 +187,7 @@ export function AirportPicker({
                 aria-selected={highlighted}
                 aria-disabled={isStale || undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-md px-2 py-1.5 text-[13px]",
+                  "flex items-center gap-3 rounded-[10px] px-2 py-1.5 text-[13px]",
                   isStale ? "cursor-wait opacity-50" : "cursor-pointer",
                   highlighted && "bg-selected",
                 )}

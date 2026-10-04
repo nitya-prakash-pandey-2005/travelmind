@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Route } from "lucide-react";
 import type { Airport } from "../../api/types";
 import { formatNumber } from "../../lib/format";
 import { cn } from "../../ui/cn";
@@ -34,8 +34,8 @@ function RouteChip({ pair, active }: { pair: Pair; active: boolean }) {
       aria-label={`${origin.iata_code} to ${destination.iata_code}, ${place(origin)} to ${place(destination)}`}
       onClick={() => routeStore.set({ origin, destination })}
       className={cn(
-        "flex w-full min-w-0 flex-col gap-1 rounded-md border px-3 py-2 text-left transition-colors duration-150 ease-tm",
-        active ? "border-primary/60 bg-primary/5" : "border-line bg-surface-2 hover:border-line-strong",
+        "flex w-full min-w-0 flex-col gap-1 rounded-[14px] border px-3 py-2.5 text-left transition-colors duration-150 ease-tm",
+        active ? "border-primary bg-[image:var(--grad-soft)]" : "border-line bg-card-2 hover:border-line-strong",
       )}
     >
       <span className="flex w-full items-center justify-between gap-2">
@@ -64,7 +64,7 @@ export function QuickRoutes({ recent }: { recent: RecentRoute[] }) {
     selected.origin?.iata_code === p.origin.iata_code && selected.destination?.iata_code === p.destination.iata_code;
   const chip = (p: Pair) => <RouteChip pair={p} active={isActive(p)} />;
   return (
-    <Panel title="Quick routes" description="Pick one to fill From and To, then scan.">
+    <Panel title="Quick routes" icon={Route} description="Pick one to fill From and To, then scan.">
       <div className="flex flex-col gap-4">
         <QuickGroup title="Your recent searches" items={groups.recent} keyOf={keyOf} render={chip} />
         <QuickGroup

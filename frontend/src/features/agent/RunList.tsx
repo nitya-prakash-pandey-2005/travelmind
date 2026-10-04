@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ShieldCheck } from "lucide-react";
+import { History, ShieldCheck } from "lucide-react";
 import { agentRunsQueryOptions } from "../../api/agent";
 import { formatRelativeTime } from "../../lib/format";
 import { useClock } from "../../shell/useClock";
@@ -19,34 +19,35 @@ export function RunList({ activeId }: { activeId?: string }) {
   return (
     <Panel
       title="Recent plans"
+      icon={History}
       description={runs.data ? `${items.length} most recent · shared with your team` : "Plans your team has run"}
       flush
       busy={runs.isPending}
     >
       {runs.isPending ? (
-        <div className="px-4 pb-4">
+        <div className="px-[18px] pb-[18px]">
           <Skeleton lines={6} />
         </div>
       ) : runs.isError ? (
-        <div className="px-4 pb-4">
+        <div className="px-[18px] pb-[18px]">
           <PanelError error={runs.error} onRetry={() => void runs.refetch()} retrying={runs.isFetching} />
         </div>
       ) : items.length === 0 ? (
-        <p className="px-4 pb-4 text-[13px] leading-5 text-dim">Plans you run are listed here, so anyone on the team can pick one up.</p>
+        <p className="px-[18px] pb-[18px] text-[13px] leading-5 text-dim">Plans you run are listed here, so anyone on the team can pick one up.</p>
       ) : (
-        <ul className="flex flex-col border-t border-line">
+        <ul className="list border-t border-line px-2 py-1.5">
           {items.map((run) => {
             const active = run.id === activeId;
             return (
-              <li key={run.id} className="border-b border-line last:border-b-0">
+              <li key={run.id}>
                 <Link
                   to="/app/agent/$runId"
                   params={{ runId: run.id }}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "relative flex flex-col gap-1 px-4 py-2.5 transition-colors duration-150 ease-tm hover:bg-hover",
-                    "before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-r-full before:bg-primary before:opacity-0",
-                    active && "bg-surface-2 before:opacity-100",
+                    "li relative flex-col items-stretch gap-1.5 py-2.5",
+                    "before:absolute before:inset-y-2.5 before:left-0 before:w-[3px] before:rounded-full before:bg-[image:var(--grad)] before:opacity-0",
+                    active && "bg-[image:var(--grad-soft)] before:opacity-100",
                   )}
                 >
                   <span className="flex items-center gap-2">

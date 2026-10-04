@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import { Component, Suspense, lazy, useState, type ReactNode } from "react";
 import { Panel, type PanelVariant } from "../../ui/Panel";
 import { cn } from "../../ui/cn";
@@ -10,7 +11,7 @@ const FlatRouteMap = lazy(() => import("./FlatRouteMap"));
 /** Holds the map's space while a chunk loads, so nothing shifts when it lands. */
 function MapPlaceholder({ message }: { message: string }) {
   return (
-    <div className="grid h-full min-h-[300px] place-items-center rounded-md border border-dashed border-line">
+    <div className="grid h-full min-h-[300px] place-items-center rounded-[14px] border border-dashed border-line">
       <p className="text-xs text-faint">{message}</p>
     </div>
   );
@@ -48,6 +49,8 @@ type GlobePanelProps = {
   title?: string;
   /** One line under the title. */
   description?: ReactNode;
+  /** The kit's icon chip in the card head. */
+  icon?: LucideIcon;
   variant?: PanelVariant;
   actions?: ReactNode;
   footer?: ReactNode;
@@ -63,6 +66,7 @@ export function GlobePanel({
   arcs,
   title = "Route map",
   description,
+  icon,
   variant,
   actions,
   footer,
@@ -75,6 +79,7 @@ export function GlobePanel({
     <Panel
       title={title}
       description={description}
+      icon={icon}
       variant={variant}
       actions={actions}
       footer={footer}

@@ -12,14 +12,14 @@ const STATE: Record<SourceStatus["status"], { dot: Status; label: string }> = {
 export function SourceStrip({ sources }: { sources: SourceStatus[] }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <span className="tm-micro" aria-hidden="true">
+      <span className="hud" aria-hidden="true">
         Supplier status
       </span>
       <ul aria-label="Supplier status" className="flex min-w-0 flex-wrap gap-1.5">
         {sources.map((source) => (
           <li
             key={source.supplier}
-            className="flex min-h-7 min-w-0 flex-wrap items-center gap-x-2 rounded-md border border-line bg-surface-2 px-2 py-1 text-xs leading-4"
+            className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 rounded-full border border-line bg-card-2 px-3 py-1 text-xs leading-4"
           >
             <StatusDot
               status={STATE[source.status].dot}

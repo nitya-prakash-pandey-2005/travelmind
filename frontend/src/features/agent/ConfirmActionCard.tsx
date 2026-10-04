@@ -53,14 +53,14 @@ export function ConfirmActionCard({
       tabIndex={-1}
       aria-labelledby={titleId}
       data-confirm=""
-      className="tm-enter rounded-lg border border-warn/50 bg-surface-2 focus:outline-2 focus:outline-offset-2 focus:outline-primary"
+      className="card warn tm-enter p-0 focus:outline-2 focus:outline-offset-2 focus:outline-primary"
     >
       <div className="flex items-start gap-3 p-4">
-        <span aria-hidden="true" className="tm-tint grid h-9 w-9 shrink-0 place-items-center rounded-md border text-warn">
+        <span aria-hidden="true" className="tm-tint grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border text-warn">
           <ShieldQuestion size={17} strokeWidth={1.75} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="tm-micro text-warn">Needs your approval</p>
+          <p className="hud text-warn">Needs your approval</p>
           <h3 id={titleId} className="mt-0.5 flex items-center gap-2 text-sm font-semibold text-ink">
             <Icon size={14} aria-hidden="true" className="text-dim" />
             {title}
@@ -77,7 +77,7 @@ export function ConfirmActionCard({
             </dl>
           )}
           {warnings.length > 0 && (
-            <div className="mt-3 rounded-md border border-warn/40 px-3 py-2">
+            <div className="mt-3 rounded-[12px] border border-warn/40 px-3 py-2">
               <p className="flex items-center gap-1.5 text-xs font-medium text-warn">
                 <TriangleAlert size={13} aria-hidden="true" className="shrink-0" />
                 Check before approving

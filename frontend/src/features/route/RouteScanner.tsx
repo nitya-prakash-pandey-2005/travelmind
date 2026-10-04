@@ -1,4 +1,4 @@
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { Airport } from "../../api/types";
 import { formatDuration, formatNumber } from "../../lib/format";
@@ -17,11 +17,14 @@ import { routeStore, useRouteSelection } from "./routeStore";
 export function RouteScanner({
   onRouteReady,
   onScanFares,
+  icon,
   className,
   children,
 }: {
   onRouteReady?: (origin: Airport, destination: Airport) => void;
   onScanFares?: () => void;
+  /** The kit's icon chip in the card head. */
+  icon?: LucideIcon;
   className?: string;
   children?: ReactNode;
 }) {
@@ -46,6 +49,7 @@ export function RouteScanner({
     <Panel
       title="Route planner"
       description="Distance and flight time between two airports"
+      icon={icon}
       className={className}
       actions={
         <Button
@@ -70,7 +74,7 @@ export function RouteScanner({
         </p>
       )}
       {km !== null && (
-        <dl className="mt-3 grid grid-cols-2 gap-3 rounded-md border border-line bg-surface-2 px-3 py-2.5">
+        <dl className="mt-3 grid grid-cols-2 gap-3 rounded-[14px] border border-line bg-card-2 px-3.5 py-3">
           <Readout
             label="Great-circle distance"
             value={formatNumber(Math.round(km))}
@@ -90,7 +94,7 @@ export function RouteScanner({
         </Button>
       )}
       {km === null && !sameAirport && <p className="mt-3 text-xs text-dim">Pick two airports to scan fares.</p>}
-      {children && <div className="-mx-4 mt-4 border-t border-line px-4 pt-3">{children}</div>}
+      {children && <div className="-mx-[18px] mt-4 border-t border-line px-[18px] pt-3">{children}</div>}
     </Panel>
   );
 }

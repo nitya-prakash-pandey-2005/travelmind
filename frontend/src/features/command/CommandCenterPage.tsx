@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Plus, Waypoints } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { DASHBOARD_RANGES, DEFAULT_RANGE, isDashboardRange, type DashboardRange } from "../../api/dashboard";
 import { useCurrentUser } from "../../auth/useCurrentUser";
@@ -119,7 +119,7 @@ export function CommandCenterPage() {
           </Cell>
           <div className="span-4 flex min-w-0 flex-col gap-4">
             <PipelinePanel onNewEnquiry={openEnquiry} />
-            <RouteScanner className="flex-1" onRouteReady={record} onScanFares={() => void navigate({ to: "/app/fares" })}>
+            <RouteScanner className="flex-1" icon={Waypoints} onRouteReady={record} onScanFares={() => void navigate({ to: "/app/fares" })}>
               <RecentRoutes
                 routes={routes}
                 onSelect={(route) => routeStore.set({ origin: route.origin, destination: route.destination })}

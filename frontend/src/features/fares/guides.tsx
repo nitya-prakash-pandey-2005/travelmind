@@ -13,7 +13,7 @@ export const PROVENANCE_SECTION: GuideSection = {
 };
 
 /** A plain-text label from a result card, shown as a small chip. */
-export const TERM = "rounded-[4px] border border-line bg-surface-2 px-1.5 py-px font-mono text-[11px] text-ink";
+export const TERM = "rounded-[6px] border border-line bg-card-2 px-1.5 py-px font-mono text-[11px] text-ink";
 
 /** What each label on a fare means, matching the offer cards and fare insight word for word. */
 export const FARE_GUIDE: GuideSection[] = [

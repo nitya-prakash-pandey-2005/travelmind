@@ -67,6 +67,7 @@ export function RouteMapPanel({ onNewEnquiry, className }: { onNewEnquiry: () =>
     <GlobePanel
       arcs={arcs}
       title={TITLE}
+      icon={ICON}
       description={DESCRIPTION}
       className={className}
       actions={routes.length > 0 && <Legend />}

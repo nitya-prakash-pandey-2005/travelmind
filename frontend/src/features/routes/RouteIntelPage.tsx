@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { ChartLine, CircleDashed } from "lucide-react";
+import { CalendarClock, ChartLine, CircleDashed, Info } from "lucide-react";
 import type { Cabin } from "../../api/offers";
 import { routeIntelQueryOptions, type RouteIntel } from "../../api/routeIntel";
 import { useCurrentUser } from "../../auth/useCurrentUser";
@@ -10,7 +10,17 @@ import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { Skeleton } from "../../ui/Skeleton";
 import { PanelError } from "../command/PanelError";
-import { CarriersPanel, DaysOutPanel, FamilyBadge, RouteFigures, ScanFaresLink, SearchesPanel, TrendPanel } from "./RoutePanels";
+import {
+  CarriersPanel,
+  DaysOutPanel,
+  FamilyBadge,
+  FIGURES_GRID,
+  figureCell,
+  RouteFigures,
+  ScanFaresLink,
+  SearchesPanel,
+  TrendPanel,
+} from "./RoutePanels";
 import { RoutePicker } from "./RoutePicker";
 import { RouteSuggestions } from "./RouteSuggestions";
 import { routeName, WINDOW_DAYS } from "./routeFacts";
@@ -30,7 +40,7 @@ const ABOUT = [
 
 function AboutPanel() {
   return (
-    <Panel title="What route intel shows" description={`One traveller, one way, over the last ${WINDOW_DAYS} days in the route's currency`}>
+    <Panel title="What route intel shows" icon={Info} description={`One traveller, one way, over the last ${WINDOW_DAYS} days in the route's currency`}>
       <ul className="flex flex-col">
         {ABOUT.map((item) => (
           <li key={item} className="flex items-start gap-2.5 border-t border-line py-2.5 first:border-t-0 first:pt-0 last:pb-0">
@@ -47,16 +57,18 @@ function LoadingRoute() {
   return (
     <div aria-busy="true">
       <span className="sr-only">Loading route figures…</span>
-      <KpiStrip label="Route figures" columns={5} busy className="mb-4">
-        {["Median now", "Typical range", "Fares seen", "Best time to book", "Last updated"].map((label) => (
-          <KpiTile key={label} label={label} value="" loading />
+      <KpiStrip label="Route figures" columns={4} busy className={FIGURES_GRID}>
+        {["Median now", "Typical range", "Fares seen", "Best time to book", "Last updated"].map((label, index) => (
+          <div key={label} className={figureCell(index)}>
+            <KpiTile label={label} value="" loading />
+          </div>
         ))}
       </KpiStrip>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(19rem,1fr)]">
-        <Panel title="Daily median fare">
+      <div className="grid g-12">
+        <Panel title="Daily median fare" icon={ChartLine} className="span-8">
           <Skeleton className="h-60 w-full" />
         </Panel>
-        <Panel title="By days before departure">
+        <Panel title="By days before departure" icon={CalendarClock} className="span-4">
           <Skeleton lines={5} />
         </Panel>
       </div>
@@ -67,13 +79,10 @@ function LoadingRoute() {
 function EmptyRoute({ intel, cabin, onPick }: { intel: RouteIntel; cabin: Cabin; onPick: (o: string, d: string) => void }) {
   const now = useClock(60_000);
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(19rem,1fr)]">
-      <div className="flex min-w-0 flex-col gap-4">
-        <section
-          aria-label="Fare history"
-          className="flex flex-col items-center gap-3 rounded-lg border border-line bg-surface px-4 py-10 text-center"
-        >
-          <span aria-hidden="true" className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-surface-2 text-dim">
+    <div className="grid g-12 items-start">
+      <div className="span-8 flex min-w-0 flex-col gap-4">
+        <section aria-label="Fare history" className="card flex flex-col items-center gap-3 px-4 py-10 text-center">
+          <span aria-hidden="true" className="grid h-11 w-11 place-items-center rounded-[12px] bg-card-2 text-dim">
             <CircleDashed size={18} strokeWidth={1.75} />
           </span>
           <div className="flex max-w-md flex-col gap-1">
@@ -89,7 +98,7 @@ function EmptyRoute({ intel, cabin, onPick }: { intel: RouteIntel; cabin: Cabin;
         </section>
         <RouteSuggestions onPick={onPick} exclude={`${intel.origin}-${intel.destination}`} />
       </div>
-      <div className="flex min-w-0 flex-col gap-4">
+      <div className="span-4 flex min-w-0 flex-col gap-4">
         {intel.your_searches.length > 0 && <SearchesPanel intel={intel} cabin={cabin} now={now} />}
         <AboutPanel />
       </div>
@@ -102,15 +111,12 @@ function RouteView({ intel, cabin, timeZone }: { intel: RouteIntel; cabin: Cabin
   return (
     <>
       <RouteFigures intel={intel} timeZone={timeZone} now={now} />
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(19rem,1fr)]">
-        <div className="flex min-w-0 flex-col gap-4">
-          <TrendPanel intel={intel} />
-          <CarriersPanel intel={intel} />
-        </div>
-        <div className="flex min-w-0 flex-col gap-4">
-          <DaysOutPanel intel={intel} />
-          <SearchesPanel intel={intel} cabin={cabin} now={now} />
-        </div>
+      {/* The kit's 12-column grid: the trend beside the days-out bars, then the carriers beside your searches. */}
+      <div className="grid g-12">
+        <TrendPanel intel={intel} className="span-8" />
+        <DaysOutPanel intel={intel} className="span-4" />
+        <CarriersPanel intel={intel} className="span-7 self-start" />
+        <SearchesPanel intel={intel} cabin={cabin} now={now} className="span-5" />
       </div>
     </>
   );
@@ -139,6 +145,7 @@ export function RouteIntelPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[{ label: "Workspace", to: "/app" }, { label: "Route intel" }]}
         title="Route intel"
         description={DESCRIPTION}
         meta={data ? <FamilyBadge family={data.family} /> : undefined}
@@ -146,9 +153,13 @@ export function RouteIntelPage() {
       />
       <RoutePicker origin={search.origin} destination={search.destination} cabin={cabin} onChange={go} />
       {!ready ? (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(19rem,1fr)]">
-          <RouteSuggestions onPick={pick} />
-          <AboutPanel />
+        <div className="grid g-12 items-start">
+          <div className="span-8 min-w-0">
+            <RouteSuggestions onPick={pick} />
+          </div>
+          <div className="span-4 min-w-0">
+            <AboutPanel />
+          </div>
         </div>
       ) : intel.isError ? (
         <PanelError error={intel.error} onRetry={() => void intel.refetch()} retrying={intel.isFetching} />

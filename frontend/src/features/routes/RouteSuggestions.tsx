@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Compass } from "lucide-react";
+import { ArrowRight, Compass, Route } from "lucide-react";
 import { marketPulseQueryOptions, routeEnquiriesQueryOptions } from "../../api/dashboard";
 import { Panel } from "../../ui/Panel";
 import { Skeleton } from "../../ui/Skeleton";
@@ -58,7 +58,7 @@ function RouteButton({ label, hint, onClick }: { label: string; hint: string; on
       <button
         type="button"
         onClick={onClick}
-        className="group flex w-full items-center gap-3 rounded-md border border-line px-3 py-2.5 text-left transition-colors duration-150 ease-tm hover:border-line-strong hover:bg-hover"
+        className="group flex w-full items-center gap-3 rounded-[14px] border border-line bg-card-2 px-3 py-2.5 text-left transition-colors duration-150 ease-tm hover:border-line-strong hover:bg-hover"
       >
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="font-mono text-[13px] font-semibold text-ink">{label}</span>
@@ -77,6 +77,7 @@ export function RouteSuggestions({ onPick, exclude }: { onPick: (origin: string,
   return (
     <Panel
       title="Your routes"
+      icon={Route}
       description={own.length > 0 || loading ? "Routes your agency searched or has enquiries for" : "Busy routes to start with"}
     >
       {loading ? (

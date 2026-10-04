@@ -1,4 +1,4 @@
-import { BedDouble, CloudRain, CloudSun, Landmark, Leaf, Luggage, Plane, StickyNote, Sun } from "lucide-react";
+import { BarChart3, BedDouble, CloudRain, CloudSun, Landmark, Leaf, Luggage, Plane, StickyNote, Sun, Wallet } from "lucide-react";
 import type {
   AgentBudget,
   AgentFlightCard,
@@ -55,19 +55,19 @@ export function FlightOptionCard({ offer, travellers }: { offer: AgentFlightCard
   return (
     <article
       aria-label={offer.converted ? `${offer.offer_id} ${carrier} about ${amount}` : `${offer.offer_id} ${carrier} ${amount}`}
-      className="rounded-lg border border-line bg-surface transition-colors duration-150 ease-tm hover:border-line-strong"
+      className="rounded-[16px] border border-line bg-card-2 transition-colors duration-150 ease-tm hover:border-line-strong"
     >
       <div className="flex items-start gap-3 p-3.5">
         <span
           aria-hidden="true"
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-line bg-surface-2 font-mono text-xs font-semibold text-ink"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-line bg-card-2 font-mono text-xs font-semibold text-ink"
         >
           {offer.carrier}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 truncate text-sm font-medium leading-5 text-ink">
-            {carrier}
-            <span className="rounded-[4px] border border-line px-1 font-mono text-[10px] leading-4 text-dim">{offer.offer_id}</span>
+          <p className="flex min-w-0 items-center gap-2 text-sm font-medium leading-5 text-ink">
+            <span className="truncate">{carrier}</span>
+            <span className="shrink-0 rounded-[6px] border border-line px-1 font-mono text-[10px] leading-4 text-dim">{offer.offer_id}</span>
           </p>
           <p className="truncate font-mono text-[11px] leading-4 text-faint">{offer.flight_numbers.join(", ")}</p>
           {offer.cabin && <p className="truncate text-xs leading-4 text-dim">{CABIN_LABEL[offer.cabin]}</p>}
@@ -84,7 +84,7 @@ export function FlightOptionCard({ offer, travellers }: { offer: AgentFlightCard
       <div className="flex flex-col gap-2 border-t border-line px-3.5 py-2.5">
         {offer.slices.map((slice, index) => (
           <div key={`${slice.origin}-${index}`} className="grid grid-cols-[4.25rem_auto_minmax(0,1fr)_auto] items-center gap-x-2.5">
-            <span className="tm-micro">{journeyLabel(index, offer.slices.length)}</span>
+            <span className="hud">{journeyLabel(index, offer.slices.length)}</span>
             <span className="flex flex-col">
               <span className="tm-num text-sm leading-5 text-ink">{time(slice.departs_at)}</span>
               <span className="font-mono text-[11px] leading-3 text-dim">{slice.origin}</span>
@@ -134,15 +134,15 @@ export function FlightOptionCard({ offer, travellers }: { offer: AgentFlightCard
 export function HotelOptionCard({ hotel }: { hotel: AgentHotelCard }) {
   const facts = [hotel.room, hotel.board].filter(Boolean).join(" · ");
   return (
-    <article aria-label={`${hotel.hotel_id} ${hotel.name}`} className="rounded-lg border border-line bg-surface p-3.5">
+    <article aria-label={`${hotel.hotel_id} ${hotel.name}`} className="rounded-[16px] border border-line bg-card-2 p-3.5">
       <div className="flex items-start gap-3">
-        <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-line bg-surface-2 text-dim">
+        <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-line bg-card-2 text-dim">
           <BedDouble size={16} strokeWidth={1.75} />
         </span>
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2 text-sm font-medium leading-5 text-ink">
             <span className="truncate">{hotel.name}</span>
-            <span className="rounded-[4px] border border-line px-1 font-mono text-[10px] leading-4 text-dim">{hotel.hotel_id}</span>
+            <span className="shrink-0 rounded-[6px] border border-line px-1 font-mono text-[10px] leading-4 text-dim">{hotel.hotel_id}</span>
           </p>
           <p className="truncate text-xs leading-4 text-dim">
             {[hotel.stars ? `${hotel.stars}-star` : null, hotel.rating !== null ? `rated ${hotel.rating}/10` : null, hotel.area]
@@ -180,7 +180,7 @@ export function PlaceList({ places, attribution }: { places: AgentPlaceCard[]; a
     <>
       <ul className="grid gap-2 sm:grid-cols-2">
         {places.map((place) => (
-          <li key={place.place_id} className="flex items-start gap-2.5 rounded-md border border-line px-3 py-2">
+          <li key={place.place_id} className="flex items-start gap-2.5 rounded-[12px] border border-line bg-card-2 px-3 py-2">
             <Landmark size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-faint" />
             <span className="min-w-0">
               <span className="block truncate text-[13px] leading-5 text-ink">{place.name}</span>
@@ -219,7 +219,7 @@ export function WeatherStrip({ weather }: { weather: AgentWeather }) {
             <li
               key={day.date}
               aria-label={`${day.date_display}: high ${degrees(day.temp_max_c)}, low ${degrees(day.temp_min_c)}, rain ${day.precipitation_chance_pct ?? "—"}%`}
-              className="flex min-w-0 flex-col items-center gap-1 rounded-md border border-line bg-surface-2/60 px-1 py-2.5 text-center"
+              className="flex min-w-0 flex-col items-center gap-1 rounded-[14px] border border-line bg-card-2 px-1 py-2.5 text-center"
             >
               <span className="text-[11px] font-medium leading-4 text-dim">{weekday}</span>
               <span className="text-[11px] leading-3 text-faint">{date}</span>
@@ -329,7 +329,7 @@ export function DayTimeline({ days, undated = [] }: { days: PlanDay[]; undated?:
           return (
             <li key={`${day.label}-${index}`} className="relative grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-3 pb-4 last:pb-0">
               {!last && <span aria-hidden="true" className="absolute bottom-0 left-3.5 top-8 w-px -translate-x-1/2 bg-line" />}
-              <span aria-hidden="true" className="relative grid h-7 w-7 place-items-center rounded-full border border-line-strong bg-surface-2 font-mono text-[11px] text-ink">
+              <span aria-hidden="true" className="relative grid h-7 w-7 place-items-center rounded-[9px] bg-card-2 font-mono text-[11px] font-semibold text-primary">
                 {index + 1}
               </span>
               <div className="min-w-0 pt-1">
@@ -399,10 +399,13 @@ export function BudgetPanel({ budget }: { budget: AgentBudget }) {
   return (
     <Panel
       title="Budget"
+      icon={Wallet}
       description="Estimated from this plan's options, for all travellers"
       actions={budget.converted ? <Badge tone="info">Includes ≈ converted</Badge> : undefined}
     >
       {single ? (
+        // Relative and clipped: the chart's screen-reader table is wider than a phone column.
+        <div className="relative overflow-hidden">
         <Donut
           label="Budget by category"
           slices={budget.categories.map((c) => ({ label: CATEGORY_LABEL[c.category] ?? c.category, value: c.total_minor }))}
@@ -410,10 +413,11 @@ export function BudgetPanel({ budget }: { budget: AgentBudget }) {
           center={
             <div className="flex flex-col items-center">
               <Amount formatted={budget.total_formatted ?? "—"} className="text-base text-ink" />
-              <span className="tm-micro">Total</span>
+              <span className="hud">Total</span>
             </div>
           }
         />
+        </div>
       ) : (
         <ul className="flex flex-col gap-1.5">
           {budget.totals_by_currency.map((total) => (
@@ -451,7 +455,9 @@ export function FareComparison({ flights }: { flights: AgentFlightCard[] }) {
   const cheapest = Math.min(...comparable.map((f) => f.total_minor));
   const convertedValues = new Set(comparable.filter((f) => f.converted).map((f) => f.total_minor));
   return (
-    <Panel title="Price comparison" description="Each flight option's total for all travellers">
+    <Panel title="Price comparison" icon={BarChart3} description="Each flight option's total for all travellers">
+      {/* Relative and clipped: the chart's screen-reader table is wider than a phone column. */}
+      <div className="relative overflow-hidden">
       <BarList
         label="Flight option totals"
         items={comparable.map((f) => ({
@@ -463,6 +469,7 @@ export function FareComparison({ flights }: { flights: AgentFlightCard[] }) {
         }))}
         valueFormat={(minor) => `${convertedValues.has(minor) ? "≈ " : ""}${formatMoney({ amount_minor: minor, currency: currency ?? "INR" })}`}
       />
+      </div>
       <p className="mt-3 text-[11px] leading-4 text-faint">
         Ask for a budget estimate to add hotels and a single trip total.
       </p>

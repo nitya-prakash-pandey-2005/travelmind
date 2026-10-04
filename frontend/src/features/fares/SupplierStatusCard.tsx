@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, PlugZap } from "lucide-react";
 import { asApiError } from "../../api/client";
 import { supplierHealthQueryOptions, type SupplierHealth } from "../../api/dashboard";
 import type { SupplierStatus } from "../../api/offers";
@@ -14,7 +14,7 @@ import { KIND, MODE, callsLine, latencyLine, type SupplierKind } from "../suppli
 function Row({ supplier, health }: { supplier: SupplierStatus; health?: SupplierHealth }) {
   const latency = health ? latencyLine(health) : null;
   return (
-    <li className="flex flex-col gap-0.5 py-2 first:pt-0 last:pb-0">
+    <li className="li flex-col items-stretch gap-0.5 px-0 py-2.5">
       <span className="flex min-w-0 items-center justify-between gap-2">
         <StatusDot
           status={supplier.connected ? "ok" : "unknown"}
@@ -47,10 +47,10 @@ function Group({ title, rows, health }: { title: string; rows: SupplierStatus[];
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="tm-micro">{title}</h3>
+        <h3 className="hud">{title}</h3>
         <span className="tm-num text-[11px] text-dim">{`${connected} of ${rows.length} connected`}</span>
       </div>
-      <ul aria-label={title} className="flex flex-col divide-y divide-line">
+      <ul aria-label={title} className="list">
         {rows.map((s) => (
           <Row key={s.code} supplier={s} health={health.find((h) => h.supplier === s.code && h.kind === s.kind)} />
         ))}
@@ -83,6 +83,7 @@ export function SupplierStatusCard({
   return (
     <Panel
       title="Supplier status"
+      icon={PlugZap}
       description="Who answers this search, and the data added to results"
       footer={
         <Link to="/app/suppliers" className="text-primary hover:underline hover:underline-offset-4">

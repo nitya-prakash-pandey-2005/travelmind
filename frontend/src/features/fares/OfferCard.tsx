@@ -145,7 +145,7 @@ function SegmentRow({ segment }: { segment: Segment }) {
 function SliceDetails({ slice, label }: { slice: Slice; label: string }) {
   return (
     <div className="flex flex-col">
-      <p className="tm-micro">
+      <p className="hud">
         {label} · {slice.origin} → {slice.destination}
         {slice.fare_brand ? ` · ${slice.fare_brand}` : ""}
       </p>
@@ -189,13 +189,13 @@ function AddToQuote({ selection }: { selection: OfferSelection }) {
     <div className="mt-2 flex max-w-44 flex-col items-end gap-1">
       <label
         className={cn(
-          "inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-[13px] font-medium transition-colors duration-150 ease-tm",
+          "inline-flex h-8 items-center gap-2 rounded-[10px] border px-2.5 text-[13px] font-medium transition-colors duration-150 ease-tm",
           "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary",
           selection.selected
             ? "border-primary/60 bg-primary/10 text-ink"
             : disabled
               ? "cursor-not-allowed border-line text-faint"
-              : "cursor-pointer border-line-strong bg-surface-2 text-ink hover:border-faint hover:bg-hover",
+              : "cursor-pointer border-line-strong bg-card-2 text-ink hover:border-faint hover:bg-hover",
         )}
       >
         <input
@@ -240,15 +240,15 @@ export function OfferCard({ offer, selectable }: OfferCardProps) {
     <article
       aria-label={converted ? `${carrier} about ${price}` : `${carrier} ${price}`}
       className={cn(
-        "rounded-lg border bg-surface transition-colors duration-150 ease-tm",
-        selectable?.selected ? "border-primary/70" : "border-line hover:border-line-strong",
+        "card p-0 transition-colors duration-150 ease-tm",
+        selectable?.selected ? "border-primary/70" : "hover:border-line-strong",
       )}
     >
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-4 p-4 md:grid-cols-[11rem_minmax(0,1fr)_auto]">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-4 p-[18px] md:grid-cols-[11rem_minmax(0,1fr)_auto]">
         <div className="col-start-1 row-start-1 flex min-w-0 items-start gap-3">
           <span
             aria-hidden="true"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-line bg-surface-2 font-mono text-xs font-semibold text-ink"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-line bg-card-2 font-mono text-xs font-semibold text-ink"
           >
             {offer.owner_carrier}
           </span>
@@ -270,7 +270,7 @@ export function OfferCard({ offer, selectable }: OfferCardProps) {
         </div>
 
         <div className="col-start-2 row-start-1 flex flex-col items-end gap-0.5 text-right md:col-start-3 md:min-w-36 md:border-l md:border-line md:pl-6">
-          <p className="tm-num text-xl font-semibold leading-7 text-ink">
+          <p className="tm-num font-display text-[22px] font-semibold leading-7 tracking-[-0.02em] text-ink">
             {converted && <span className="font-normal text-dim">≈ </span>}
             {price}
           </p>
@@ -291,7 +291,7 @@ export function OfferCard({ offer, selectable }: OfferCardProps) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-4 py-2.5 text-xs leading-4 text-dim">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-[18px] py-2.5 text-xs leading-4 text-dim">
         <span className="flex flex-wrap items-center gap-1.5">
           <ProvenanceBadge provenance={offer.provenance} />
           {offer.insight && <Badge tone={INSIGHT[offer.insight.signal].tone}>{INSIGHT[offer.insight.signal].label}</Badge>}
@@ -319,7 +319,7 @@ export function OfferCard({ offer, selectable }: OfferCardProps) {
           aria-expanded={expanded}
           aria-controls={detailsId}
           onClick={() => setExpanded((open) => !open)}
-          className="-mr-1.5 ml-auto inline-flex h-7 items-center gap-1 rounded-md px-1.5 font-medium text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink"
+          className="-mr-1.5 ml-auto inline-flex h-8 items-center gap-1 rounded-[10px] px-2 font-medium text-dim transition-colors duration-150 ease-tm hover:bg-card-2 hover:text-ink"
         >
           Flight details
           <ChevronDown
@@ -331,7 +331,7 @@ export function OfferCard({ offer, selectable }: OfferCardProps) {
       </div>
 
       {expanded && (
-        <div id={detailsId} className="flex flex-col gap-4 border-t border-line bg-surface-2/40 px-4 py-3">
+        <div id={detailsId} className="flex flex-col gap-4 border-t border-line bg-card-2 px-[18px] py-3">
           {offer.slices.map((slice, index) => (
             <SliceDetails
               key={`${slice.origin}-${slice.destination}-${index}`}
@@ -352,7 +352,7 @@ export function OfferCard({ offer, selectable }: OfferCardProps) {
       )}
 
       {reprice.isSuccess && (
-        <div className="border-t border-line px-4 py-2.5">
+        <div className="border-t border-line px-[18px] py-2.5">
           {reprice.data.price_changed ? (
             <p role="status" className="flex items-center gap-2 text-[13px] text-warn">
               <CircleAlert size={14} aria-hidden="true" className="shrink-0" />
@@ -367,7 +367,7 @@ export function OfferCard({ offer, selectable }: OfferCardProps) {
         </div>
       )}
       {reprice.isError && (
-        <div className="border-t border-line px-4 py-2.5">
+        <div className="border-t border-line px-[18px] py-2.5">
           <p role="alert" className="flex items-center gap-2 text-[13px] text-danger">
             <CircleAlert size={14} aria-hidden="true" className="shrink-0" />
             {asApiError(reprice.error).message}

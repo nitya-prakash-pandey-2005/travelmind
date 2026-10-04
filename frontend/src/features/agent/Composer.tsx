@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CircleAlert, CornerDownLeft, Sparkle } from "lucide-react";
+import { CircleAlert, CornerDownLeft, Sparkle, SquarePen } from "lucide-react";
 import { useId, useMemo, type KeyboardEvent, type RefObject } from "react";
 import { MAX_AGENT_TEXT } from "../../api/agent";
 import { marketPulseQueryOptions, routeEnquiriesQueryOptions } from "../../api/dashboard";
@@ -72,7 +72,7 @@ export function Composer({
   };
 
   return (
-    <Panel title="New plan" description="Describe the trip in plain words">
+    <Panel title="New plan" icon={SquarePen} description="Describe the trip in plain words">
       <form
         className="flex flex-col gap-2"
         onSubmit={(event) => {
@@ -117,8 +117,8 @@ export function Composer({
         </Button>
       </form>
       <div className="mt-4 border-t border-line pt-3">
-        <p className="tm-micro mb-2">Suggested</p>
-        <ul className="flex flex-col gap-1.5">
+        <p className="hud mb-1">Suggested</p>
+        <ul className="list -mx-2">
           {suggestions.map((suggestion) => (
             <li key={suggestion.prompt}>
               <button
@@ -128,7 +128,7 @@ export function Composer({
                   onChange(suggestion.prompt);
                   inputRef.current?.focus();
                 }}
-                className="group flex w-full items-start gap-2.5 rounded-md border border-line px-2.5 py-2 text-left transition-colors duration-150 ease-tm hover:border-line-strong hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
+                className="li group items-start gap-2.5 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Sparkle size={13} aria-hidden="true" className="mt-0.5 shrink-0 text-faint group-hover:text-primary" />
                 <span className="min-w-0">
