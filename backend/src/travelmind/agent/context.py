@@ -3,7 +3,8 @@
 `RunContext` carries a database session bound to the run's agency (RLS), Redis, settings and
 the agency's display currency, country (guest nationality) and time zone. Build one with
 `build_context`, which binds the session and reads the agency, so a tool can never see another
-agency's rows.
+agency's rows. `today()` is the agency's own date: the one "today" every tool (and the prompt)
+uses, read from `clock`.
 
 `RunMemory` is the run's registry of what its tools returned: flight offers, hotels and places.
 Each item gets a short run-scoped id (F1, H1, P1, ...) that the model sees and writes back; the
@@ -13,12 +14,19 @@ real offer behind "F1", `build_itinerary` refuses ids no tool returned, and `est
 sums the prices stored here, never a number the model wrote. The same supplier id seen again
 keeps its short id and takes the newer card and price.
 
+Each item also keeps the supplier's own total (`supplier_price`, in the currency the supplier
+bills, which differs from `price` when the shown total was converted) and the offer's expiry, so
+a tool can refuse an offer before a service would (draft_quote: wrong currency, expired) with a
+message that names the short id only.
+
 `snapshot()` / `RunMemory.restore()` round-trip the memory through JSON, so the engine can store
-it with the run (after each tool step, say) and rebuild it for a resumed run.
+it with the run (after each tool step, say) and rebuild it for a resumed run. The snapshot also
+keeps every supplier id a short id has stood for (a price check's fresh offer replaces the one
+searched, and both keep the same short id).
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -41,6 +49,14 @@ ID_FIELDS: dict[ItemKind, str] = {"flight": "offer_id", "hotel": "hotel_id", "pl
 SNAPSHOT_VERSION = 1
 
 
+def _money(value: object) -> Money | None:
+    return Money.model_validate(value) if value else None
+
+
+def _moment(value: object) -> datetime | None:
+    return datetime.fromisoformat(value) if isinstance(value, str) else None
+
+
 @dataclass(frozen=True)
 class SeenItem:
     ref: str  # the run-scoped id the model sees ("F1")
@@ -49,6 +65,17 @@ class SeenItem:
     label: str  # a short name for itineraries ("AI 101 DEL → BOM", a hotel's name)
     price: Money | None  # the total the model was shown, if the item has one
     card: dict[str, Any]  # the trimmed data the model was shown for it (with its ref)
+    supplier_price: Money | None = None  # the supplier's own total, in the currency it bills
+    expires_at: datetime | None = None  # when the supplier stops honouring the offer, if known
+
+    @property
+    def converted(self) -> bool:
+        """The shown price is a conversion of the supplier's: an approximate ("≈") amount."""
+        return (
+            self.price is not None
+            and self.supplier_price is not None
+            and self.price.currency != self.supplier_price.currency
+        )
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -58,18 +85,21 @@ class SeenItem:
             "label": self.label,
             "price": self.price.model_dump() if self.price else None,
             "card": self.card,
+            "supplier_price": self.supplier_price.model_dump() if self.supplier_price else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
         }
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "SeenItem":
-        price = data.get("price")
         return cls(
             ref=str(data["ref"]),
             kind=cast(ItemKind, data["kind"]),
             source_id=str(data["source_id"]),
             label=str(data["label"]),
-            price=Money.model_validate(price) if price else None,
+            price=_money(data.get("price")),
             card=dict(data.get("card") or {}),
+            supplier_price=_money(data.get("supplier_price")),
+            expires_at=_moment(data.get("expires_at")),
         )
 
 
@@ -89,6 +119,8 @@ class RunMemory:
         label: str,
         price: Money | None,
         card: dict[str, Any],
+        supplier_price: Money | None = None,
+        expires_at: datetime | None = None,
     ) -> SeenItem:
         """Record an item a tool is about to return; its card gets the short id as its first
         field (`offer_id`, `hotel_id` or `place_id`). A known source keeps its short id."""
@@ -97,7 +129,9 @@ class RunMemory:
             self._counts[kind] += 1
             ref = f"{PREFIXES[kind]}{self._counts[kind]}"
             self._refs[(kind, source_id)] = ref
-        return self._store(ref, kind, source_id, label, price, card)
+        return self._store(
+            SeenItem(ref, kind, source_id, label, price, card, supplier_price, expires_at)
+        )
 
     def replace(
         self,
@@ -107,25 +141,23 @@ class RunMemory:
         label: str,
         price: Money | None,
         card: dict[str, Any],
+        supplier_price: Money | None = None,
+        expires_at: datetime | None = None,
     ) -> SeenItem:
-        """Give an existing short id a fresh item (a price check's answer)."""
+        """Give an existing short id a fresh item (a price check's answer). The supplier ids it
+        stood for before keep pointing at it."""
         old = self._items[ref]
         self._refs[(old.kind, source_id)] = ref
-        return self._store(ref, old.kind, source_id, label, price, card)
+        return self._store(
+            SeenItem(ref, old.kind, source_id, label, price, card, supplier_price, expires_at)
+        )
 
-    def _store(
-        self,
-        ref: str,
-        kind: ItemKind,
-        source_id: str,
-        label: str,
-        price: Money | None,
-        card: dict[str, Any],
-    ) -> SeenItem:
-        body = {k: v for k, v in card.items() if k != ID_FIELDS[kind]}
-        item = SeenItem(ref, kind, source_id, label, price, {ID_FIELDS[kind]: ref} | body)
-        self._items[ref] = item
-        return item
+    def _store(self, item: SeenItem) -> SeenItem:
+        id_field = ID_FIELDS[item.kind]
+        body = {k: v for k, v in item.card.items() if k != id_field}
+        stored = replace(item, card={id_field: item.ref} | body)
+        self._items[item.ref] = stored
+        return stored
 
     def get(self, ref: str) -> SeenItem | None:
         return self._items.get(ref.strip().upper()) if isinstance(ref, str) else None
@@ -138,6 +170,11 @@ class RunMemory:
         return {
             "version": SNAPSHOT_VERSION,
             "items": [item.to_json() for item in self._items.values()],
+            # Every supplier id each short id has stood for (a price check adds one).
+            "aliases": [
+                {"kind": kind, "source_id": source_id, "ref": ref}
+                for (kind, source_id), ref in self._refs.items()
+            ],
         }
 
     @classmethod
@@ -149,6 +186,10 @@ class RunMemory:
             memory._refs[(item.kind, item.source_id)] = item.ref
             number = int(item.ref[1:]) if item.ref[1:].isdigit() else 0
             memory._counts[item.kind] = max(memory._counts[item.kind], number)
+        for alias in (data or {}).get("aliases") or []:
+            kind, ref = alias.get("kind"), alias.get("ref")
+            if kind in PREFIXES and ref in memory._items:
+                memory._refs[(cast(ItemKind, kind), str(alias.get("source_id")))] = ref
         return memory
 
 
@@ -166,8 +207,11 @@ class RunContext:
     memory: RunMemory = field(default_factory=RunMemory)
     clock: Callable[[], datetime] = utcnow
 
+    def now(self) -> datetime:
+        return self.clock()
+
     def today(self) -> date:
-        """Today in the agency's time zone."""
+        """Today in the agency's time zone: the date every tool counts from."""
         return self.clock().astimezone(ZoneInfo(self.timezone)).date()
 
     @property

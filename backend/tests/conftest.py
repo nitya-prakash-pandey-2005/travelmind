@@ -22,6 +22,7 @@ for _key in (
     "TM_GOOGLE_API_KEY",
     "GOOGLE_API_KEY",
     "TM_OPENTRIPMAP_KEY",
+    "TM_OPEN_METEO_API_KEY",
     "TM_OSM_CONTACT",
 ):
     os.environ[_key] = ""

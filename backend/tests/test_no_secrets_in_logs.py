@@ -4,8 +4,8 @@ Each adapter makes one successful (mocked) call with `configure_logging("INFO")`
 root logger capturing at DEBUG; no stdlib record (message or args) and nothing structlog prints may
 contain the secret. The ECB feed has no credential, so its case puts a token in the feed URL: the
 same shape as the old TIM `?key=` bug, which httpx's INFO request log used to print in full. The
-Gemini case reads its key from TM_GOOGLE_API_KEY, as the agent does. OpenTripMap takes its key
-in the query string, like the old TIM bug.
+Gemini case reads its key from TM_GOOGLE_API_KEY, as the agent does. OpenTripMap and a paid
+Open-Meteo plan take their keys in the query string, like the old TIM bug.
 """
 
 import json
@@ -170,6 +170,24 @@ async def _opentripmap(respx_mock) -> None:
     assert found
 
 
+async def _open_meteo(respx_mock) -> None:
+    from datetime import date
+
+    from travelmind.agent.tools.places import Location
+    from travelmind.agent.tools.weather import CUSTOMER_FORECAST_URL, Feed, _forecast
+
+    respx_mock.get(url__startswith=CUSTOMER_FORECAST_URL).mock(
+        return_value=httpx.Response(
+            200, json=_json(TESTS / "agent" / "fixtures" / "open_meteo_forecast.json")
+        )
+    )
+    feed = Feed(Settings(_env_file=None, open_meteo_api_key=SecretStr(SECRET)))
+    days = await _forecast(
+        feed, Location("Mumbai", 19.0887, 72.8679), date(2026, 10, 6), date(2026, 10, 8)
+    )
+    assert days
+
+
 CALLS: dict[str, Callable[..., Awaitable[None]]] = {
     "duffel": _duffel,
     "liteapi": _liteapi,
@@ -178,6 +196,7 @@ CALLS: dict[str, Callable[..., Awaitable[None]]] = {
     "ecb": _ecb,
     "gemini": _gemini,
     "opentripmap": _opentripmap,
+    "open_meteo": _open_meteo,
 }
 
 

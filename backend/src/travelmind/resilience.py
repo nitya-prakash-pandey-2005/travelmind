@@ -77,7 +77,8 @@ GUARDED_SUPPLIERS = frozenset(
         "ecb",
         "gemini",
         # the agent's place and weather feeds (travelmind.agent.tools)
-        "open_meteo",
+        "open_meteo_forecast",
+        "open_meteo_archive",
         "nominatim",
         "overpass",
         "opentripmap",

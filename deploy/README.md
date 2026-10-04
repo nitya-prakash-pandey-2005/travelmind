@@ -87,6 +87,29 @@ passwords. A failed init leaves the volume half-created and later starts skip th
 - Postgres and Redis keep Docker's defaults: their entrypoints start as root to chown the data
   directory, then drop to their own user.
 
+## Weather
+
+The agent's `weather_forecast` tool uses Open-Meteo: the daily forecast up to 14 days ahead,
+and "typical" weather further out (the same days over the last five years, from the historical
+weather API). Open-Meteo's free API (`api.open-meteo.com`, `archive-api.open-meteo.com`) is for
+non-commercial use only, so:
+
+- **Production needs `TM_OPEN_METEO_API_KEY`** (a paid Open-Meteo plan; the historical API
+  behind "typical" weather needs the Professional plan or higher). With the key, calls go to the
+  customer hosts, `customer-api.open-meteo.com` and `customer-archive-api.open-meteo.com`, with
+  the key as `apikey` (it travels in the query string; URLs are never logged).
+- **Without a key in production**, `weather_forecast` answers `unavailable` ("Weather isn't set
+  up for this deployment yet"), and the api and worker each log one warning at startup
+  (`agent_open_meteo_key_missing`). Development and test use the free hosts.
+- Every weather result carries the attribution Open-Meteo's licence asks for (CC BY 4.0), plus
+  OpenStreetMap's when the place was geocoded through Nominatim.
+- Set `TM_OSM_CONTACT` (a URL or email) as well: OpenStreetMap's usage policies ask for an
+  identifiable client, and production startup warns once without it
+  (`agent_osm_contact_missing`).
+
+Forecasts are cached in Redis for 3 hours, each past year's answer for 7 days; the breakers and
+metrics are `open_meteo_forecast` and `open_meteo_archive`.
+
 ## Scaling
 
 - `API_REPLICAS` (default 2): api containers. nginx re-resolves `api` through Docker's DNS every

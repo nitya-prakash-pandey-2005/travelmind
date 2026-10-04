@@ -113,6 +113,12 @@ class Settings(BaseSettings):
     # OpenTripMap replaces Overpass for find_places when set. Sent in the query string, so the
     # URL is never logged.
     opentripmap_key: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = None
+    # Open-Meteo's free API (api.open-meteo.com, archive-api.open-meteo.com) is for non-commercial
+    # use only. With a paid plan's key the weather tool uses the customer hosts
+    # (customer-api.open-meteo.com, customer-archive-api.open-meteo.com; historical weather needs
+    # the Professional plan or higher). Production without a key has no weather. The key travels
+    # in the query string, so URLs are never logged.
+    open_meteo_api_key: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = None
     log_level: str = "INFO"
     # Bearer token for GET /metrics. Empty: /metrics is served only outside production.
     metrics_token: str = ""

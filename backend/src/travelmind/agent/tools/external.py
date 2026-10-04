@@ -1,9 +1,17 @@
 """Outbound calls for the place and weather tools: shared clients, guards, metrics and caching.
 
-Each feed has its own shared httpx client and supplier guard (`open_meteo`, `nominatim`,
-`overpass`, `opentripmap`: the metrics labels too). A failure of any kind (circuit open, timeout,
-HTTP error, unreadable JSON) becomes ToolError("unavailable") with our own message; neither the
-URL (OpenTripMap's carries its key) nor the feed's text is logged or passed on.
+Each feed has its own shared httpx client and supplier guard (`open_meteo_forecast`,
+`open_meteo_archive`, `nominatim`, `overpass`, `opentripmap`: the metrics labels too). A failure
+of any kind (circuit open, timeout, HTTP error, unreadable JSON) becomes ToolError("unavailable")
+with our own message; neither the URL (OpenTripMap's and a paid Open-Meteo plan's carry their
+keys) nor the feed's text is logged or passed on. A 400 is the feed refusing the request (a
+date range it doesn't cover, say), not the feed failing: it raises `FeedRefused` (still an
+"unavailable" ToolError, so callers that don't care needn't) and doesn't count against the
+breaker.
+
+`warn_about_feed_settings` logs, once at startup, what a production deployment is missing:
+TM_OPEN_METEO_API_KEY (the free Open-Meteo API is for non-commercial use only, so production
+has no weather without it) and TM_OSM_CONTACT (OpenStreetMap's usage policies ask for one).
 
 Answers are cached in Redis (`tm:agent:...`) as the parsed, trimmed data; Redis being down only
 costs the cache.
@@ -52,7 +60,8 @@ async def fetch_json(
     data: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
 ) -> Any:
-    """One guarded, timed call; the decoded JSON body, or ToolError("unavailable", unavailable)."""
+    """One guarded, timed call; the decoded JSON body, FeedRefused on a 400, or
+    ToolError("unavailable", unavailable)."""
     try:
         async with guard_for(supplier).call():  # outside the deadline: a timeout is a failure
             with supplier_call(supplier):
@@ -61,8 +70,11 @@ async def fetch_json(
                     response = await client.request(
                         method, url, params=params, data=data, headers=headers, timeout=TIMEOUT
                     )
-                response.raise_for_status()
-                return response.json()
+                if response.status_code != httpx.codes.BAD_REQUEST:
+                    response.raise_for_status()
+                    return response.json()
+        log.info("agent_feed_refused", supplier=supplier, status=response.status_code)
+        raise FeedRefused("unavailable", unavailable)
     except CircuitOpen as exc:
         log.info("agent_feed_skipped", supplier=supplier, reason=exc.reason)
     except (httpx.HTTPError, TimeoutError, ValueError) as exc:
@@ -101,6 +113,28 @@ async def cached[T](
     except RedisError as exc:
         log.warning("agent_cache_unavailable", error_type=type(exc).__name__)
     return value
+
+
+class FeedRefused(ToolError):
+    """The feed answered 400: it won't serve that request (it isn't down)."""
+
+
+def warn_about_feed_settings(settings: Settings) -> None:
+    """One warning per missing production setting for the agent's feeds (call at startup)."""
+    if settings.environment != "production":
+        return
+    if settings.open_meteo_api_key is None:
+        log.warning(
+            "agent_open_meteo_key_missing",
+            detail="weather_forecast is unavailable: the free Open-Meteo API is non-commercial;"
+            " set TM_OPEN_METEO_API_KEY (a paid plan) to use the customer hosts",
+        )
+    if not settings.osm_contact.strip():
+        log.warning(
+            "agent_osm_contact_missing",
+            detail="set TM_OSM_CONTACT (a URL or email) so OpenStreetMap services can identify"
+            " this deployment, as their usage policies ask",
+        )
 
 
 class Throttle:

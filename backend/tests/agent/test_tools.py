@@ -141,7 +141,7 @@ def test_money_is_formatted_like_the_app(amount, currency, text):
             flights_args(return_date=day(29)),
             "return date is before the departure",
         ),
-        ("search_flights", flights_args(origin="Delhi"), "origin"),
+        ("search_flights", flights_args(origin="Mumbai"), "origin"),
         ("search_flights", flights_args(depart_date="12 Dec"), "depart_date"),
         ("search_flights", flights_args(price=1), "price"),
         (
@@ -354,7 +354,7 @@ async def test_price_check_reprices_an_offer_the_run_was_shown(agency, airports)
 
 
 async def test_fare_insight_gives_the_baseline_and_typical_range(agency, airports):
-    async with run_context(*agency) as ctx:
+    async with run_context(*agency, today=TODAY) as ctx:  # the agency's today is TODAY
         empty = await call(
             ctx, "fare_insight", origin="DEL", destination="BOM", depart_date=day(30)
         )
@@ -449,6 +449,7 @@ async def test_estimate_budget_sums_only_tool_prices(agency):
             "currency": "INR",
             "total_minor": 1_000_000,
             "total_formatted": "₹10,000",
+            "converted": False,
         },
         {
             "category": "hotels",
@@ -456,6 +457,7 @@ async def test_estimate_budget_sums_only_tool_prices(agency):
             "currency": "INR",
             "total_minor": 610_000,
             "total_formatted": "₹6,100",
+            "converted": False,
         },
     ]
     assert data["unpriced"] == ["P1"] and data["note"] is None
@@ -644,3 +646,308 @@ def test_dates_in_results_are_iso_and_displayed():
     from travelmind.agent.tools.base import display_date
 
     assert display_date(date(2026, 12, 3)) == "3 Dec 2026"
+
+
+# --- review fixes: argument names, cancellation, tenants, quotes, converted prices, today ----
+
+
+async def test_validation_messages_clean_the_names_of_extra_fields(agency):
+    noisy = "evil\x00‮name" + "x" * 200
+    async with run_context(*agency) as ctx:
+        data = await call(ctx, "search_flights", **flights_args(), **{noisy: 1})
+    message = data["error"]["message"]
+    assert data["error"]["code"] == "invalid_arguments"
+    assert "\x00" not in message and "‮" not in message and "x" * 60 not in message
+    assert "evil" in message
+
+
+async def test_execute_never_raises_for_an_unknown_role(agency):
+    async with run_context(*agency) as ctx:
+        ctx.role = "admin"
+        data = await call(ctx, "find_client", query="a")
+    assert data["error"]["code"] == "not_allowed"
+
+
+async def test_a_cancelled_call_rolls_back_and_is_re_raised(agency, monkeypatch):
+    import asyncio
+
+    from travelmind.agent.tools import TOOLS
+
+    tool = next(t for t in TOOLS if t.spec.name == "find_client")
+    started = asyncio.Event()
+
+    async def hang(ctx, args):
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(tool, "_handler", hang)
+    rollbacks = 0
+    async with run_context(*agency) as ctx:
+        real_rollback = ctx.db.rollback
+
+        async def counting_rollback():
+            nonlocal rollbacks
+            rollbacks += 1
+            await real_rollback()
+
+        monkeypatch.setattr(ctx.db, "rollback", counting_rollback)
+        task = asyncio.create_task(
+            execute(ctx, ToolCall(id="c1", name="find_client", args={"query": "a"}))
+        )
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert rollbacks == 1
+
+
+async def test_another_agencys_records_are_not_found(airports):
+    alpha = await make_agency("Alpha")
+    beta = await make_agency("Beta")
+    await _client(*alpha, "Asha Client")
+    async with run_context(*alpha) as ctx:
+        client_id = (await call(ctx, "find_client", query="Asha"))["clients"][0]["client_id"]
+        enquiry = await call(ctx, "create_enquiry", adults=1)
+    async with run_context(*beta) as ctx:
+        searched = await call(ctx, "search_flights", **flights_args())
+        quote = await call(ctx, "draft_quote", enquiry_id=enquiry["enquiry_id"], offer_ids=["F1"])
+        borrowed = await call(ctx, "create_enquiry", client_id=client_id, adults=1)
+    assert "error" not in searched  # Beta has an F1 of its own: the enquiry is what's missing
+    assert quote["error"]["code"] == "not_found"
+    assert borrowed["error"]["code"] == "not_found"
+
+
+async def test_search_flights_reads_a_city_alias_before_a_code(agency, airports):
+    async with run_context(*agency) as ctx:
+        goa = await call(ctx, "search_flights", **flights_args(destination="goa"))
+        genoa = await call(ctx, "search_flights", **flights_args(destination="GOA"))
+    assert goa["trip"]["destination"] == "GOI"
+    assert genoa["trip"]["destination"] == "GOA"
+
+
+# Converted prices: a supplier billing in USD, shown in the agency's rupees.
+
+FX_DAY = date(2026, 10, 2)
+
+
+def _offer_views(expired: bool = False):
+    from tests.offers.offer_factory import make_offer
+    from travelmind.offers.service import offer_view
+
+    when = (TODAY + timedelta(days=30)).isoformat()
+    usd = make_offer(
+        [("DEL", "BOM", "UA", "1", f"{when}T06:00")],
+        offer_ref="usd",
+        total_minor=3_000,
+        currency="USD",
+        provenance="LIVE",
+    )
+    inr = make_offer(
+        [("DEL", "BOM", "AI", "101", f"{when}T08:00")],
+        offer_ref="inr",
+        total_minor=300_000,
+        currency="INR",
+        provenance="LIVE",
+        expires_at=datetime.now(UTC) + timedelta(minutes=-5 if expired else 60),
+    )
+    return [
+        offer_view(usd, Money(amount_minor=249_000, currency="INR"), None),
+        offer_view(inr, Money(amount_minor=300_000, currency="INR"), None),
+    ]
+
+
+def _converted_search(monkeypatch, *, expired: bool = False) -> None:
+    from travelmind.agent.tools import travel
+    from travelmind.offers.schemas import FlightSearchResponse
+
+    async def fake_search(db, redis, settings, request, **kwargs):
+        return FlightSearchResponse(
+            search_id="00000000-0000-0000-0000-000000000001",
+            display_currency="INR",
+            fx_as_of=FX_DAY,
+            baseline=None,
+            sources=[],
+            offers=_offer_views(expired),
+        )
+
+    monkeypatch.setattr(travel.offers_service, "search_flights", fake_search)
+
+
+async def test_converted_prices_are_marked_with_the_supplier_total(agency, airports, monkeypatch):
+    _converted_search(monkeypatch)
+    async with run_context(*agency) as ctx:
+        data = await call(ctx, "search_flights", **flights_args(adults=1))
+        memory = ctx.memory
+    converted, native = data["offers"]
+    assert converted["converted"] is True and converted["fx_as_of"] == FX_DAY.isoformat()
+    assert converted["total_minor"] == 249_000 and converted["total_formatted"] == "≈ ₹2,490"
+    assert converted["per_traveller_formatted"] == "≈ ₹2,490"
+    assert converted["supplier_total_minor"] == 3_000
+    assert converted["supplier_total_currency"] == "USD"
+    assert converted["supplier_total_formatted"] == "$30"
+    assert native["converted"] is False and native["fx_as_of"] is None
+    assert native["total_formatted"] == "₹3,000" and native["supplier_total_minor"] == 300_000
+    seen = memory.get("F1")
+    assert seen.supplier_price == Money(amount_minor=3_000, currency="USD")
+    assert seen.price == Money(amount_minor=249_000, currency="INR")
+
+
+async def test_estimate_budget_flags_totals_with_converted_prices(agency, airports, monkeypatch):
+    _converted_search(monkeypatch)
+    async with run_context(*agency) as ctx:
+        await call(ctx, "search_flights", **flights_args(adults=1))
+        both = await call(ctx, "estimate_budget", items=["F1", "F2"])
+        native = await call(ctx, "estimate_budget", items=["F2"])
+    assert both["converted"] is True and both["total_minor"] == 549_000
+    assert both["total_formatted"] == "≈ ₹5,490"
+    assert both["categories"][0]["converted"] is True
+    assert "converted" in both["note"]
+    assert native["converted"] is False and native["total_formatted"] == "₹3,000"
+    assert native["note"] is None
+
+
+async def test_price_check_gives_the_previous_total_as_shown(agency, airports, monkeypatch):
+    from travelmind.agent.tools import travel
+    from travelmind.offers.schemas import RepriceResponse
+
+    _converted_search(monkeypatch)
+
+    async def fake_reprice(db, redis, settings, offer_id, **kwargs):
+        return RepriceResponse(
+            offer=_offer_views()[0],
+            price_changed=False,
+            previous_total=Money(amount_minor=3_000, currency="USD"),
+        )
+
+    monkeypatch.setattr(travel.offers_service, "reprice_offer", fake_reprice)
+    async with run_context(*agency) as ctx:
+        await call(ctx, "search_flights", **flights_args(adults=1))
+        checked = await call(ctx, "price_check", offer_id="F1")
+    assert checked["previous_total_currency"] == "INR"
+    assert checked["previous_total_minor"] == 249_000
+    assert checked["previous_total_formatted"] == "≈ ₹2,490"
+    assert checked["offer"]["converted"] is True
+    assert checked["offer"]["fx_as_of"] == FX_DAY.isoformat()  # kept from the search
+
+
+async def test_draft_quote_refuses_offers_in_another_currency_or_expired(
+    agency, airports, monkeypatch
+):
+    _converted_search(monkeypatch, expired=True)
+    async with run_context(*agency) as ctx:
+        await call(ctx, "search_flights", **flights_args(adults=1))
+        enquiry = await call(ctx, "create_enquiry", adults=1)
+        usd = await call(ctx, "draft_quote", enquiry_id=enquiry["enquiry_id"], offer_ids=["F1"])
+        stale = await call(ctx, "draft_quote", enquiry_id=enquiry["enquiry_id"], offer_ids=["F2"])
+        ids = [item.source_id for item in ctx.memory.items()]
+    assert usd["error"]["code"] == "invalid_arguments"
+    assert usd["error"]["message"].startswith(
+        "F1 is priced in USD and can't be added to a quote in INR"
+    )
+    assert "search a route from India" in usd["error"]["message"]
+    assert stale["error"]["code"] == "invalid_arguments"
+    assert stale["error"]["message"].startswith("F2 has expired")
+    for data in (usd, stale):
+        assert not any(i in json.dumps(data) for i in ids)
+
+
+async def test_no_supplier_id_reaches_a_tool_error(agency, airports, monkeypatch):
+    from travelmind.agent.tools import workspace
+    from travelmind.workspace import quotes
+    from travelmind.workspace.quotes import InvalidQuote
+
+    async with run_context(*agency) as ctx:
+        await call(ctx, "search_flights", **flights_args())
+        enquiry = await call(ctx, "create_enquiry", adults=2)
+        ids = [item.source_id for item in ctx.memory.items()]
+        errors = []
+
+        async def forgotten(redis, agency_id, offer_id):
+            return None  # the agency's offer cache no longer has it
+
+        with monkeypatch.context() as patch:
+            patch.setattr(quotes, "recall_offer", forgotten)
+            errors.append(
+                await call(ctx, "draft_quote", enquiry_id=enquiry["enquiry_id"], offer_ids=["F1"])
+            )
+
+        async def refuses(db, redis, quote, data, actor):
+            raise InvalidQuote(f"Offer {data.offer_ids[-1]} broke the quote ({data.offer_ids}).")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(workspace, "add_version", refuses)
+            errors.append(
+                await call(
+                    ctx, "draft_quote", enquiry_id=enquiry["enquiry_id"], offer_ids=["F1", "F2"]
+                )
+            )
+        errors.append(await call(ctx, "price_check", offer_id=ids[0]))
+        errors.append(await call(ctx, "build_itinerary", days=[{"items": [ids[0]]}]))
+    assert all("error" in e for e in errors), errors
+    gone = errors[0]["error"]["message"]
+    assert "F1" in gone and "no longer available" in gone
+    assert "F2" in errors[1]["error"]["message"]
+    for data in errors:
+        assert not any(i in json.dumps(data) for i in ids), data
+
+
+def test_a_restored_memory_keeps_the_ids_price_checks_gave():
+    memory = _memory()
+    memory.replace(
+        "F1", source_id="sandbox:abc-repriced", label="AI 101 DEL → BOM", price=None, card={}
+    )
+    restored = RunMemory.restore(json.loads(json.dumps(memory.snapshot())))
+    assert restored.remember("flight", "sandbox:abc", label="x", price=None, card={}).ref == "F1"
+    again = restored.remember("flight", "sandbox:abc-repriced", label="x", price=None, card={})
+    assert again.ref == "F1"
+    assert restored.remember("flight", "sandbox:new", label="x", price=None, card={}).ref == "F3"
+
+
+# One "today": the agency's own date.
+
+
+async def test_flight_and_hotel_search_accept_the_agencys_today_behind_utc(agency, airports):
+    async with run_context(*agency) as ctx:
+        ctx.timezone = "Etc/GMT+12"  # UTC-12: local today is UTC's yesterday half the day
+        local_today = ctx.today()
+        flights = await call(ctx, "search_flights", **flights_args(depart_date=str(local_today)))
+        hotels = await call(
+            ctx,
+            "search_hotels",
+            destination="BOM",
+            check_in=str(local_today),
+            check_out=str(local_today + timedelta(days=1)),
+        )
+    assert "error" not in flights, flights
+    assert flights["trip"]["depart_date"] == local_today.isoformat()
+    assert "error" not in hotels, hotels
+
+
+async def test_searches_refuse_the_agencys_yesterday_ahead_of_utc(agency, airports):
+    async with run_context(*agency) as ctx:
+        ctx.timezone = "Pacific/Kiritimati"  # UTC+14
+        yesterday = ctx.today() - timedelta(days=1)
+        flights = await call(ctx, "search_flights", **flights_args(depart_date=str(yesterday)))
+        hotels = await call(
+            ctx,
+            "search_hotels",
+            destination="BOM",
+            check_in=str(yesterday),
+            check_out=str(yesterday + timedelta(days=2)),
+        )
+        insight = await call(
+            ctx, "fare_insight", origin="DEL", destination="BOM", depart_date=str(yesterday)
+        )
+    for data in (flights, hotels, insight):
+        assert data["error"]["code"] == "invalid_arguments", data
+        assert "in the past" in data["error"]["message"]
+
+
+async def test_fare_insight_counts_days_from_the_agencys_today(agency, airports):
+    async with run_context(*agency) as ctx:
+        # 20:00 UTC on 4 Oct is already 5 Oct (01:30) in Kolkata.
+        ctx.clock = lambda: datetime(2026, 10, 4, 20, 0, tzinfo=UTC)
+        data = await call(
+            ctx, "fare_insight", origin="DEL", destination="BOM", depart_date="2026-10-10"
+        )
+    assert data["days_to_departure"] == 5

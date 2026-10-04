@@ -29,6 +29,8 @@ from travelmind.offers.money import Money, exponent
 _DROPPED = frozenset({"Cc", "Cf", "Co", "Cs", "Zl", "Zp"})
 _SYMBOLS = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥"}
 MAX_ERROR_MESSAGE = 300
+MAX_FIELD_NAME = 40
+APPROX = "≈ "  # marks a converted amount, as the app shows it ("≈ ₹8,331")
 
 
 class ToolError(Exception):
@@ -61,9 +63,11 @@ class Args(BaseModel):
 
 
 def validation_message(exc: ValidationError) -> str:
+    """Pydantic's messages without the inputs. A location can carry a name the model wrote (an
+    extra field's name), so each part of it is cleaned and cut like any untrusted text."""
     parts = []
     for error in exc.errors(include_url=False, include_input=False, include_context=False):
-        where = ".".join(str(p) for p in error["loc"])
+        where = ".".join(clean_text(str(p), MAX_FIELD_NAME) or "?" for p in error["loc"])
         message = error["msg"].removeprefix("Value error, ")
         parts.append(f"{where}: {message}" if where else message)
     return "; ".join(parts[:5])
@@ -184,12 +188,18 @@ def format_money(money: Money) -> str:
     return f"{sign}{symbol}{text}" if symbol else f"{sign}{money.currency} {text}"
 
 
-def money_fields(prefix: str, money: Money | None) -> dict[str, Any]:
-    """`<prefix>_minor`, `<prefix>_currency` and `<prefix>_formatted` (all None without money)."""
+def shown_money(money: Money, *, converted: bool = False) -> str:
+    """`format_money`, with "≈ " in front of a converted amount (as the app shows it)."""
+    return f"{APPROX}{format_money(money)}" if converted else format_money(money)
+
+
+def money_fields(prefix: str, money: Money | None, *, converted: bool = False) -> dict[str, Any]:
+    """`<prefix>_minor`, `<prefix>_currency` and `<prefix>_formatted` (all None without money);
+    the formatted amount starts with "≈ " when it was converted."""
     return {
         f"{prefix}_minor": money.amount_minor if money else None,
         f"{prefix}_currency": money.currency if money else None,
-        f"{prefix}_formatted": format_money(money) if money else None,
+        f"{prefix}_formatted": shown_money(money, converted=converted) if money else None,
     }
 
 

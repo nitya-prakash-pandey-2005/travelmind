@@ -27,6 +27,7 @@ from redis.asyncio import Redis
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from travelmind.agent.tools.external import warn_about_feed_settings
 from travelmind.cache import close_redis, get_shared_redis
 from travelmind.config import get_settings
 from travelmind.db import (
@@ -72,7 +73,9 @@ def remove_statement_timeout() -> None:
 async def startup(ctx: dict[str, Any]) -> None:
     """Logging and the worker's statement timeout. The shared clients (DB engine, Redis pool,
     httpx clients) open lazily on first use."""
-    configure_logging(get_settings().log_level)
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    warn_about_feed_settings(settings)  # agent runs use the weather and place feeds here
     install_statement_timeout()
     log.info("worker_started")
 

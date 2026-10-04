@@ -10,12 +10,20 @@ service refusal, a feed that is down, or "This tool failed unexpectedly." for a 
 logged). Providers send it back to the model as data (Gemini: a function_response part whose
 response is `{"data": ...}`), never as instructions. A call runs only when the context's session
 is bound to the context's agency. Each call is its own unit of work: committed (releasing the
-connection) when it succeeds, rolled back when it fails.
+connection) when it succeeds, rolled back when it fails. Cancellation (the run's timeout or a
+user's cancel) rolls back too, shielded so the rollback itself can't be cut short, and then
+propagates: it is the only thing `execute` raises. An unknown role is a `not_allowed` result.
+
+What `data` carries for the grounding guard: `travelmind.agent.facts` collects the values a
+result vouches for (prices, flight numbers, dates, codes, names) and skips the fields the model
+wrote itself (`MODEL_AUTHORED_PATHS`: itinerary titles, notes and dates, ask_user's question)
+and every error.
 
 `confirm` marks the write tools the engine must get the user's approval for before calling
 `execute`; `ends_turn` marks ask_user, after which the run waits for the user.
 """
 
+import asyncio
 import json
 from typing import Any
 
@@ -76,8 +84,8 @@ TOOLS: tuple[Tool, ...] = (
     ),
     TypedTool(
         "weather_forecast",
-        "Daily weather for a place or airport between two dates: the forecast within 16 days, "
-        "typical conditions further out (labelled forecast or typical).",
+        "Daily weather for a place or airport between two dates: the forecast up to 14 days "
+        "ahead, typical conditions further out (labelled forecast or typical).",
         weather.WeatherArgs,
         weather.weather_forecast,
         roles=EVERYONE,
@@ -165,9 +173,13 @@ async def _rollback(db: AsyncSession) -> None:
 
 async def execute(ctx: RunContext, call: ToolCall) -> ToolResult:
     """Run one call under the run's agency and role; the result is always data."""
-    tool = get_tool(ctx.role, call.name)
+    tool: Tool | None = None
     data: dict[str, Any]
     try:
+        if ctx.role not in ROLES:
+            log.error("agent_tool_bad_role")  # a bug in the engine: roles come from the server
+            raise ToolError("not_allowed", "This run can't use tools.")
+        tool = get_tool(ctx.role, call.name)
         if tool is None:
             shown = clean_text(call.name, 60) or "that name"
             raise ToolError("unknown_tool", f"No tool called {shown} is available.")
@@ -183,4 +195,7 @@ async def execute(ctx: RunContext, call: ToolCall) -> ToolResult:
         log.exception("agent_tool_failed", tool=tool.spec.name if tool else None)
         await _rollback(ctx.db)
         data = FAILED.as_data()
+    except BaseException:  # cancelled (or the process is stopping): undo, then let it through
+        await asyncio.shield(_rollback(ctx.db))
+        raise
     return ToolResult(call_id=call.id, name=call.name, data=data)

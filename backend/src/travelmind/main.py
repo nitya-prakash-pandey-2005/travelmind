@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
+from travelmind.agent.tools.external import warn_about_feed_settings
 from travelmind.cache import close_redis
 from travelmind.config import get_settings
 from travelmind.dashboard.router import (
@@ -51,6 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     worker owns the schedules), listen for session evictions, and close the process-wide clients
     on shutdown."""
     settings = get_settings()
+    warn_about_feed_settings(settings)
     cleanup: asyncio.Task[None] | None = None
     if settings.environment != "test" and settings.run_scheduler:
         cleanup = asyncio.create_task(demo_cleanup_loop(settings.demo_cleanup_interval_seconds))
