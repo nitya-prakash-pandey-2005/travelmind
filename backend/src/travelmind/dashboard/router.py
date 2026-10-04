@@ -35,10 +35,8 @@ from travelmind.db import DbSession, utcnow
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
 from travelmind.readcache import (
-    InvalidatesAgencyCache,
-    agency_key,
-    agency_version,
-    cached_json,
+    PublishesMarkedAgencyChanges,
+    cached_agency_json,
     publish_agency_changes,
 )
 from travelmind.workspace.quotes import expire_overdue_quotes
@@ -52,30 +50,34 @@ __all__ = [
 
 SEARCH_MIN_LENGTH = 2
 SEARCH_TOO_SHORT_MESSAGE = f"Type at least {SEARCH_MIN_LENGTH} characters to search."
-# Summary and pipeline are read through the agency's Redis cache (readcache): any write to the
-# agency retires them at once, so the TTL only bounds what Redis keeps.
+# Summary and pipeline are read through the agency's Redis cache (readcache): a write to the
+# agency's workspace retires them at once. Searches don't, so the "searches" KPI may lag by up to
+# this TTL.
 DASHBOARD_TTL_SECONDS = 30
 
 dashboard_router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
-# Notifications and global search run lazy quote expiry.
+# Notifications and global search run lazy quote expiry, which marks the agency when it expired
+# a quote. Marking notifications seen changes nothing the cache holds, so it doesn't bump.
 notifications_router = APIRouter(
-    prefix="/api/v1/notifications", tags=["notifications"], dependencies=[InvalidatesAgencyCache]
+    prefix="/api/v1/notifications",
+    tags=["notifications"],
+    dependencies=[PublishesMarkedAgencyChanges],
 )
 onboarding_router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
 search_router = APIRouter(
-    prefix="/api/v1/search", tags=["search"], dependencies=[InvalidatesAgencyCache]
+    prefix="/api/v1/search", tags=["search"], dependencies=[PublishesMarkedAgencyChanges]
 )
 
 RangeQuery = Annotated[Range, Query(alias="range")]
 
 
-async def _cache_version(db: AsyncSession, redis: Redis, agency_id: UUID, now: datetime) -> int:
+async def _expire_first(db: AsyncSession, redis: Redis, agency_id: UUID, now: datetime) -> None:
     """Run lazy quote expiry before the cache read and keep it; if it changed any quote, the
-    agency's cached entries are retired first. Returns the agency's current cache version."""
+    agency's cached entries are retired first. Commits, so no transaction is held open while
+    the cache read waits."""
     await expire_overdue_quotes(db, agency_id, now=now)
     await db.commit()
     await publish_agency_changes(db, redis)
-    return await agency_version(redis, agency_id)
 
 
 @dashboard_router.get("/summary")
@@ -84,12 +86,13 @@ async def summary_route(
 ) -> SummaryOut:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
     now = utcnow()
-    version = await _cache_version(db, redis, agency.id, now)
+    await _expire_first(db, redis, agency.id, now)
     # The windows are the agency's local days, so the local date is part of the key.
     today = now.astimezone(ZoneInfo(agency.timezone)).date().isoformat()
-    return await cached_json(
+    return await cached_agency_json(
         redis,
-        agency_key(agency.id, version, "summary", range_, today),
+        agency.id,
+        (range_, today),
         DASHBOARD_TTL_SECONDS,
         lambda: metrics.summary(db, agency, range_, now=now),
         encode=SummaryOut.model_dump_json,
@@ -101,10 +104,11 @@ async def summary_route(
 @dashboard_router.get("/pipeline")
 async def pipeline_route(current: AuthedUser, db: DbSession, redis: RedisClient) -> PipelineOut:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    version = await _cache_version(db, redis, agency.id, utcnow())
-    return await cached_json(
+    await _expire_first(db, redis, agency.id, utcnow())
+    return await cached_agency_json(
         redis,
-        agency_key(agency.id, version, "pipeline"),
+        agency.id,
+        (),
         DASHBOARD_TTL_SECONDS,
         lambda: metrics.pipeline(db, agency),
         encode=PipelineOut.model_dump_json,

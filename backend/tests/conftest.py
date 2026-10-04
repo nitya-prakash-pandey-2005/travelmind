@@ -92,12 +92,19 @@ async def clean_redis():
 @pytest.fixture(autouse=True)
 async def close_shared_clients():
     """Each test runs on its own event loop; the process-wide Redis pool and httpx clients hold
-    sockets bound to the loop that opened them, so close them after every test."""
+    sockets bound to the loop that opened them, so close them after every test. The read cache's
+    process-wide circuit breaker starts closed in every test, whatever an earlier one did."""
+    from travelmind.readcache import reset_breaker
+
+    reset_breaker()
     yield
     from travelmind.cache import close_redis
     from travelmind.http import close_http_clients
+    from travelmind.jobs import close_job_queue
 
+    reset_breaker()
     await close_http_clients()
+    await close_job_queue()
     await close_redis()
 
 

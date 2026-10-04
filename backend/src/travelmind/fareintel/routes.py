@@ -20,7 +20,8 @@ Caching: the fare figures (`family`, `daily`, `by_days_out`, `carriers`, `update
 tenant-free market data, cached in Redis for `ROUTE_FARES_TTL_SECONDS` under a key of origin,
 destination, cabin, route currency, the agency's time zone and its local date (everything they
 depend on). A new fare snapshot does not invalidate them: market figures up to five minutes old
-are acceptable. `your_searches` is the agency's own data and is never cached.
+are acceptable. `your_searches` is the agency's own data and is never cached; it is read first,
+and the transaction is committed before the cache is touched.
 """
 
 from collections.abc import Awaitable
@@ -284,6 +285,10 @@ async def route_intel(
     if redis is None:
         fares = await load()
     else:
+        # End the transaction first: the cache read may wait on another caller's lock, and must
+        # not hold a pooled connection idle in transaction meanwhile. A miss's load begins a new
+        # one (the tenant is bound again on begin).
+        await db.commit()
         today = at.astimezone(ZoneInfo(agency.timezone)).date().isoformat()
         parts = (origin, destination, cabin, currency, agency.timezone, today)
         fares = await cached_json(

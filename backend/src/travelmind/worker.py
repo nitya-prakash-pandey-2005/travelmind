@@ -18,7 +18,6 @@ from typing import Any, ClassVar
 
 import structlog
 from arq import Retry, cron
-from arq.connections import RedisSettings
 from arq.cron import CronJob
 from sqlalchemy import event, text
 
@@ -36,6 +35,7 @@ from travelmind.demo.cleanup import run_demo_cleanup
 from travelmind.demo.service import DemoBusy, start_demo_workspace
 from travelmind.http import close_http_clients
 from travelmind.identity.service import SessionContext, list_agency_ids
+from travelmind.jobs import arq_redis_settings
 from travelmind.observability import configure_logging
 from travelmind.readcache import invalidate_agency
 from travelmind.workspace.quotes import expire_overdue_quotes
@@ -151,7 +151,8 @@ async def generate_demo_job(ctx: dict[str, Any]) -> str:
 class WorkerSettings:
     """Read by `arq travelmind.worker.WorkerSettings`."""
 
-    redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
+    # arq's own connection settings and pool (the read cache's shared pool is separate).
+    redis_settings = arq_redis_settings()
     functions: ClassVar[list[Any]] = [generate_demo_job]
     cron_jobs: ClassVar[list[CronJob]] = [
         cron(

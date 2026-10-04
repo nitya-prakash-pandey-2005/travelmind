@@ -145,10 +145,10 @@ async def test_list_budgets_hold_while_quotes_expire(client, airports, statement
 async def test_dashboard_summary_query_budget(client, airports, statements, monkeypatch):
     from travelmind.dashboard import router as dashboard_router
 
-    async def no_cache(redis, key, ttl_s, loader, **kwargs):  # type: ignore[no-untyped-def]
+    async def no_cache(redis, agency_id, parts, ttl_s, loader, **kwargs):  # type: ignore[no-untyped-def]
         return await loader()
 
-    monkeypatch.setattr(dashboard_router, "cached_json", no_cache)
+    monkeypatch.setattr(dashboard_router, "cached_agency_json", no_cache)
     small, large = await _counts_for_3_and_30(client, statements, "/api/v1/dashboard/summary")
     assert small == large <= SUMMARY_BUDGET, (small, large)
 

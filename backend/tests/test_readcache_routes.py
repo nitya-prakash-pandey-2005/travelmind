@@ -3,12 +3,16 @@
 
 import os
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import pytest
 from redis.asyncio import Redis
 
 from tests.fareintel.test_route_intel import _log_search, add, ago, intel
 from tests.helpers import make_client, signup
+from travelmind.cache import get_shared_redis
+from travelmind.db import bind_tenant, get_sessionmaker
+from travelmind.fareintel import routes
 
 
 @pytest.fixture
@@ -91,3 +95,33 @@ async def test_fare_aggregates_are_shared_but_searches_are_not(client, app, airp
         await intel(other)
     assert len(await keys(redis, "tm:rc:route:*")) == 2
     assert [s["cheapest_minor"] for s in (await intel(client))["your_searches"]] == [11111]
+
+
+async def test_route_intel_holds_no_transaction_during_cache_work(client, airports, monkeypatch):
+    """The cache read can wait on another caller's lock: the request's transaction is closed by
+    then, so it holds no pooled connection idle in transaction."""
+    await signup(client)
+    agency = (await client.get("/api/v1/agency")).json()["id"]
+    await add([100000])
+    await _log_search(agency, datetime.now(UTC) - timedelta(hours=1), cheapest=12345)
+    real = routes.cached_json
+    open_during_cache: list[bool] = []
+
+    async def spy(*args, **kwargs):
+        open_during_cache.append(db.in_transaction())
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(routes, "cached_json", spy)
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, UUID(agency))
+        out = await routes.route_intel(
+            db,
+            UUID(agency),
+            origin="DEL",
+            destination="BOM",
+            cabin="economy",
+            redis=get_shared_redis(),
+        )
+    assert open_during_cache == [False]
+    assert [s.cheapest_minor for s in out.your_searches] == [12345]
+    assert out.family == "market"

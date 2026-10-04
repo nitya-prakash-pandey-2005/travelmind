@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     # Connect and command deadline: an unreachable Redis fails fast (callers fall through) and
     # never hangs a request.
     redis_socket_timeout_s: float = 2.0
+    # The read cache (readcache) is an optimisation, so it gives up much sooner than that: each
+    # of its commands has this deadline, and after `failures` consecutive errors or timeouts it
+    # skips Redis for `cooldown_s`, then lets one trial call through.
+    read_cache_timeout_ms: int = 150
+    read_cache_breaker_failures: int = 3
+    read_cache_breaker_cooldown_s: float = 10.0
     allowed_origins: list[str] = ["http://localhost:5173"]
     session_cookie_name: str = "tm_session"
     session_ttl_hours: int = 24 * 14

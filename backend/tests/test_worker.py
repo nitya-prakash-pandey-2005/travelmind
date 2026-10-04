@@ -130,6 +130,18 @@ async def test_enqueue_and_job_status():
     assert await get_shared_redis().zcard("arq:queue") == 1
 
 
+async def test_the_job_queue_has_its_own_redis_pool():
+    """arq gets its own connection settings and pool: not the read cache's shared pool with its
+    2 s socket timeouts (and not its breaker)."""
+    queue = await jobs.queue()
+    assert queue.connection_pool is not get_shared_redis().connection_pool
+    assert queue.connection_pool.connection_kwargs.get("socket_timeout") is None
+    assert await jobs.queue() is queue  # one pool per process
+    assert worker.WorkerSettings.redis_settings == jobs.arq_redis_settings()
+    await jobs.close_job_queue()
+    assert await jobs.queue() is not queue  # reopened after a close
+
+
 async def test_job_status_reports_done_and_failed(monkeypatch):
     from arq.worker import Worker, func
 
@@ -143,7 +155,7 @@ async def test_job_status_reports_done_and_failed(monkeypatch):
     bad = await jobs.enqueue("bad_job")
     w = Worker(
         functions=[func(ok_job, name="ok_job"), func(bad_job, name="bad_job")],
-        redis_pool=jobs._pool(),
+        redis_pool=await jobs.queue(),
         burst=True,
         poll_delay=0,
         handle_signals=False,

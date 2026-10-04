@@ -22,6 +22,7 @@ from travelmind.health import router as health_router
 from travelmind.hotels.router import hotels_router
 from travelmind.http import close_http_clients
 from travelmind.identity.router import auth_router, invitations_router, team_router
+from travelmind.jobs import close_job_queue
 from travelmind.metrics import MetricsMiddleware, metrics_router
 from travelmind.middleware import (
     REQUEST_ID_HEADER,
@@ -63,9 +64,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await close_http_clients()
         finally:
             try:
-                await close_redis()
+                await close_job_queue()
             finally:
-                await get_engine().dispose()
+                try:
+                    await close_redis()
+                finally:
+                    await get_engine().dispose()
 
 
 def create_app() -> FastAPI:

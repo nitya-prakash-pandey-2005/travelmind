@@ -3,6 +3,7 @@ from it until the agency's data changes, never shared between agencies, and fres
 next read after any write."""
 
 import os
+import time
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -104,16 +105,55 @@ async def test_write_invalidates_agency_cache(seeded):
     assert final["quoting"] == before_stages["quoting"] + 1
 
 
-async def test_a_search_invalidates_the_searches_kpi(client, airports):
+async def test_a_search_does_not_retire_the_cache(client, airports, redis):
+    """Searches are frequent: they don't bump the agency's version, so the "searches" KPI may
+    lag by up to the summary TTL (30 s)."""
     enquiry, _ = await setup(client)  # one search so far
     assert enquiry
+    agency = await agency_id_of(client)
     before = await kpis(client)
+    version = await agency_version(redis, agency)
     r = await client.post(
         "/api/v1/flights/search",
         json={"origin": "DEL", "destination": "GOI", "departure_date": "2027-01-15"},
     )
     assert r.status_code == 200
+    seen = await client.post("/api/v1/notifications/seen")
+    assert seen.status_code == 204
+    assert await agency_version(redis, agency) == version
+    assert (await kpis(client))["searches"] == before["searches"]  # cached, ≤ 30 s stale
+    await redis.delete(*await redis.keys(f"tm:rc:a:{agency}:*"))  # as if the TTL ran out
     assert (await kpis(client))["searches"] == before["searches"] + 1
+
+
+async def test_a_hung_redis_adds_at_most_one_short_timeout_per_request(seeded, app):
+    from tests.test_readcache import HungRedis
+    from travelmind.cache import get_redis
+
+    client, _, _ = seeded
+    hung = HungRedis()
+
+    async def hung_redis():
+        yield hung
+
+    app.dependency_overrides[get_redis] = hung_redis
+    try:
+        for call in (
+            lambda: client.get("/api/v1/dashboard/summary"),
+            lambda: client.get("/api/v1/dashboard/pipeline"),
+            lambda: client.post(
+                "/api/v1/enquiries",
+                json={"origin": "DEL", "destination": "GOI", "depart_date": "2027-01-15"},
+            ),
+        ):
+            waited = hung.waited
+            started = time.perf_counter()
+            r = await call()
+            assert r.status_code in (200, 201), r.text
+            assert hung.waited - waited < 0.2  # one 150 ms timeout at most
+            assert time.perf_counter() - started < 2.0  # not the socket timeout (2 s per call)
+    finally:
+        app.dependency_overrides.pop(get_redis)
 
 
 async def test_public_decision_invalidates(client, app, airports):
