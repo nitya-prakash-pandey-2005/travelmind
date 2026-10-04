@@ -36,3 +36,16 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy src
       - run: uv run pytest -q
+
+  docker:
+    # Build only (no push): the API image used by deploy/docker-compose.yml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          tags: travelmind-api:ci

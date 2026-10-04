@@ -1,0 +1,12 @@
+# Secrets and local env
+.env
+.env.*
+# Installed and generated output (rebuilt in the image)
+node_modules
+dist
+playwright-report
+test-results
+*.tsbuildinfo
+*.tmp.mjs
+Dockerfile
+.dockerignore

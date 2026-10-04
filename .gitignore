@@ -21,3 +21,6 @@ dist/
 
 # Editor
 .vscode/
+
+# Deploy stack secrets (deploy/.env.example is the committed template)
+deploy/.env

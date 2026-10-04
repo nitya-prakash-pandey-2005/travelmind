@@ -1,0 +1,213 @@
+# Production-like TravelMind stack (local). See deploy/README.md.
+#   cp deploy/.env.example deploy/.env      # then change the passwords
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+#   bash deploy/smoke.sh
+# Topology: nginx (:8080 on the host) -> api (gunicorn + uvicorn workers, N replicas)
+#           -> pgbouncer (transaction pooling) -> postgres; redis; arq worker; one-shot migrate.
+# Only nginx publishes a port. Every secret comes from deploy/.env (git-ignored).
+name: travelmind-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Settings shared by the api and the worker. Keys without a value are passed through from
+# deploy/.env (or the shell) only when set there, so the app's own defaults apply otherwise.
+x-app-env: &app-env
+  TM_ENVIRONMENT: production
+  TM_DATABASE_URL: postgresql+asyncpg://travelmind_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD in deploy/.env}@pgbouncer:5432/travelmind
+  TM_DB_PGBOUNCER: "true"
+  TM_REDIS_URL: redis://redis:6379/0
+  TM_RUN_SCHEDULER: "false" # the worker owns the periodic jobs
+  # Plain HTTP on localhost only. Set true (and serve HTTPS in front of nginx) anywhere else.
+  TM_COOKIE_SECURE: "false"
+  TM_ALLOWED_ORIGINS: '["http://localhost:8080"]'
+  TM_LOG_LEVEL: ${TM_LOG_LEVEL:-INFO}
+  TM_METRICS_TOKEN: ${TM_METRICS_TOKEN:-}
+  TM_SANDBOX_SUPPLIER: ${TM_SANDBOX_SUPPLIER:-}
+  TM_DUFFEL_TOKEN: ${TM_DUFFEL_TOKEN:-}
+  TM_LITEAPI_KEY: ${TM_LITEAPI_KEY:-}
+  TM_GOOGLE_TIM_API_KEY: ${TM_GOOGLE_TIM_API_KEY:-}
+  TM_TRAVELPAYOUTS_TOKEN: ${TM_TRAVELPAYOUTS_TOKEN:-}
+  TM_FX_ENABLED: ${TM_FX_ENABLED:-true}
+  # Optional overrides (pool sizes, rate limits; deploy/.env.loadtest raises the per-IP limits).
+  TM_DB_POOL_SIZE:
+  TM_DB_MAX_OVERFLOW:
+  TM_LOGIN_MAX_ATTEMPTS:
+  TM_LOGIN_IP_MAX_ATTEMPTS:
+  TM_LOGIN_WINDOW_SECONDS:
+  TM_SIGNUP_MAX_PER_IP:
+  TM_SIGNUP_WINDOW_SECONDS:
+  TM_DEMO_MAX_PER_IP:
+  TM_DEMO_WINDOW_SECONDS:
+  TM_SEARCH_MAX_PER_MINUTE:
+  TM_REPRICE_MAX_PER_MINUTE:
+  TM_PUBLIC_QUOTE_MAX_PER_MINUTE:
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    command: ["postgres", "-c", "max_connections=200"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      # Read by init.sql (\getenv) when the volume is first created.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      OWNER_DB_PASSWORD: ${OWNER_DB_PASSWORD:?set OWNER_DB_PASSWORD in deploy/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      # TCP, not the socket: during first-run init the server listens on the socket only.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d travelmind"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    logging: *logging
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.26.0-p0
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: travelmind
+      DB_USER: travelmind_app
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      OWNER_DB_PASSWORD: ${OWNER_DB_PASSWORD}
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "2000"
+      DEFAULT_POOL_SIZE: "40"
+      # The owner may open the admin console (SHOW POOLS / SHOW STATS) on the `pgbouncer` db.
+      ADMIN_USERS: travelmind_owner
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    # The image's entrypoint writes the app user to userlist.txt; the owner is added first.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        printf '"travelmind_owner" "%s"\n' "$$OWNER_DB_PASSWORD" > /etc/pgbouncer/userlist.txt
+        exec /entrypoint.sh /usr/bin/pgbouncer /etc/pgbouncer/pgbouncer.ini
+    ulimits:
+      nofile: { soft: 8192, hard: 8192 }
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5432"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    # Only keys with a TTL are evicted: cache entries go first; per-agency cache versions,
+    # rate-limit windows and the job queue stay.
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    logging: *logging
+
+  # One-shot: schema migrations as the owner role, straight to postgres (DDL does not go through
+  # PgBouncer). The api and the worker start only after it exits 0.
+  migrate:
+    build:
+      context: ../backend
+    image: travelmind-prod/api:local
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      TM_MIGRATION_DATABASE_URL: postgresql+asyncpg://travelmind_owner:${OWNER_DB_PASSWORD}@postgres:5432/travelmind
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    logging: *logging
+
+  api:
+    build:
+      context: ../backend
+    image: travelmind-prod/api:local
+    environment:
+      <<: *app-env
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prom
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-}
+    deploy:
+      replicas: ${API_REPLICAS:-2}
+    stop_grace_period: 25s # gunicorn graceful_timeout is 20 s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+    logging: *logging
+
+  # arq: periodic jobs (demo cleanup, quote expiry) and queued work. It exits quickly when Redis
+  # is unreachable (conn_retries=1), so it starts after a healthy Redis and is restarted.
+  worker:
+    build:
+      context: ../backend
+    image: travelmind-prod/api:local
+    command: ["arq", "travelmind.worker.WorkerSettings"]
+    environment:
+      <<: *app-env
+    stop_grace_period: 25s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+  nginx:
+    build:
+      context: ../frontend
+    image: travelmind-prod/web:local
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/proxy.conf:/etc/nginx/travelmind/proxy.conf:ro
+      - ./nginx/security_headers.conf:/etc/nginx/travelmind/security_headers.conf:ro
+    ulimits:
+      nofile: { soft: 16384, hard: 16384 }
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  pgdata:
+  redisdata:

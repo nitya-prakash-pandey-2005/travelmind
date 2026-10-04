@@ -21,6 +21,8 @@ dependencies = [
   "tzdata>=2026.4",
   "prometheus-client>=0.26.0",
   "arq>=0.28.0",
+  "gunicorn>=26.2.0",
+  "uvicorn-worker>=0.4.0",
 ]
 
 [dependency-groups]
