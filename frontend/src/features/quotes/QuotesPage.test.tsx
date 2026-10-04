@@ -1,11 +1,11 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import type { QuoteSummary } from "../../api/quotes";
+import type { QuoteStatus, QuoteSummary } from "../../api/quotes";
 import { ME_OWNER } from "../../test/fixtures";
 import { mockApi, type MockCall, type MockHandler } from "../../test/mockApi";
 import { renderApp, withSession } from "../../test/renderApp";
 import { commandCenterMocks, enquiryOut } from "../../test/workspaceFixtures";
-import { minutesAgo, quoteDetail, quoteSummary } from "./quoteFixtures";
+import { minutesAgo, quoteDetail, quoteList, quoteSummary } from "./quoteFixtures";
 
 vi.mock("../globe/webgl", () => ({ hasWebGL: () => false }));
 
@@ -19,22 +19,35 @@ const QUOTES: QuoteSummary[] = [
     sent_version: 2,
     min_sell_minor: 4_520_000,
     sent_at: minutesAgo(90),
-    client: { id: "c-rahul", name: "Rahul Mehta" },
+    client: { id: "c-rahul", name: "Rahul Mehta", kind: "individual" },
     enquiry: { id: "e-3", number: "E-0003", origin: "BOM", destination: "GOI", depart_date: null },
   }),
   quoteSummary({ id: "q-4", number: "Q-0004", status: "sent", sent_version: 1, sent_at: minutesAgo(300) }),
-  quoteSummary({ id: "q-3", number: "Q-0003", status: "accepted", sent_version: 1, min_sell_minor: 1_250_000, sent_at: minutesAgo(5000) }),
+  // Accepted on a dearer option than the cheapest: its value is the accepted sell price.
+  quoteSummary({
+    id: "q-3",
+    number: "Q-0003",
+    status: "accepted",
+    sent_version: 1,
+    min_sell_minor: 1_250_000,
+    value_minor: 1_400_000,
+    sent_at: minutesAgo(5000),
+    decided_at: minutesAgo(4000),
+  }),
   quoteSummary({ id: "q-2", number: "Q-0002", status: "declined", sent_version: 1, sent_at: minutesAgo(9000) }),
 ];
 
-function quotesPage(items: QuoteSummary[] = QUOTES, extra: Record<string, MockHandler> = {}) {
+function quotesPage(items: QuoteSummary[] = QUOTES, extra: Record<string, MockHandler> = {}, counts?: Record<QuoteStatus, number>) {
   const api = mockApi(
     withSession(ME_OWNER, {
       ...commandCenterMocks({ populated: true }),
       "GET /api/v1/quotes": (call: MockCall) => {
         const status = call.search.get("status");
         const rows = status ? items.filter((q) => q.status === status) : items;
-        return { status: 200, body: { items: rows, total: rows.length } };
+        // Counts cover every status whatever the status filter, as the server's do.
+        const all = counts ?? quoteList(items).counts;
+        const total = status ? all[status as QuoteStatus] : Object.values(all).reduce((sum, n) => sum + n, 0);
+        return { status: 200, body: { items: rows, total, counts: all } };
       },
       ...extra,
     }),
@@ -62,6 +75,30 @@ test("the list shows every quote with its client, route, status, value, versions
   // Figures over the list.
   const figures = screen.getByRole("region", { name: "Quote figures" });
   expect(within(figures).getByRole("group", { name: /^Awaiting the client: 2/ })).toBeInTheDocument();
+});
+
+test("values are the server's quote value: an accepted quote shows the option the client took", async () => {
+  quotesPage();
+  const table = await screen.findByRole("table", { name: "Quotes" });
+  const accepted = (await within(table).findByText("Q-0003")).closest("tr") as HTMLElement;
+  expect(within(accepted).getByText("₹14,000")).toBeInTheDocument();
+  expect(within(accepted).queryByText("₹12,500")).not.toBeInTheDocument();
+  const figures = screen.getByRole("region", { name: "Quote figures" });
+  expect(within(figures).getByRole("group", { name: /^Accepted value: ₹14K/ })).toBeInTheDocument();
+});
+
+test("status tabs count every quote on the server, not just the newest 200 loaded", async () => {
+  const counts = { draft: 120, sent: 80, viewed: 50, accepted: 150, declined: 40, expired: 10 };
+  quotesPage(QUOTES, {}, counts);
+  await screen.findByRole("table", { name: "Quotes" });
+  expect(await screen.findByRole("tab", { name: "All 450" })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Draft 120" })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Accepted 150" })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Expired 10" })).toBeInTheDocument();
+  const figures = screen.getByRole("region", { name: "Quote figures" });
+  expect(within(figures).getByRole("group", { name: /^Awaiting the client: 130/ })).toBeInTheDocument();
+  // Only the loaded rows carry values, so the accepted value says what it covers.
+  expect(within(figures).getByRole("group", { name: /^Accepted value:/ })).toHaveTextContent(/newest 200 quotes/);
 });
 
 test("status tabs filter through the API and the search box narrows the rows", async () => {

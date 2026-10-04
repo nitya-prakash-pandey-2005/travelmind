@@ -71,17 +71,29 @@ export function ageDescription(iso: string, now: Date): string {
   return `opened ${plural(Math.floor(age / DAY), "day", "days")} ago`;
 }
 
-/** Each enquiry's most recent quote (by creation), the one the board values it at. */
+/** Whether `a` stands for its enquiry ahead of `b`: the accepted quote decided last, else the newest quote. */
+function ahead(a: QuoteSummary, b: QuoteSummary): boolean {
+  const aWon = a.status === "accepted";
+  const bWon = b.status === "accepted";
+  if (aWon !== bWon) return aWon;
+  if (aWon && a.decided_at !== b.decided_at) return (a.decided_at ?? "") > (b.decided_at ?? "");
+  return a.created_at > b.created_at;
+}
+
+/**
+ * The quote each enquiry is valued at, as the Command Center pipeline picks it on the server: its accepted
+ * quote decided last (an enquiry is won once), else its most recent quote.
+ */
 export function latestQuotes(quotes: readonly QuoteSummary[]): Map<string, QuoteSummary> {
   const latest = new Map<string, QuoteSummary>();
   for (const quote of quotes) {
     const seen = latest.get(quote.enquiry.id);
-    if (!seen || quote.created_at > seen.created_at) latest.set(quote.enquiry.id, quote);
+    if (!seen || ahead(quote, seen)) latest.set(quote.enquiry.id, quote);
   }
   return latest;
 }
 
-/** The value an enquiry adds to its column: its latest quote's cheapest option, in the agency currency only. */
+/** The value an enquiry adds to its column: its quote's value (the server's), in the agency currency only. */
 export function quotedValue(quote: QuoteSummary | undefined, currency: string): number {
-  return quote && quote.currency === currency && quote.min_sell_minor !== null ? quote.min_sell_minor : 0;
+  return quote && quote.currency === currency && quote.value_minor !== null ? quote.value_minor : 0;
 }

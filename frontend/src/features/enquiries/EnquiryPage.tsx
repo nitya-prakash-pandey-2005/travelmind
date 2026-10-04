@@ -144,10 +144,10 @@ function QuotesPanel({
     { key: "status", header: "Status", cell: (q) => <StatusPill status={q.status} /> },
     {
       key: "value",
-      header: "From",
+      header: "Value",
       align: "right",
-      cell: (q) => (q.min_sell_minor !== null ? formatWholeMoney(q.min_sell_minor, q.currency) : "—"),
-      sortValue: (q) => q.min_sell_minor ?? -1,
+      cell: (q) => (q.value_minor !== null ? formatWholeMoney(q.value_minor, q.currency) : "—"),
+      sortValue: (q) => q.value_minor ?? -1,
     },
     {
       key: "versions",
@@ -255,7 +255,10 @@ function departsIn(depart: string): string {
   return days > 0 ? `in ${days} d` : `${-days} d ago`;
 }
 
-/** The enquiry's headline figures: departure, quotes, latest quote value and how long it has been open. */
+/**
+ * The enquiry's headline figures: departure, quotes, the value of the quote it stands at (its accepted quote,
+ * else its latest; the pipeline's pick) and how long it has been open.
+ */
 function EnquiryFigures({ enquiry, now }: { enquiry: EnquiryOut; now: Date }) {
   const quotes = useQuery(quotesQueryOptions({ enquiry_id: enquiry.id, limit: 50 }));
   const latest = latestQuotes(quotes.data?.items ?? []).get(enquiry.id);
@@ -270,13 +273,21 @@ function EnquiryFigures({ enquiry, now }: { enquiry: EnquiryOut; now: Date }) {
       <KpiTile
         label="Quotes"
         value={formatNumber(quotes.data?.total ?? enquiry.quote_count)}
-        hint={latest ? `Latest ${latest.number}` : "None yet"}
+        hint={quotes.data?.items[0] ? `Latest ${quotes.data.items[0].number}` : "None yet"}
         loading={loading}
       />
       <KpiTile
-        label="Latest quote"
-        value={latest && latest.min_sell_minor !== null ? formatMoneyCompact({ amount_minor: latest.min_sell_minor, currency: latest.currency }) : "—"}
-        hint={latest ? "Cheapest option" : enquiry.budget ? `Budget ${formatMoneyCompact(enquiry.budget)}` : "No budget given"}
+        label="Quote value"
+        value={latest && latest.value_minor !== null ? formatMoneyCompact({ amount_minor: latest.value_minor, currency: latest.currency }) : "—"}
+        hint={
+          latest
+            ? latest.status === "accepted"
+              ? `${latest.number} · the accepted option`
+              : `${latest.number} · its cheapest option`
+            : enquiry.budget
+              ? `Budget ${formatMoneyCompact(enquiry.budget)}`
+              : "No budget given"
+        }
         loading={loading}
       />
       <KpiTile

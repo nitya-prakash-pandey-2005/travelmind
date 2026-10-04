@@ -1,5 +1,5 @@
 import type { FlightOffer } from "../../api/offers";
-import type { QuoteDetail, QuoteOption, QuoteSummary, QuoteVersion } from "../../api/quotes";
+import type { QuoteClientRef, QuoteDetail, QuoteList, QuoteOption, QuoteStatus, QuoteSummary, QuoteVersion } from "../../api/quotes";
 import { makeOffer, segment } from "../../test/offerFixtures";
 
 /** Test data for the quote screens, field for field with the backend's quote schemas. */
@@ -85,12 +85,21 @@ export function quoteVersion(version: number, options: QuoteOption[], extra: Par
 }
 
 export const ENQUIRY_REF = { id: "e-5", number: "E-0005", origin: "DEL", destination: "BOM", depart_date: dayFromToday(21) };
-export const PRIYA = { id: "c-priya", name: "Priya Sharma" };
+export const PRIYA: QuoteClientRef = { id: "c-priya", name: "Priya Sharma", kind: "individual" };
+
+/** The server's value rule (backend quotes.py): accepted option, else cheapest sent, else cheapest current. */
+function valueOf(quote: Pick<QuoteDetail, "status" | "sent_version" | "accepted_option" | "versions">): number | null {
+  const sent = quote.versions.find((v) => v.version === quote.sent_version);
+  const valued = sent ?? quote.versions[0];
+  if (!valued) return null;
+  const accepted = quote.status === "accepted" && quote.accepted_option !== null ? valued.options[quote.accepted_option] : undefined;
+  return accepted ? accepted.sell.amount_minor : valued.totals.min_sell_minor;
+}
 
 export function quoteDetail(overrides: Partial<QuoteDetail> = {}): QuoteDetail {
   const versions = overrides.versions ?? [];
   const latest = versions[0];
-  return {
+  const detail: QuoteDetail = {
     id: "q-4",
     number: "Q-0004",
     status: "draft",
@@ -100,6 +109,7 @@ export function quoteDetail(overrides: Partial<QuoteDetail> = {}): QuoteDetail {
     current_version: latest?.version ?? 0,
     sent_version: null,
     min_sell_minor: latest?.totals.min_sell_minor ?? null,
+    value_minor: null,
     sent_at: null,
     created_at: minutesAgo(600),
     markup_kind: "percent",
@@ -111,6 +121,7 @@ export function quoteDetail(overrides: Partial<QuoteDetail> = {}): QuoteDetail {
     versions,
     ...overrides,
   };
+  return "value_minor" in overrides ? detail : { ...detail, value_minor: valueOf(detail) };
 }
 
 /** Q-0004 sent at v2 and since revised to v3, which is cheaper. */
@@ -128,7 +139,9 @@ export function sentQuote(overrides: Partial<QuoteDetail> = {}): QuoteDetail {
   });
 }
 
+/** A list row; its value defaults to its cheapest current option (as for a draft) unless given. */
 export function quoteSummary(overrides: Partial<QuoteSummary> = {}): QuoteSummary {
+  const min = overrides.min_sell_minor === undefined ? 575_740 : overrides.min_sell_minor;
   return {
     id: "q-4",
     number: "Q-0004",
@@ -138,9 +151,18 @@ export function quoteSummary(overrides: Partial<QuoteSummary> = {}): QuoteSummar
     enquiry: ENQUIRY_REF,
     current_version: 1,
     sent_version: null,
-    min_sell_minor: 575_740,
+    min_sell_minor: min,
+    value_minor: min,
     sent_at: null,
+    decided_at: null,
     created_at: minutesAgo(600),
     ...overrides,
   };
+}
+
+/** A list response as the server sends it: these rows, with the counts per status taken from them. */
+export function quoteList(items: QuoteSummary[]): QuoteList {
+  const counts: Record<QuoteStatus, number> = { draft: 0, sent: 0, viewed: 0, accepted: 0, declined: 0, expired: 0 };
+  for (const quote of items) counts[quote.status] += 1;
+  return { items, total: items.length, counts };
 }

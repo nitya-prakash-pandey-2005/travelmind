@@ -12,19 +12,32 @@ const TEAM = [
   { id: "u-agent", email: "ravi@alphatravels.in", full_name: "Ravi Kumar", role: "agent" },
 ];
 
-function quote(id: string, enquiryId: string, number: string, status: string, minSell: number, createdMinutesAgo: number) {
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+
+/** A list row; `value` is the server's quote value (the cheapest option unless given). */
+function quote(
+  id: string,
+  enquiryId: string,
+  number: string,
+  status: string,
+  minSell: number,
+  createdMinutesAgo: number,
+  { value = minSell, decidedMinutesAgo }: { value?: number; decidedMinutesAgo?: number } = {},
+) {
   return {
     id,
     number,
     status,
     currency: "INR",
-    client: { id: "c-priya", name: "Priya Sharma" },
+    client: { id: "c-priya", name: "Priya Sharma", kind: "individual" },
     enquiry: { id: enquiryId, number: "E-0000", origin: "DEL", destination: "BOM", depart_date: "2026-11-20" },
     current_version: 2,
     sent_version: status === "draft" ? null : 2,
     min_sell_minor: minSell,
+    value_minor: value,
     sent_at: null,
-    created_at: new Date(Date.now() - createdMinutesAgo * 60_000).toISOString(),
+    decided_at: decidedMinutesAgo === undefined ? null : minutesAgo(decidedMinutesAgo),
+    created_at: minutesAgo(createdMinutesAgo),
   };
 }
 
@@ -245,6 +258,24 @@ test("the list view is a table whose rows open the enquiry", async () => {
   expect(within(table).getAllByRole("row")).toHaveLength(6);
   await user.click(within(table).getByText("E-0003"));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/enquiries/e-3"));
+});
+
+test("a won enquiry is valued at its accepted quote, by the server's value, not a later quote", async () => {
+  const quotes = [
+    // Accepted on its dearer option; a second accepted quote decided earlier and a newer draft don't count.
+    quote("q-4", "e-4", "Q-0004", "accepted", 6_200_000, 900, { value: 6_800_000, decidedMinutesAgo: 100 }),
+    quote("q-3", "e-4", "Q-0003", "accepted", 5_000_000, 950, { decidedMinutesAgo: 200 }),
+    quote("q-7", "e-4", "Q-0007", "draft", 1_000_000, 30),
+  ];
+  const { user } = board({ "GET /api/v1/quotes": { status: 200, body: { items: quotes, total: quotes.length } } });
+  const won = await column("Won");
+  const card = await within(won).findByRole("article", { name: "E-0004 DEL → BOM" });
+  await within(card).findByText("₹68,000");
+  expect(within(screen.getByRole("region", { name: "Won" })).getByTestId("stage-value")).toHaveTextContent("₹68,000");
+  await user.click(screen.getByRole("radio", { name: "List" }));
+  const table = await screen.findByRole("table", { name: "Enquiries" });
+  const row = within(table).getByText("E-0004").closest("tr") as HTMLElement;
+  expect(within(row).getByText("₹68,000")).toBeInTheDocument();
 });
 
 test("the list view values quotes in whole units", async () => {

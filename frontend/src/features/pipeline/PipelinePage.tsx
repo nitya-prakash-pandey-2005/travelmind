@@ -312,9 +312,9 @@ export function PipelinePage() {
       align: "right",
       cell: (row) => {
         const quote = latest.get(row.id);
-        return quote && quote.min_sell_minor !== null ? formatWholeMoney(quote.min_sell_minor, quote.currency) : "—";
+        return quote && quote.value_minor !== null ? formatWholeMoney(quote.value_minor, quote.currency) : "—";
       },
-      sortValue: (row) => latest.get(row.id)?.min_sell_minor ?? -1,
+      sortValue: (row) => latest.get(row.id)?.value_minor ?? -1,
     },
     {
       key: "age",

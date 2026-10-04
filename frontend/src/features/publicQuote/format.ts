@@ -12,7 +12,21 @@ export const CABIN_LABEL: Record<Cabin, string> = {
 };
 
 const DAY = new Intl.DateTimeFormat("en-US", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
-const DATE = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** The date format for `timeZone`, falling back to UTC for a zone this browser doesn't know. */
+function dateFormat(timeZone: string): Intl.DateTimeFormat {
+  let format = dateFormats.get(timeZone);
+  if (!format) {
+    try {
+      format = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric", timeZone });
+    } catch {
+      format = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    }
+    dateFormats.set(timeZone, format);
+  }
+  return format;
+}
 
 function part(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
   return parts.find((p) => p.type === type)?.value ?? "";
@@ -35,11 +49,11 @@ export function travelDay(iso: string): string {
   return `${part(parts, "weekday")} ${part(parts, "day")} ${part(parts, "month")}`;
 }
 
-/** "14 Oct 2026" for an instant ("—" if unreadable). */
-export function longDate(iso: string): string {
+/** "14 Oct 2026" for an instant, as the date in `timeZone` (the agency's; "—" if unreadable). */
+export function longDate(iso: string, timeZone = "UTC"): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "—";
-  const parts = DATE.formatToParts(date);
+  const parts = dateFormat(timeZone).formatToParts(date);
   return `${part(parts, "day")} ${part(parts, "month")} ${part(parts, "year")}`;
 }
 

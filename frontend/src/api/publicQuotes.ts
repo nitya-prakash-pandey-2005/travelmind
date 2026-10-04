@@ -14,7 +14,13 @@ export const INDICATIVE_PRICE_LABEL = "Indicative price — confirm with your tr
 export const LIVE_PRICE_LABEL = "Live fare at the time of quoting";
 export type PriceLabel = typeof INDICATIVE_PRICE_LABEL | typeof LIVE_PRICE_LABEL;
 
-export type PublicAgency = { name: string; /** "#rrggbb" */ brand_color: string };
+export type PublicAgency = {
+  name: string;
+  /** "#rrggbb" */
+  brand_color: string;
+  /** IANA time zone: dates such as the expiry read as the agency's local dates. */
+  timezone: string;
+};
 
 export type PublicSegment = {
   marketing_carrier: string;

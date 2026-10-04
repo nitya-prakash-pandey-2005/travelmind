@@ -32,12 +32,14 @@ const QUOTE = {
   number: "Q-0005",
   status: "viewed",
   currency: "INR",
-  client: { id: "c-priya", name: "Priya Sharma" },
+  client: { id: "c-priya", name: "Priya Sharma", kind: "individual" },
   enquiry: { id: "e-5", number: "E-0005", origin: "DEL", destination: "BOM", depart_date: "2026-11-20" },
   current_version: 3,
   sent_version: 3,
   min_sell_minor: 4_520_000,
+  value_minor: 4_520_000,
   sent_at: "2026-10-01T09:00:00Z",
+  decided_at: null,
   created_at: "2026-09-30T09:00:00Z",
 };
 
@@ -127,10 +129,10 @@ test("a one-way trip for adults only leaves the return date and children out of 
   expect(params.has("children")).toBe(false);
 });
 
-test("quote values and the budget show in whole units", async () => {
+test("quote values (the server's value, not the cheapest current option) and the budget show in whole units", async () => {
   enquiryPage({
     "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, budget: { amount_minor: 6_000_049, currency: "INR" } } },
-    "GET /api/v1/quotes": { status: 200, body: { items: [{ ...QUOTE, min_sell_minor: 2_577_225 }], total: 1 } },
+    "GET /api/v1/quotes": { status: 200, body: { items: [{ ...QUOTE, min_sell_minor: 2_100_000, value_minor: 2_577_225 }], total: 1 } },
   });
   const quotes = await screen.findByRole("table", { name: "Quotes for E-0005" });
   expect(await within(quotes).findByText("₹25,772")).toBeInTheDocument();
@@ -139,7 +141,8 @@ test("quote values and the budget show in whole units", async () => {
   expect(within(trip).getByText("₹60,000")).toBeInTheDocument();
   expect(trip).not.toHaveTextContent("₹60,000.49");
   // Headline tiles are compact, like every other KPI tile.
-  expect(within(screen.getByRole("region", { name: "Enquiry figures" })).getByRole("group", { name: /^Latest quote: ₹25\.8K/ })).toBeInTheDocument();
+  expect(within(screen.getByRole("region", { name: "Enquiry figures" })).getByRole("group", { name: /^Quote value: ₹25\.8K/ })).toBeInTheDocument();
+  expect(within(quotes).queryByText("₹21,000")).not.toBeInTheDocument();
 });
 
 test("Create quote opens the new-quote dialog for this enquiry, then starts the quote and opens it", async () => {

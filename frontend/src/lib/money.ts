@@ -2,8 +2,10 @@ import type { Money } from "../api/offers";
 
 /*
  * Which format where:
- * - formatMoneyCompact ("₹31.1L"): KPI tiles and Command Center dashboard figures.
- * - formatWholeMoney ("₹2,16,804"): tables, cards, facts and budgets.
+ * - formatMoneyCompact ("₹31.1L"): KPI tiles and Command Center dashboard figures that add up money
+ *   (pipeline, won and accepted values).
+ * - formatWholeMoney ("₹2,16,804"): tables, cards, facts and budgets, and fare levels anywhere, KPI tiles
+ *   included (route intel's median and range read "₹4,750", not "₹4.8K": a fare is compared to the rupee).
  * - formatMoney (exact minor units, "₹2,16,804.38"): only where the client is quoted a price: the quote's
  *   price breakdowns (and the supplier fares they are built from), the send dialog and WhatsApp text, and
  *   the public quote page.

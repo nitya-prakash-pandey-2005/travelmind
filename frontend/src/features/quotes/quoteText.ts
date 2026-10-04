@@ -1,5 +1,5 @@
 import type { Slice } from "../../api/offers";
-import type { QuoteOption } from "../../api/quotes";
+import type { QuoteClientRef, QuoteOption } from "../../api/quotes";
 import { dayShift, localTime } from "../../lib/dates";
 import { formatMoney } from "../../lib/money";
 
@@ -9,7 +9,8 @@ import { formatMoney } from "../../lib/money";
  */
 
 export type QuoteMessageInput = {
-  clientName: string | null;
+  /** A person is greeted by first name; a company, like a quote without a client, with "Hello,". */
+  client: Pick<QuoteClientRef, "name" | "kind"> | null;
   /** The options of the version being sent, in order. */
   options: QuoteOption[];
   /** When the link stops working (ISO); null leaves the expiry out. */
@@ -56,8 +57,16 @@ function expiryDate(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone }).format(new Date(iso));
 }
 
-export function composeQuoteMessage({ clientName, options, expiresAt, link, agencyName, timeZone = "UTC" }: QuoteMessageInput): string {
-  const name = firstName(clientName);
+/**
+ * The first name to greet the client by: none for a company (as on the client's quote page, which the
+ * server greets the same way) or without a client.
+ */
+export function greetingName(client: Pick<QuoteClientRef, "name" | "kind"> | null): string | null {
+  return client && client.kind === "individual" ? firstName(client.name) : null;
+}
+
+export function composeQuoteMessage({ client, options, expiresAt, link, agencyName, timeZone = "UTC" }: QuoteMessageInput): string {
+  const name = greetingName(client);
   const route = options[0]?.offer.slices[0];
   const several = options.length > 1;
   const subject = several ? "Here are your flight options" : "Here is your flight option";

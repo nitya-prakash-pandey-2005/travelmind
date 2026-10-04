@@ -47,6 +47,9 @@ test("the record shows the header, contact card, figures, enquiries, quotes and 
   const quotes = within(main).getByRole("region", { name: "Quotes" });
   expect((await within(quotes).findAllByRole("link", { name: "Q-0004" }))[0]).toHaveAttribute("href", "/app/quotes/q-4");
   expect(within(quotes).getAllByText("Accepted").length).toBeGreaterThan(0);
+  // The accepted quote's value is the one its won value counts, not its cheapest option.
+  expect(within(quotes).getAllByText("₹45,200").length).toBeGreaterThan(0);
+  expect(within(quotes).queryByText("₹41,000")).not.toBeInTheDocument();
 
   const timeline = within(main).getByRole("region", { name: "Timeline" });
   expect(await within(timeline).findByText("Added client Priya Sharma")).toBeInTheDocument();

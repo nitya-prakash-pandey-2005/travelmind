@@ -8,7 +8,7 @@ vi.mock("../features/globe/webgl", () => ({ hasWebGL: () => false }));
 const QUOTE = {
   number: "Q-0004",
   status: "sent",
-  agency: { name: "Orbit Travel Co.", brand_color: "#0B84C6" },
+  agency: { name: "Orbit Travel Co.", brand_color: "#0B84C6", timezone: "Asia/Kolkata" },
   client_first_name: "Priya",
   message: "",
   options: [],

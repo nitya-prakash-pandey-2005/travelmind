@@ -86,11 +86,12 @@ const QUOTE: QuoteDetail = {
   number: "Q-0004",
   status: "draft",
   currency: "INR",
-  client: { id: "c-priya", name: "Priya Sharma" },
+  client: { id: "c-priya", name: "Priya Sharma", kind: "individual" },
   enquiry: { id: "e-5", number: "E-0005", origin: "DEL", destination: "BOM", depart_date: "2026-10-20" },
   current_version: 1,
   sent_version: null,
   min_sell_minor: 575_740,
+  value_minor: 575_740,
   sent_at: null,
   created_at: "2026-10-01T09:00:00Z",
   markup_kind: "percent",
@@ -133,7 +134,7 @@ const TIMELINE = {
 const PUBLIC_QUOTE: PublicQuote = {
   number: "Q-0004",
   status: "viewed",
-  agency: { name: "Alpha Travels", brand_color: "#22d3ee" },
+  agency: { name: "Alpha Travels", brand_color: "#22d3ee", timezone: "Asia/Kolkata" },
   client_first_name: "Priya",
   message: "Two good options for your Mumbai trip.",
   options: [

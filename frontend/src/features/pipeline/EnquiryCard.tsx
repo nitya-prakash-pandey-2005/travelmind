@@ -51,7 +51,7 @@ function QuoteLine({ enquiry, latest }: { enquiry: EnquiryOut; latest?: QuoteSum
       <span className="flex min-w-0 items-center justify-end gap-1.5 text-right" title={`${latest.number} · ${pill.label}`}>
         <span className={cn("min-w-0 truncate text-[11px] font-medium", QUOTE_TONE[pill.tone])}>{pill.label}</span>
         <span className="tm-num shrink-0 text-[13px] font-medium text-ink">
-          {latest.min_sell_minor !== null ? formatWholeMoney(latest.min_sell_minor, latest.currency) : "—"}
+          {latest.value_minor !== null ? formatWholeMoney(latest.value_minor, latest.currency) : "—"}
         </span>
       </span>
     );

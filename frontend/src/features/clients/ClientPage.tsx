@@ -320,10 +320,10 @@ function QuotesPanel({
     { key: "status", header: "Status", cell: (q) => <StatusPill status={q.status} /> },
     {
       key: "value",
-      header: "From",
+      header: "Value",
       align: "right",
-      cell: (q) => (q.min_sell_minor !== null ? formatWholeMoney(q.min_sell_minor, q.currency) : <span className="text-faint">—</span>),
-      sortValue: (q) => q.min_sell_minor ?? -1,
+      cell: (q) => (q.value_minor !== null ? formatWholeMoney(q.value_minor, q.currency) : <span className="text-faint">—</span>),
+      sortValue: (q) => q.value_minor ?? -1,
     },
     { key: "versions", header: "Versions", align: "right", cell: (q) => <span className="whitespace-nowrap">{versionsLabel(q)}</span> },
     {
@@ -365,7 +365,7 @@ function QuotesPanel({
                       <span className="font-mono text-[13px] text-ink">{q.number}</span>
                       <StatusPill status={q.status} />
                       <span className="ml-auto font-mono text-[13px] tabular-nums text-ink">
-                        {q.min_sell_minor !== null ? formatWholeMoney(q.min_sell_minor, q.currency) : "—"}
+                        {q.value_minor !== null ? formatWholeMoney(q.value_minor, q.currency) : "—"}
                       </span>
                     </span>
                     <span className="text-xs text-dim">

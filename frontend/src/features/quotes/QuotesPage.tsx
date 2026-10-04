@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { FilePlus2, FileText, Plane, Search, SearchX, Send, SquareKanban, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { quotesQueryOptions, type QuoteStatus, type QuoteSummary } from "../../api/quotes";
+import { quotesQueryOptions, type QuoteList, type QuoteStatus, type QuoteSummary } from "../../api/quotes";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { formatDate, formatNumber, formatRelativeTime } from "../../lib/format";
 import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
@@ -45,20 +45,38 @@ function matches(quote: QuoteSummary, term: string): boolean {
   return haystack.includes(term.toLowerCase());
 }
 
-type Figures = { counts: Record<QuoteStatus, number>; acceptedValue: number; awaitingValue: number };
+const NO_COUNTS: Record<QuoteStatus, number> = { draft: 0, sent: 0, viewed: 0, accepted: 0, declined: 0, expired: 0 };
 
-function figuresOf(items: readonly QuoteSummary[], currency: string): Figures {
-  const counts = { draft: 0, sent: 0, viewed: 0, accepted: 0, declined: 0, expired: 0 } as Record<QuoteStatus, number>;
+/**
+ * `counts` are the server's, over every quote; the values add up the loaded rows (the newest
+ * LIST_LIMIT), so `partial` says when some quotes of a status weren't loaded.
+ */
+type Figures = {
+  counts: Record<QuoteStatus, number>;
+  acceptedValue: number;
+  awaitingValue: number;
+  partial: { accepted: boolean; awaiting: boolean };
+};
+
+function figuresOf(list: QuoteList | undefined, currency: string): Figures {
+  const counts = list?.counts ?? NO_COUNTS;
+  const loaded = { ...NO_COUNTS };
   let acceptedValue = 0;
   let awaitingValue = 0;
-  for (const quote of items) {
-    counts[quote.status] += 1;
-    const value = quote.currency === currency ? (quote.min_sell_minor ?? 0) : 0;
+  for (const quote of list?.items ?? []) {
+    loaded[quote.status] += 1;
+    const value = quote.currency === currency ? (quote.value_minor ?? 0) : 0;
     if (quote.status === "accepted") acceptedValue += value;
     if (quote.status === "sent" || quote.status === "viewed") awaitingValue += value;
   }
-  return { counts, acceptedValue, awaitingValue };
+  const partial = {
+    accepted: loaded.accepted < counts.accepted,
+    awaiting: loaded.sent + loaded.viewed < counts.sent + counts.viewed,
+  };
+  return { counts, acceptedValue, awaitingValue, partial };
 }
+
+const NEWEST = ` · newest ${formatNumber(LIST_LIMIT)} quotes`;
 
 const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : "—");
 
@@ -81,7 +99,11 @@ function QuoteFigures({ figures, currency, loading }: { figures: Figures; curren
       <KpiTile
         label="Awaiting the client"
         value={formatNumber(awaiting)}
-        hint={awaiting > 0 ? `${money(figures.awaitingValue)} at the cheapest options` : "Nothing waiting on a client"}
+        hint={
+          awaiting > 0
+            ? `${money(figures.awaitingValue)} at the cheapest options sent${figures.partial.awaiting ? NEWEST : ""}`
+            : "Nothing waiting on a client"
+        }
         loading={loading}
       />
       <KpiTile
@@ -97,9 +119,13 @@ function QuoteFigures({ figures, currency, loading }: { figures: Figures; curren
         loading={loading}
       />
       <KpiTile
-        label="Accepted quotes"
-        value={formatNumber(counts.accepted)}
-        hint={counts.accepted > 0 ? `${money(figures.acceptedValue)} at their cheapest options` : "None accepted yet"}
+        label="Accepted value"
+        value={money(figures.acceptedValue)}
+        hint={
+          counts.accepted > 0
+            ? `${formatNumber(counts.accepted)} accepted, at the options the clients chose${figures.partial.accepted ? NEWEST : ""}`
+            : "None accepted yet"
+        }
         loading={loading}
       />
     </KpiStrip>
@@ -165,7 +191,7 @@ function QuoteCards({ rows, now }: { rows: readonly QuoteSummary[]; now: Date })
               <span className="font-mono text-[13px] text-ink">{q.number}</span>
               <StatusPill status={q.status} />
               <span className="ml-auto font-mono text-[13px] tabular-nums text-ink">
-                {q.min_sell_minor !== null ? formatWholeMoney(q.min_sell_minor, q.currency) : "—"}
+                {q.value_minor !== null ? formatWholeMoney(q.value_minor, q.currency) : "—"}
               </span>
             </span>
             <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-dim">
@@ -198,7 +224,7 @@ export function QuotesPage() {
   const filtered = useQuery({ ...quotesQueryOptions({ status: tab === "all" ? undefined : tab, limit: LIST_LIMIT }), enabled: tab !== "all" });
   const source = tab === "all" ? all : filtered;
 
-  const figures = useMemo(() => figuresOf(all.data?.items ?? [], currency), [all.data, currency]);
+  const figures = useMemo(() => figuresOf(all.data, currency), [all.data, currency]);
   const needle = term.trim();
   const rows = useMemo(() => (source.data?.items ?? []).filter((quote) => matches(quote, needle)), [source.data, needle]);
   const total = all.data?.total ?? 0;
@@ -250,8 +276,8 @@ export function QuotesPage() {
       key: "value",
       header: "Value",
       align: "right",
-      cell: (q) => (q.min_sell_minor !== null ? formatWholeMoney(q.min_sell_minor, q.currency) : <span className="text-faint">—</span>),
-      sortValue: (q) => q.min_sell_minor ?? -1,
+      cell: (q) => (q.value_minor !== null ? formatWholeMoney(q.value_minor, q.currency) : <span className="text-faint">—</span>),
+      sortValue: (q) => q.value_minor ?? -1,
     },
     {
       key: "versions",
@@ -383,7 +409,7 @@ export function QuotesPage() {
           )}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-3 py-2 text-xs text-dim">
             <span>
-              Values are each quote's cheapest option in its latest version, in whole{" "}
+              Values are the option the client accepted, else the cheapest option they were sent (or of the draft), in whole{" "}
               {currencies.length === 1 ? currencies[0] : "units of each quote's own currency"}.
               {currencies.some((code) => code !== currency) && ` The figures above count ${currency} quotes only.`}
             </span>

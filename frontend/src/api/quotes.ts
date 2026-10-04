@@ -1,5 +1,6 @@
 import { mutationOptions, queryOptions, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { apiFetch, asApiError } from "./client";
+import type { ClientKind } from "./clients";
 import type { FlightOffer, Money } from "./offers";
 import { TIMELINE_STALE_MS, type Timeline } from "./timeline";
 import { queryString, RECORD_ROOTS, refreshWorkspace, segment } from "./workspaceCache";
@@ -21,7 +22,8 @@ export const MAX_FIXED_MINOR = 1_000_000_000;
 /** A share link stays valid this many days after each send. */
 export const SHARE_TTL_DAYS = 14;
 
-export type QuoteClientRef = { id: string; name: string };
+/** `kind` lets text addressed to the client skip a first name for a company. */
+export type QuoteClientRef = { id: string; name: string; kind: ClientKind };
 export type QuoteEnquiryRef = {
   id: string;
   number: string;
@@ -45,7 +47,15 @@ export type QuoteSummary = {
   sent_version: number | null;
   /** The cheapest option's sell price in the current version, minor units of `currency`. */
   min_sell_minor: number | null;
+  /**
+   * What the quote is worth, the one value to show for it anywhere (minor units of `currency`): the
+   * accepted option once accepted (the cheapest option the client was sent when the agent marked it),
+   * else the cheapest option of the sent version, else of the current version; null without versions.
+   */
+  value_minor: number | null;
   sent_at: string | null;
+  /** When it was accepted, declined or expired; null while undecided (and after a re-send). */
+  decided_at: string | null;
   created_at: string;
 };
 
@@ -69,14 +79,17 @@ export type QuoteDetail = QuoteSummary & {
   markup_value: number;
   share_expires_at: string | null;
   first_viewed_at: string | null;
-  decided_at: string | null;
   /** The option the client accepted on their page (index into the sent version's options). */
   accepted_option: number | null;
   /** Newest first. */
   versions: QuoteVersion[];
 };
 
-export type QuoteList = { items: QuoteSummary[]; total: number };
+/**
+ * `counts` holds every status under the list's client and enquiry filters, whatever its status filter
+ * and page: the numbers for status tabs.
+ */
+export type QuoteList = { items: QuoteSummary[]; total: number; counts: Record<QuoteStatus, number> };
 
 /** POST /api/v1/quotes: currency defaults to the agency's, markup to 0%. */
 export type QuoteCreate = {

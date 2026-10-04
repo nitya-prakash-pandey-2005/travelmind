@@ -48,8 +48,8 @@ test("a route shows its figures, trend, days-out medians, carriers and the agenc
   expect(screen.getByRole("button", { name: "Change Destination" })).toBeInTheDocument();
 
   const figures = screen.getByRole("region", { name: "Route figures" });
-  expect(within(figures).getByRole("group", { name: /^Median now: ₹4\.8K/ })).toBeInTheDocument();
-  expect(within(figures).getByRole("group", { name: /^Typical range: ₹4\.3K to ₹5\.4K/ })).toBeInTheDocument();
+  expect(within(figures).getByRole("group", { name: /^Median now: ₹4,750/ })).toBeInTheDocument();
+  expect(within(figures).getByRole("group", { name: /^Typical range: ₹4,300 to ₹5,400/ })).toBeInTheDocument();
   expect(within(figures).getByRole("group", { name: /^Fares seen: 42/ })).toBeInTheDocument();
   expect(within(figures).getByRole("group", { name: /^Best time to book: 22–45 days out/ })).toBeInTheDocument();
   expect(within(figures).getByRole("group", { name: /^Last updated: 1 h ago/ })).toBeInTheDocument();

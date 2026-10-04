@@ -36,7 +36,7 @@ test("an option is one line: carrier, each journey's times and the sell price", 
 
 test("the WhatsApp message greets the client, lists every option, the expiry and the link", () => {
   const text = composeQuoteMessage({
-    clientName: "Priya Sharma",
+    client: { name: "Priya Sharma", kind: "individual" },
     options: [quoteOption(INDIGO, 52_340, 576_000), quoteOption(AIR_INDIA, 61_200)],
     expiresAt: "2026-10-14T09:00:00Z",
     link: "https://app.example/q/tok_abc",
@@ -60,9 +60,31 @@ test("the WhatsApp message greets the client, lists every option, the expiry and
 });
 
 test("without a client name or an agency the message still reads well", () => {
-  const text = composeQuoteMessage({ clientName: null, options: [quoteOption(INDIGO, 0)], expiresAt: null, link: "https://x/q/t" });
+  const text = composeQuoteMessage({ client: null, options: [quoteOption(INDIGO, 0)], expiresAt: null, link: "https://x/q/t" });
   expect(text.startsWith("Hello,\n")).toBe(true);
   expect(text).toContain("Here is your flight option for DEL → BOM:");
   expect(text).toContain("See the details and accept it here:\nhttps://x/q/t");
   expect(text.endsWith("https://x/q/t")).toBe(true);
+});
+
+test("a company client is greeted without a first name, as on its quote page", () => {
+  const text = composeQuoteMessage({
+    client: { name: "Nimbus Analytics", kind: "company" },
+    options: [quoteOption(INDIGO, 0)],
+    expiresAt: null,
+    link: "https://x/q/t",
+  });
+  expect(text.startsWith("Hello,\n")).toBe(true);
+  expect(text).not.toContain("Nimbus");
+});
+
+test("the expiry date is the agency's local date", () => {
+  const text = composeQuoteMessage({
+    client: null,
+    options: [quoteOption(INDIGO, 0)],
+    expiresAt: "2026-10-14T20:00:00Z",
+    link: "https://x/q/t",
+    timeZone: "Asia/Kolkata",
+  });
+  expect(text).toContain("(valid until 15 Oct 2026)");
 });

@@ -54,7 +54,7 @@ export const PRIYA_QUOTES: QuoteSummary[] = [
     sent_version: 2,
     min_sell_minor: 1_250_000,
     sent_at: minutesAgo(90),
-    client: { id: PRIYA.id, name: PRIYA.name },
+    client: { id: PRIYA.id, name: PRIYA.name, kind: "individual" },
     enquiry: { id: "e-5", number: "E-0005", origin: "DEL", destination: "GOI", depart_date: dayFromToday(18) },
   }),
   quoteSummary({
@@ -62,9 +62,12 @@ export const PRIYA_QUOTES: QuoteSummary[] = [
     number: "Q-0004",
     status: "accepted",
     sent_version: 1,
-    min_sell_minor: 4_520_000,
+    // Accepted on a dearer option than the cheapest: the value matches the client's won value.
+    min_sell_minor: 4_100_000,
+    value_minor: 4_520_000,
+    decided_at: minutesAgo(39 * 24 * 60),
     sent_at: minutesAgo(40 * 24 * 60),
-    client: { id: PRIYA.id, name: PRIYA.name },
+    client: { id: PRIYA.id, name: PRIYA.name, kind: "individual" },
     enquiry: { id: "e-4", number: "E-0004", origin: "DEL", destination: "BOM", depart_date: dayFromToday(-20) },
   }),
 ];

@@ -168,7 +168,7 @@ function StatusBanner({ quote, justDecided }: { quote: PublicQuote; justDecided:
   }, [justDecided]);
 
   const accepted = quote.accepted_option !== null ? quote.options.find((o) => o.index === quote.accepted_option) : undefined;
-  const on = quote.decided_at ? ` on ${longDate(quote.decided_at)}` : "";
+  const on = quote.decided_at ? ` on ${longDate(quote.decided_at, quote.agency.timezone)}` : "";
   // Neutral about who decided: the agency may have recorded the client's answer for them.
   let icon: ReactNode;
   let title: string;
@@ -309,7 +309,7 @@ function QuoteBody({ token, quote, readAt, refreshing }: QuoteBodyProps) {
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <CalendarClock size={14} strokeWidth={1.75} aria-hidden="true" className="text-faint" />
-                <span>Valid until {longDate(quote.expires_at)}</span>
+                <span>Valid until {longDate(quote.expires_at, quote.agency.timezone)}</span>
               </span>
             </>
           )}

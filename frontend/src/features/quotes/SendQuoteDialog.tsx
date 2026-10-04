@@ -53,7 +53,7 @@ export function SendQuoteDialog({
   const resend = quote.sent_version !== null;
   const link = sent ? shareUrl(sent) : "";
   const message = sent && version
-    ? composeQuoteMessage({ clientName: quote.client?.name ?? null, options: version.options, expiresAt: sent.expires_at, link, agencyName, timeZone })
+    ? composeQuoteMessage({ client: quote.client, options: version.options, expiresAt: sent.expires_at, link, agencyName, timeZone })
     : "";
   // When a link sent now would stop working (for the confirmation; the server sets the real expiry).
   const [validUntil] = useState(() => dateIn(timeZone, new Date(Date.now() + SHARE_TTL_DAYS * DAY_MS).toISOString()));

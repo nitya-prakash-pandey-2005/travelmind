@@ -129,7 +129,7 @@ async function findRefusal(message: string) {
 const QUOTE: PublicQuote = {
   number: "Q-0004",
   status: "viewed",
-  agency: { name: "Orbit Travel Co.", brand_color: "#0F766E" },
+  agency: { name: "Orbit Travel Co.", brand_color: "#0F766E", timezone: "Asia/Kolkata" },
   client_first_name: "Priya",
   message: "Two good ways to get you to Dubai for the conference.\nThe Emirates fare includes two checked bags.",
   options: [INDIGO, EMIRATES],
@@ -382,6 +382,12 @@ test("too many requests offers a retry", async () => {
   expect(screen.getByText("Too many requests. Please try again in a minute.")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Try again" }));
   expect(await screen.findByRole("heading", { level: 1, name: "Hello Priya," })).toBeInTheDocument();
+});
+
+test("the expiry date is the agency's local date, not the viewer's or UTC", async () => {
+  // 20:00 UTC on 14 Oct is already 15 Oct in Kolkata.
+  renderPage({ status: 200, body: { ...QUOTE, expires_at: "2026-10-14T20:00:00Z" } });
+  expect(await screen.findByText("Valid until 15 Oct 2026")).toBeInTheDocument();
 });
 
 test("a quote for a company greets without a name", async () => {
