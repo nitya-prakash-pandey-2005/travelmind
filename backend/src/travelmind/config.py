@@ -1,7 +1,7 @@
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import AliasChoices, BeforeValidator, Field, SecretStr
+from pydantic import BeforeValidator, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -83,10 +83,12 @@ class Settings(BaseSettings):
     # planner; production never falls back to the demo planner (the agent is unavailable).
     agent_provider: Literal["gemini", "fake", "auto"] = "auto"
     agent_model: str = "gemini-2.5-flash"  # the one place the model id is set
-    # Only from the environment (or .env): TM_GOOGLE_API_KEY, else GOOGLE_API_KEY. A SecretStr, so
-    # reprs, dumps and logs of the settings show it masked.
-    google_api_key: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = Field(
-        default=None, validation_alias=AliasChoices("TM_GOOGLE_API_KEY", "GOOGLE_API_KEY")
+    # Only from the environment (or .env): TM_GOOGLE_API_KEY, else (unset or blank) GOOGLE_API_KEY.
+    # A SecretStr, so reprs, dumps and logs of the settings show it masked.
+    google_api_key: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = None
+    # GOOGLE_API_KEY, read only to fill google_api_key (see _google_api_key_fallback).
+    google_api_key_fallback: Annotated[SecretStr | None, BeforeValidator(_blank_to_none)] = Field(
+        default=None, validation_alias="GOOGLE_API_KEY", exclude=True, repr=False
     )
     agent_max_steps: int = 12
     agent_step_timeout_s: float = 20.0
@@ -94,9 +96,21 @@ class Settings(BaseSettings):
     agent_run_token_cap: int = 60_000
     agent_monthly_token_budget: int = 2_000_000
     agent_max_concurrent_runs_per_agency: int = 3
+    # How long a run slot is held at most, counted from when it is taken (at run creation), so it
+    # covers the queue wait and the run itself (agent_run_timeout_s); a crashed holder's slot
+    # lapses after this. See travelmind.agent.budget for what Task 3 must decide around it.
+    agent_run_slot_ttl_s: float = 300.0
     log_level: str = "INFO"
     # Bearer token for GET /metrics. Empty: /metrics is served only outside production.
     metrics_token: str = ""
+
+    @model_validator(mode="after")
+    def _google_api_key_fallback(self) -> Self:
+        """A blank TM_GOOGLE_API_KEY= (as conftest and .env templates set) must not hide
+        GOOGLE_API_KEY: an unset or blank TM key falls back to it."""
+        if self.google_api_key is None:
+            self.google_api_key = self.google_api_key_fallback
+        return self
 
     @property
     def sandbox_supplier_enabled(self) -> bool:

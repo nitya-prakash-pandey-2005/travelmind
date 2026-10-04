@@ -158,3 +158,30 @@ def test_the_key_never_appears_in_settings_reprs(monkeypatch):
     provider = get_provider(settings)
     for text in (repr(settings), str(settings), repr(settings.model_dump()), repr(provider)):
         assert CANARY not in text
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_a_blank_tm_key_falls_back_to_google_api_key(monkeypatch, blank):
+    monkeypatch.setenv("TM_GOOGLE_API_KEY", blank)
+    monkeypatch.setenv("GOOGLE_API_KEY", CANARY)
+    settings = Settings(_env_file=None)
+    assert settings.google_api_key is not None
+    assert settings.google_api_key.get_secret_value() == CANARY
+    assert isinstance(get_provider(settings), GeminiProvider)
+    assert CANARY not in repr(settings) and CANARY not in str(settings.model_dump())
+
+
+def test_both_keys_blank_is_no_key(monkeypatch):
+    monkeypatch.setenv("TM_GOOGLE_API_KEY", "")
+    monkeypatch.setenv("GOOGLE_API_KEY", " ")
+    settings = Settings(_env_file=None)
+    assert settings.google_api_key is None
+    assert isinstance(get_provider(settings), FakeProvider)
+
+
+def test_the_key_can_be_passed_directly(monkeypatch):
+    for name in ("TM_GOOGLE_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings(_env_file=None, google_api_key=CANARY)
+    assert settings.google_api_key is not None
+    assert settings.google_api_key.get_secret_value() == CANARY

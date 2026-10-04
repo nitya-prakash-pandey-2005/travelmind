@@ -10,7 +10,11 @@ timed as supplier "gemini". Errors become `ProviderError(kind=...)`. The key is 
 SDK's `x-goog-api-key` header; it is never logged, put in a label or in an error message.
 
 One SDK client per key per process, made on first use (building one costs ~20 ms and opens its
-own HTTP pool); `close_clients()` closes them at shutdown.
+own HTTP pool); `close_clients()` closes them at shutdown. The client is pinned to the Gemini
+Developer API at GEMINI_BASE_URL: environment variables the SDK would otherwise read
+(GOOGLE_GENAI_USE_VERTEXAI/_ENTERPRISE, GOOGLE_GEMINI_BASE_URL, GOOGLE_GENAI_CLIENT_MODE, ...)
+cannot send the key or the conversation anywhere else. The key stays a SecretStr until the
+client is built.
 """
 
 import asyncio
@@ -24,6 +28,8 @@ import httpx
 import structlog
 from google import genai
 from google.genai import errors, types
+from google.genai.client import DebugConfig
+from pydantic import SecretStr
 
 from travelmind.agent.provider import (
     Generation,
@@ -40,6 +46,7 @@ from travelmind.resilience import CircuitOpen, guarded
 log = structlog.get_logger()
 
 SUPPLIER = "gemini"
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/"
 # Gemini may return a function call without an id. The engine still needs one to pair the call
 # with its result, so it numbers the call itself; such ids are never sent back to the model.
 LOCAL_ID_PREFIX = "local-"
@@ -47,11 +54,18 @@ LOCAL_ID_PREFIX = "local-"
 _clients: dict[str, genai.Client] = {}
 
 
-def _client(api_key: str) -> genai.Client:
-    slot = hashlib.sha256(api_key.encode()).hexdigest()
+def _client(api_key: SecretStr) -> genai.Client:
+    secret = api_key.get_secret_value()
+    slot = hashlib.sha256(secret.encode()).hexdigest()
     client = _clients.get(slot)
     if client is None:
-        client = _clients[slot] = genai.Client(api_key=api_key)
+        client = _clients[slot] = genai.Client(
+            api_key=secret,
+            vertexai=False,  # explicit, so GOOGLE_GENAI_USE_VERTEXAI/_ENTERPRISE are not read
+            http_options=types.HttpOptions(base_url=GEMINI_BASE_URL),  # over GOOGLE_*_BASE_URL
+            # explicit, so GOOGLE_GENAI_CLIENT_MODE can't swap in the record/replay client
+            debug_config=DebugConfig(client_mode=None, replays_directory=None, replay_id=None),
+        )
     return client
 
 
@@ -97,7 +111,13 @@ def to_contents(messages: Sequence[Message]) -> list[types.Content]:
     for message in messages:
         parts: list[types.Part] = []
         if message.text:
-            parts.append(types.Part(text=message.text))
+            signature = message.text_signature
+            parts.append(
+                types.Part(
+                    text=message.text,
+                    thought_signature=base64.b64decode(signature) if signature else None,
+                )
+            )
         parts += [_call_part(call) for call in message.calls]
         parts += [_result_part(result) for result in message.results]
         if parts:
@@ -136,9 +156,27 @@ def _tokens(value: int | None) -> int:
     return int(value or 0)
 
 
+_DECLINED = "The planning model declined this request."
+# Finish reasons whose turn can't be used: an unusable tool call, or an answer withheld as unsafe.
+# Safe messages only: the reason itself stays in our logs, not in what the user is shown.
+_REJECTED_FINISH: dict[str, str] = {
+    "MALFORMED_FUNCTION_CALL": "The planning model gave an answer it could not use.",
+    "SAFETY": _DECLINED,
+    "PROHIBITED_CONTENT": _DECLINED,
+    "BLOCKLIST": _DECLINED,
+    "SPII": _DECLINED,
+}
+
+
+def _b64(value: bytes | None) -> str | None:
+    return base64.b64encode(value).decode() if value else None
+
+
 def from_response(response: types.GenerateContentResponse) -> Generation:
     """The first candidate as a Generation. Thought-summary parts are not part of the answer.
-    Output tokens include thinking tokens (billed as output)."""
+    Output tokens include thinking tokens (billed as output). A blocked prompt, a malformed tool
+    call or an answer withheld for safety raises ProviderError("invalid") carrying the tokens the
+    call still cost."""
     usage = response.usage_metadata
     input_tokens = output_tokens = 0
     if usage is not None:
@@ -146,45 +184,78 @@ def from_response(response: types.GenerateContentResponse) -> Generation:
             usage.tool_use_prompt_token_count
         )
         output_tokens = _tokens(usage.candidates_token_count) + _tokens(usage.thoughts_token_count)
+    cost = {"input_tokens": input_tokens, "output_tokens": output_tokens}
     feedback = response.prompt_feedback
     if feedback is not None and feedback.block_reason is not None:
-        raise ProviderError("invalid", "The planning model declined this request.")
-    texts: list[str] = []
-    calls: list[ToolCall] = []
+        raise ProviderError("invalid", _DECLINED, **cost)
     candidates = response.candidates or []
-    content = candidates[0].content if candidates else None
+    candidate = candidates[0] if candidates else None
+    reason = candidate.finish_reason if candidate is not None else None
+    finish_reason = str(reason.value) if reason is not None else None
+    if finish_reason in _REJECTED_FINISH:
+        raise ProviderError("invalid", _REJECTED_FINISH[finish_reason], **cost)
+    texts: list[str] = []
+    text_signature: str | None = None
+    calls: list[ToolCall] = []
+    content = candidate.content if candidate is not None else None
     for part in (content.parts if content is not None else None) or []:
         if part.function_call is not None:
             call = part.function_call
-            signature = part.thought_signature
             calls.append(
                 ToolCall(
                     id=call.id or f"{LOCAL_ID_PREFIX}{uuid4().hex[:12]}",
                     name=call.name or "",
                     args=dict(call.args or {}),
-                    signature=base64.b64encode(signature).decode() if signature else None,
+                    signature=_b64(part.thought_signature),
                 )
             )
-        elif part.text and not part.thought:
+            continue
+        # A signature on a text part (or a thought part) belongs with the turn's text: the
+        # answer is sent back as one text part, carrying the first signature.
+        text_signature = text_signature or _b64(part.thought_signature)
+        if part.text and not part.thought:
             texts.append(part.text)
     return Generation(
         text="".join(texts) or None,
         calls=tuple(calls),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        finish_reason=finish_reason,
+        text_signature=text_signature,
     )
 
 
 _TIMEOUT_STATUSES = frozenset({408, 504})
 
 
-def _api_kind(code: int) -> ProviderErrorKind:
+# 400s that are about us, not the request: a bad key (INVALID_ARGUMENT with reason
+# API_KEY_INVALID), or billing / an unsupported region (FAILED_PRECONDITION). Retrying the same
+# request elsewhere won't help, and the breaker should count them.
+_OUR_400_STATUSES = frozenset({"FAILED_PRECONDITION"})
+_OUR_400_REASONS = frozenset({"API_KEY_INVALID"})
+
+
+def _error_reasons(details: Any) -> set[str]:
+    """The `reason`s of a Google API error body's `error.details` (google.rpc.ErrorInfo)."""
+    error = details.get("error", details) if isinstance(details, dict) else None
+    items = error.get("details") if isinstance(error, dict) else None
+    if not isinstance(items, list):
+        return set()
+    return {str(item["reason"]) for item in items if isinstance(item, dict) and "reason" in item}
+
+
+def _api_kind(exc: errors.APIError) -> ProviderErrorKind:
+    code = exc.code
     if code == 429:
         return "rate_limited"
     if code in _TIMEOUT_STATUSES:
         return "timeout"
     if code in (401, 403) or code >= 500:
         return "unavailable"  # our credentials, or Gemini itself
+    if code == 400 and (
+        exc.status in _OUR_400_STATUSES or _error_reasons(exc.details) & _OUR_400_REASONS
+    ):
+        return "unavailable"  # our key, billing or region
     return "invalid"  # 4xx: the request itself (bad schema, unknown model)
 
 
@@ -194,7 +265,7 @@ def map_error(exc: BaseException) -> ProviderError:
     if isinstance(exc, ProviderError):
         return exc
     if isinstance(exc, errors.APIError):
-        kind = _api_kind(exc.code)
+        kind = _api_kind(exc)
     elif isinstance(exc, TimeoutError | httpx.TimeoutException):
         kind = "timeout"
     else:
@@ -208,9 +279,9 @@ def map_error(exc: BaseException) -> ProviderError:
 class GeminiProvider:
     name = "gemini"
 
-    def __init__(self, *, api_key: str, model: str) -> None:
+    def __init__(self, *, api_key: SecretStr, model: str) -> None:
         self.model = model
-        self._api_key = api_key
+        self._api_key = api_key  # unwrapped only to build the SDK client (_client)
 
     def __repr__(self) -> str:
         return f"GeminiProvider(model={self.model!r})"

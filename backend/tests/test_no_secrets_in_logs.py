@@ -192,6 +192,48 @@ async def test_a_successful_call_never_logs_the_secret(
     assert SECRET not in printed.out and SECRET not in printed.err
 
 
+@pytest.mark.parametrize("status", [400, 503])
+async def test_a_failed_gemini_call_never_logs_the_secret(
+    status, respx_mock, app_logging, caplog, capsys
+):
+    """A failed call logs `gemini_call_failed` (kind, type, status) and nothing else: not the key,
+    and not Google's error text, which may echo the request or the key."""
+    from travelmind.agent.provider import ProviderError
+
+    caplog.set_level(logging.DEBUG)
+    key = f"AIza{SECRET}"
+    respx_mock.post(url__startswith="https://generativelanguage.googleapis.com/").mock(
+        return_value=httpx.Response(
+            status,
+            json={
+                "error": {
+                    "code": status,
+                    "message": f"API key not valid: {key}",
+                    "status": "INVALID_ARGUMENT" if status == 400 else "UNAVAILABLE",
+                    "details": [{"reason": "API_KEY_INVALID", "metadata": {"key": key}}],
+                }
+            },
+        )
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("GOOGLE_API_KEY", raising=False)
+        patch.setenv("TM_GOOGLE_API_KEY", key)
+        provider = get_provider(Settings(_env_file=None))
+    with pytest.raises(ProviderError) as caught:
+        await provider.generate(
+            system="s", messages=[Message(role="user", text="hi")], tools=[], timeout_s=5
+        )
+    assert caught.value.kind == "unavailable"
+    assert SECRET not in str(caught.value) and SECRET not in repr(caught.value)
+    for record in caplog.records:
+        assert SECRET not in record.getMessage(), record.name
+        assert SECRET not in repr(record.args), record.name
+    printed = capsys.readouterr()
+    assert "gemini_call_failed" in printed.out
+    assert f'"status": {status}' in printed.out
+    assert SECRET not in printed.out and SECRET not in printed.err
+
+
 def test_http_client_request_logs_are_off_at_info(app_logging) -> None:
     # Their INFO request lines carry full URLs; see configure_logging. Set on the loggers
     # themselves, so a DEBUG/INFO root (or a handler that captures everything) can't undo it.

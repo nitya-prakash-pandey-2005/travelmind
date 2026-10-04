@@ -45,6 +45,9 @@ class Message:
     text: str | None = None
     calls: tuple[ToolCall, ...] = ()
     results: tuple[ToolResult, ...] = ()
+    # A model turn's opaque provider state for its text (Gemini's thought signature, base64),
+    # sent back with the text on later turns. Not part of the message's identity.
+    text_signature: str | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,10 @@ class Generation:
     calls: tuple[ToolCall, ...]
     input_tokens: int
     output_tokens: int
+    finish_reason: str | None = None  # the provider's own word for why the turn ended ("STOP")
+    # Opaque provider state for `text` (see Message.text_signature): the engine copies it onto
+    # the model Message it records. Not part of the generation's identity.
+    text_signature: str | None = field(default=None, compare=False, repr=False)
 
 
 class LLMProvider(Protocol):
@@ -94,11 +101,22 @@ _CODES: dict[ProviderErrorKind, ErrorCode] = {
 
 class ProviderError(SupplierError):
     """A model call failed. `kind` says how; `message` is safe to show (it never carries the
-    provider's own error text, which may echo the request)."""
+    provider's own error text, which may echo the request). `input_tokens` and `output_tokens`
+    are what the failed call still cost (a blocked prompt is billed for its input), for the
+    engine to record against the budget like any other call."""
 
-    def __init__(self, kind: ProviderErrorKind, message: str | None = None) -> None:
+    def __init__(
+        self,
+        kind: ProviderErrorKind,
+        message: str | None = None,
+        *,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+    ) -> None:
         super().__init__(_CODES[kind], message or _MESSAGES[kind])
         self.kind: ProviderErrorKind = kind
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
 
 
 class AgentUnavailable(Exception):
@@ -124,7 +142,7 @@ def get_provider(settings: Settings) -> LLMProvider:
     if choice == "gemini":
         if key is None:
             raise AgentUnavailable
-        return GeminiProvider(api_key=key.get_secret_value(), model=settings.agent_model)
+        return GeminiProvider(api_key=key, model=settings.agent_model)
     if settings.environment == "production":
         raise AgentUnavailable
     return FakeProvider.planner()

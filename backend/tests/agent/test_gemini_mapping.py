@@ -9,6 +9,7 @@ import httpx
 import pytest
 from google.genai import _extra_utils, errors, types
 from prometheus_client import REGISTRY
+from pydantic import SecretStr
 
 from travelmind.agent import gemini
 from travelmind.agent.gemini import (
@@ -245,7 +246,7 @@ async def test_generate_sends_one_request_and_reads_the_answer(respx_mock):
         )
     )
     before = _count("ok")
-    generation = await _generate(GeminiProvider(api_key=KEY, model=MODEL))
+    generation = await _generate(GeminiProvider(api_key=SecretStr(KEY), model=MODEL))
     assert [c.name for c in generation.calls] == ["lookup_airport"]
     assert (generation.input_tokens, generation.output_tokens) == (50, 8)
     assert route.call_count == 1
@@ -270,7 +271,7 @@ async def test_http_errors_become_provider_errors(respx_mock, status, kind, outc
     )
     before = _count(outcome)
     with pytest.raises(ProviderError) as caught:
-        await _generate(GeminiProvider(api_key=KEY, model=MODEL))
+        await _generate(GeminiProvider(api_key=SecretStr(KEY), model=MODEL))
     assert caught.value.kind == kind
     assert _count(outcome) == before + 1
 
@@ -283,7 +284,7 @@ async def test_a_slow_answer_is_a_timeout(respx_mock):
     respx_mock.post(ENDPOINT).mock(side_effect=slow)
     before = _count("timeout")
     with pytest.raises(ProviderError) as caught:
-        await GeminiProvider(api_key=KEY, model=MODEL).generate(
+        await GeminiProvider(api_key=SecretStr(KEY), model=MODEL).generate(
             system="s", messages=[Message(role="user", text="hi")], tools=[], timeout_s=0.05
         )
     assert caught.value.kind == "timeout"
@@ -294,7 +295,7 @@ async def test_repeated_failures_open_the_breaker_and_skip_gemini(respx_mock):
     route = respx_mock.post(ENDPOINT).mock(
         return_value=httpx.Response(503, json={"error": {"code": 503, "message": "down"}})
     )
-    provider = GeminiProvider(api_key=KEY, model=MODEL)
+    provider = GeminiProvider(api_key=SecretStr(KEY), model=MODEL)
     for _ in range(get_settings().supplier_breaker_threshold):
         with pytest.raises(ProviderError):
             await _generate(provider)
@@ -310,8 +311,165 @@ async def test_requests_we_got_wrong_keep_the_breaker_closed(respx_mock):
     respx_mock.post(ENDPOINT).mock(
         return_value=httpx.Response(400, json={"error": {"code": 400, "message": "bad"}})
     )
-    provider = GeminiProvider(api_key=KEY, model=MODEL)
+    provider = GeminiProvider(api_key=SecretStr(KEY), model=MODEL)
     for _ in range(get_settings().supplier_breaker_threshold + 1):
         with pytest.raises(ProviderError):
             await _generate(provider)
     assert guard_for("gemini").state == "closed"
+
+
+# --- the key, and where it may go --------------------------------------------------------
+
+
+def test_the_provider_keeps_its_key_as_a_secret():
+    provider = GeminiProvider(api_key=SecretStr(KEY), model=MODEL)
+    assert all(not (isinstance(v, str) and KEY in v) for v in vars(provider).values())
+    assert KEY not in repr(provider) and KEY not in repr(vars(provider))
+
+
+ENV_REDIRECTS = {
+    "GOOGLE_GENAI_USE_VERTEXAI": "true",
+    "GOOGLE_GENAI_USE_ENTERPRISE": "true",
+    "GOOGLE_GEMINI_BASE_URL": "https://gemini.attacker.example/",
+    "GOOGLE_VERTEX_BASE_URL": "https://vertex.attacker.example/",
+    "GOOGLE_CLOUD_PROJECT": "someone-elses-project",
+    "GOOGLE_CLOUD_LOCATION": "us-central1",
+    "GOOGLE_GENAI_CLIENT_MODE": "record",
+    "GOOGLE_GENAI_REPLAYS_DIRECTORY": "replays",
+    "GEMINI_API_KEY": "other-key-from-env",
+}
+
+
+def test_the_client_is_pinned_to_the_gemini_api(monkeypatch):
+    for name, value in ENV_REDIRECTS.items():
+        monkeypatch.setenv(name, value)
+    client = gemini._client(SecretStr(KEY))
+    api = client._api_client
+    assert api.vertexai is False
+    assert type(api).__name__ == "BaseApiClient"  # not the record/replay client
+    assert api._http_options.base_url == "https://generativelanguage.googleapis.com/"
+    assert api._http_options.headers is not None
+    assert api._http_options.headers["x-goog-api-key"] == KEY
+
+
+async def test_environment_variables_cannot_redirect_the_key(respx_mock, monkeypatch):
+    for name, value in ENV_REDIRECTS.items():
+        monkeypatch.setenv(name, value)
+    route = respx_mock.post(ENDPOINT).mock(
+        return_value=httpx.Response(200, json=_response([{"text": "Hello."}]))
+    )
+    # respx refuses any request it has no route for, so a redirected call would fail here
+    generation = await _generate(GeminiProvider(api_key=SecretStr(KEY), model=MODEL))
+    assert generation.text == "Hello."
+    assert route.call_count == 1
+    assert route.calls[0].request.headers["x-goog-api-key"] == KEY
+
+
+# --- failures that are ours, not the request's -------------------------------------------
+
+API_KEY_INVALID = {
+    "error": {
+        "code": 400,
+        "message": "API key not valid. Please pass a valid API key.",
+        "status": "INVALID_ARGUMENT",
+        "details": [
+            {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": "API_KEY_INVALID",
+                "domain": "googleapis.com",
+            }
+        ],
+    }
+}
+LOCATION_UNSUPPORTED = {
+    "error": {
+        "code": 400,
+        "message": "User location is not supported for the API use.",
+        "status": "FAILED_PRECONDITION",
+    }
+}
+
+
+@pytest.mark.parametrize(
+    ("body", "kind"),
+    [
+        (API_KEY_INVALID, "unavailable"),
+        (LOCATION_UNSUPPORTED, "unavailable"),
+        ({"error": {"code": 400, "status": "INVALID_ARGUMENT", "details": []}}, "invalid"),
+        ({"error": {"code": 400, "status": "INVALID_ARGUMENT"}}, "invalid"),
+    ],
+)
+def test_a_bad_key_billing_or_region_is_unavailable_not_invalid(body, kind):
+    assert map_error(errors.ClientError(400, body)).kind == kind
+
+
+async def test_a_bad_key_over_http_is_unavailable(respx_mock):
+    respx_mock.post(ENDPOINT).mock(return_value=httpx.Response(400, json=API_KEY_INVALID))
+    with pytest.raises(ProviderError) as caught:
+        await _generate(GeminiProvider(api_key=SecretStr(KEY), model=MODEL))
+    assert caught.value.kind == "unavailable"
+    assert "API key" not in caught.value.message  # the safe message, not Google's text
+
+
+# --- finish reasons, blocked prompts and signatures ----------------------------------------
+
+
+def _finished(reason: str, parts: list[dict] | None = None) -> types.GenerateContentResponse:
+    return types.GenerateContentResponse.model_validate(
+        {
+            "candidates": [
+                {
+                    "content": {"role": "model", "parts": parts or []},
+                    "finishReason": reason,
+                }
+            ],
+            "usageMetadata": {"promptTokenCount": 40, "candidatesTokenCount": 3},
+        }
+    )
+
+
+def test_the_finish_reason_is_exposed():
+    generation = from_response(_finished("STOP", [{"text": "Done."}]))
+    assert generation.finish_reason == "STOP" and generation.text == "Done."
+    assert from_response(types.GenerateContentResponse.model_validate({})).finish_reason is None
+
+
+@pytest.mark.parametrize("reason", ["MALFORMED_FUNCTION_CALL", "SAFETY"])
+def test_a_malformed_or_unsafe_answer_is_invalid_and_keeps_its_tokens(reason):
+    with pytest.raises(ProviderError) as caught:
+        from_response(_finished(reason, [{"text": "partial"}]))
+    error = caught.value
+    assert error.kind == "invalid"
+    assert error.message and reason not in error.message and "partial" not in error.message
+    assert (error.input_tokens, error.output_tokens) == (40, 3)
+
+
+def test_a_blocked_prompt_keeps_its_input_tokens():
+    response = types.GenerateContentResponse.model_validate(
+        {"promptFeedback": {"blockReason": "SAFETY"}, "usageMetadata": {"promptTokenCount": 9}}
+    )
+    with pytest.raises(ProviderError) as caught:
+        from_response(response)
+    assert (caught.value.input_tokens, caught.value.output_tokens) == (9, 0)
+
+
+def test_provider_errors_default_to_no_tokens():
+    error = ProviderError("timeout")
+    assert (error.input_tokens, error.output_tokens) == (0, 0)
+
+
+def test_a_text_part_signature_round_trips():
+    signature = base64.b64encode(b"text-sig").decode()
+    generation = from_response(
+        types.GenerateContentResponse.model_validate(
+            _response([{"text": "Planning.", "thoughtSignature": signature}])
+        )
+    )
+    assert generation.text == "Planning." and generation.text_signature == signature
+    [content] = to_contents(
+        [Message(role="model", text=generation.text, text_signature=generation.text_signature)]
+    )
+    [part] = content.parts or []
+    assert part.text == "Planning." and part.thought_signature == b"text-sig"
+    # equality ignores the opaque signature, as for tool calls
+    assert generation == Generation(text="Planning.", calls=(), input_tokens=0, output_tokens=0)
