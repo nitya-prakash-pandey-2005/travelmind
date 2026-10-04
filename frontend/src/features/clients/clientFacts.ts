@@ -28,8 +28,13 @@ export function tripWhen(trip: TripRef): string {
   return `${formatDate(trip.depart_date)} · ${relative}`;
 }
 
-/** "+91 98100 12345" → "tel:+919810012345". */
-export const telHref = (phone: string): string => `tel:${phone.replace(/[^\d+]/g, "")}`;
+/** "+91 98100 12345" → "tel:+919810012345"; null when there are no digits to dial ("ask reception"). */
+export function telHref(phone: string): string | null {
+  return /\d/.test(phone) ? `tel:${phone.replace(/[^\d+]/g, "")}` : null;
+}
+
+/** "ravi&sons@example.com" → "mailto:ravi%26sons@example.com": escaped so the address can't add headers, `@` kept readable. */
+export const mailtoHref = (email: string): string => `mailto:${encodeURIComponent(email).replace(/%40/g, "@")}`;
 
 /** Every tag across the clients with how many carry it, most used first. */
 export function tagCounts(clients: readonly Pick<ClientOut, "tags">[]): Array<{ tag: string; count: number }> {

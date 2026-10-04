@@ -90,6 +90,8 @@ export type EnquiryStatusChange = { status: EnquiryStatus; lost_reason?: string 
 export type EnquiryFilters = {
   status?: EnquiryStatus;
   assignee?: string;
+  /** One client's enquiries (an id from another agency finds nothing). */
+  client_id?: string;
   q?: string;
   limit?: number;
   offset?: number;

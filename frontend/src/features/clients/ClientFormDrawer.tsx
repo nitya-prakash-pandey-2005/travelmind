@@ -26,6 +26,8 @@ const KINDS = [
   { value: "company", label: "Company" },
 ] as const;
 const MAX_TAG_LENGTH = 40;
+/** Room in the tag box for a pasted list of every tag a client can have. */
+const MAX_TAG_TEXT = MAX_CLIENT_TAGS * (MAX_TAG_LENGTH + 2);
 const MAX_NOTES = 2000;
 
 /** What to say under a field the server refused; its own wording is written for developers. */
@@ -57,6 +59,20 @@ function serverErrors(error: ApiError | null): { fields: Record<string, string>;
   }
   return { fields, general };
 }
+
+/** The server field each draft field is saved as, so editing it can clear that field's refusal. */
+const SERVER_FIELD = {
+  kind: "kind",
+  name: "name",
+  email: "email",
+  phone: "phone",
+  company: "company_name",
+  airport: "home_airport",
+  tags: "tags",
+  notes: "notes",
+} as const;
+
+const NO_FIELDS: ReadonlySet<string> = new Set();
 
 type Draft = {
   kind: ClientKind;
@@ -112,7 +128,10 @@ function changesOf(client: ClientOut, draft: Draft): ClientUpdate {
   return changes;
 }
 
-/** Chips plus a text box: Enter or comma adds a tag, Backspace on an empty box removes the last. */
+/**
+ * Chips plus a text box: Enter or comma adds a tag (a typed or pasted "a,b,c" adds three), Backspace on
+ * an empty box removes the last.
+ */
 function TagsInput({
   tags,
   onChange,
@@ -133,29 +152,40 @@ function TagsInput({
   const full = tags.length >= MAX_CLIENT_TAGS;
   const shownError = localError ?? error;
 
-  function add(): boolean {
-    const tag = text.trim().toLowerCase();
-    if (!tag) return false;
-    if (tag.length > MAX_TAG_LENGTH) {
-      setLocalError(`Keep each tag to ${MAX_TAG_LENGTH} characters.`);
-      return true;
-    }
-    if (!tags.includes(tag)) {
-      if (full) {
-        setLocalError(`A client can have up to ${MAX_CLIENT_TAGS} tags.`);
-        return true;
+  /**
+   * Adds each comma-separated part of `raw` as a tag. With `keepTail` the text after the last comma
+   * stays in the box, still being typed. A part over a limit stays in the box with the reason.
+   */
+  function absorb(raw: string, keepTail: boolean) {
+    const parts = raw.split(/,/g);
+    const tail = keepTail ? (parts.pop() ?? "") : "";
+    let next = tags;
+    const refused: string[] = [];
+    let problem: string | undefined;
+    for (const part of parts) {
+      const tag = part.trim().toLowerCase();
+      if (!tag || next.includes(tag)) continue;
+      if (tag.length > MAX_TAG_LENGTH) problem = `Keep each tag to ${MAX_TAG_LENGTH} characters.`;
+      else if (next.length >= MAX_CLIENT_TAGS) problem = `A client can have up to ${MAX_CLIENT_TAGS} tags.`;
+      else {
+        next = [...next, tag];
+        continue;
       }
-      onChange([...tags, tag]);
+      refused.push(part.trim());
     }
-    setText("");
-    setLocalError(undefined);
-    return true;
+    if (next !== tags) onChange(next);
+    setText(keepTail ? [...refused, tail].join(",") : refused.join(","));
+    setLocalError(problem);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter" || event.key === ",") {
+    if (event.key === ",") {
+      event.preventDefault();
+      absorb(text, false);
+    } else if (event.key === "Enter" && text.trim()) {
       // Enter adds the tag instead of submitting the form; with nothing typed it submits as usual.
-      if (add() || event.key === ",") event.preventDefault();
+      event.preventDefault();
+      absorb(text, false);
     } else if (event.key === "Backspace" && !text && tags.length > 0) {
       onChange(tags.slice(0, -1));
     }
@@ -191,16 +221,23 @@ function TagsInput({
           list={listId}
           value={text}
           autoComplete="off"
-          maxLength={MAX_TAG_LENGTH + 10}
+          maxLength={MAX_TAG_TEXT}
           placeholder={tags.length === 0 ? "e.g. vip, corporate, family" : full ? "" : "Add a tag"}
           aria-invalid={shownError ? true : undefined}
           aria-describedby={shownError ? errorId : hintId}
           onChange={(event) => {
-            setText(event.target.value.replace(",", ""));
-            setLocalError(undefined);
+            const value = event.target.value;
+            if (value.includes(",")) {
+              absorb(value, true);
+            } else {
+              setText(value);
+              setLocalError(undefined);
+            }
           }}
           onKeyDown={onKeyDown}
-          onBlur={() => void add()}
+          onBlur={() => {
+            if (text.trim()) absorb(text, false);
+          }}
           className="h-7 min-w-24 flex-1 bg-transparent px-1.5 text-sm text-ink outline-none placeholder:text-faint"
         />
         <datalist id={listId}>
@@ -240,14 +277,23 @@ function ClientForm({
   const mutation = client ? update : create;
   const [draft, setDraft] = useState<Draft>(() => draftOf(client));
   const [nameError, setNameError] = useState<string | undefined>();
+  // Fields edited since the server refused the save: its message about them no longer applies. Tied to
+  // that refusal, so the next one starts with every field's message showing.
+  const [edits, setEdits] = useState<{ after: unknown; fields: ReadonlySet<string> }>(() => ({ after: null, fields: new Set() }));
+  const edited = edits.after === mutation.error ? edits.fields : NO_FIELDS;
   const resolvedAirport = useAirport(client?.home_airport);
   // The saved airport starts as a code-only stub; show the full record once it has loaded.
   const airport = draft.airport && resolvedAirport?.iata_code === draft.airport.iata_code ? resolvedAirport : draft.airport;
 
-  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+    if (mutation.error) setEdits({ after: mutation.error, fields: new Set(edited).add(SERVER_FIELD[key]) });
+    if (key === "name") setNameError(undefined);
+  };
   const error = mutation.error ? asApiError(mutation.error) : null;
   const server = serverErrors(error);
-  const fieldError = (field: string) => (field === "name" ? (nameError ?? server.fields.name) : server.fields[field]);
+  const fieldError = (field: string) =>
+    field === "name" && nameError ? nameError : edited.has(field) ? undefined : server.fields[field];
   const company = draft.kind === "company";
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -288,6 +334,7 @@ function ClientForm({
   const notesId = `${formId}-notes`;
   const notesError = fieldError("notes");
   const airportError = fieldError("home_airport");
+  const airportMessageId = `${formId}-airport-${airportError ? "error" : "hint"}`;
 
   return (
     <Drawer
@@ -301,7 +348,8 @@ function ClientForm({
       }
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          {/* Keeps focus in the form while pressed, so leaving doesn't first add a half-typed tag on blur. */}
+          <Button variant="secondary" onMouseDown={(event) => event.preventDefault()} onClick={onClose}>
             Cancel
           </Button>
           <Button type="submit" form={formId} loading={mutation.isPending}>
@@ -354,13 +402,19 @@ function ClientForm({
           hint={company ? "Legal or billing name, if different." : "Where they work, for corporate travel."}
         />
         <div className="flex flex-col gap-1">
-          <AirportPicker label="Home airport" value={airport} onChange={(next) => set("airport", next)} />
+          <AirportPicker
+            label="Home airport"
+            value={airport}
+            onChange={(next) => set("airport", next)}
+            describedBy={airportMessageId}
+            invalid={Boolean(airportError)}
+          />
           {airportError ? (
-            <FieldMessage id={`${formId}-airport-error`} error>
+            <FieldMessage id={airportMessageId} error>
               {airportError}
             </FieldMessage>
           ) : (
-            <FieldMessage id={`${formId}-airport-hint`}>Where their trips usually start.</FieldMessage>
+            <FieldMessage id={airportMessageId}>Where their trips usually start.</FieldMessage>
           )}
         </div>
         <TagsInput tags={draft.tags} onChange={(tags) => set("tags", tags)} suggestions={tagSuggestions} error={fieldError("tags")} />

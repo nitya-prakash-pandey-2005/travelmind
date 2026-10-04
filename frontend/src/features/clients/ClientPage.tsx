@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { FilePlus2, FileText, Mail, Pencil, Phone, Plane, SearchX, SquareKanban, Trash2 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { asApiError } from "../../api/client";
 import { clientActivityQueryOptions, clientQueryOptions, useDeleteClient, type ClientOut } from "../../api/clients";
 import { enquiriesQueryOptions, type EnquiryOut } from "../../api/enquiries";
@@ -25,7 +25,7 @@ import { PanelError } from "../command/PanelError";
 import { TimelinePanel } from "../enquiries/EnquiryTimeline";
 import { formatWholeMoney, routeLabel, travellersLabel, tripDates } from "../pipeline/enquiryFacts";
 import { ClientFormDrawer } from "./ClientFormDrawer";
-import { airportPlace, kindLabel, telHref, tripRoute, tripWhen, useAirport } from "./clientFacts";
+import { airportPlace, kindLabel, mailtoHref, telHref, tripRoute, tripWhen, useAirport } from "./clientFacts";
 
 const CRUMBS = [{ label: "Clients", to: "/app/clients" as const }];
 /** Enquiries and quotes listed per client (the API's page limit). */
@@ -36,14 +36,10 @@ const OPEN_ENQUIRY = new Set(["new", "quoting", "quoted"]);
 const stop = (event: { stopPropagation: () => void }) => event.stopPropagation();
 const RECORD_LINK = "font-mono text-[13px] text-primary underline-offset-2 hover:underline";
 
-/**
- * The client's enquiries. The API has no client filter, so the client's name narrows the search and
- * the client id picks the exact matches.
- */
+/** The client's enquiries, newest first, filtered by the server on the client id. */
 function useClientEnquiries(client: ClientOut) {
-  const query = useQuery(enquiriesQueryOptions({ q: client.name, limit: LIST_LIMIT }));
-  const items = useMemo(() => (query.data?.items ?? []).filter((e) => e.client?.id === client.id), [query.data, client.id]);
-  return { query, items };
+  const query = useQuery(enquiriesQueryOptions({ client_id: client.id, limit: LIST_LIMIT }));
+  return { query, items: query.data?.items ?? [] };
 }
 
 function useClientQuotes(client: ClientOut) {
@@ -63,25 +59,31 @@ function Fact({ label, children, muted = false }: { label: string; children: Rea
 function ContactPanel({ client, now }: { client: ClientOut; now: Date }) {
   const airport = useAirport(client.home_airport);
   const place = airportPlace(airport);
+  const tel = client.phone ? telHref(client.phone) : null;
   return (
     <Panel title="Contact" description={`${kindLabel(client.kind)} client`}>
       <dl className="flex flex-col gap-3">
         <Fact label="Email" muted={!client.email}>
           {client.email ? (
-            <a href={`mailto:${client.email}`} className="inline-flex items-center gap-1.5 text-primary underline-offset-2 hover:underline">
+            <a href={mailtoHref(client.email)} className="inline-flex max-w-full items-center gap-1.5 text-primary underline-offset-2 hover:underline">
               <Mail size={13} aria-hidden="true" className="shrink-0" />
-              {client.email}
+              <span className="min-w-0 break-all">{client.email}</span>
             </a>
           ) : (
             "No email"
           )}
         </Fact>
         <Fact label="Phone" muted={!client.phone}>
-          {client.phone ? (
-            <a href={telHref(client.phone)} className="inline-flex items-center gap-1.5 text-primary underline-offset-2 hover:underline">
+          {tel ? (
+            <a href={tel} className="inline-flex items-center gap-1.5 text-primary underline-offset-2 hover:underline">
               <Phone size={13} aria-hidden="true" className="shrink-0" />
               <span className="font-mono">{client.phone}</span>
             </a>
+          ) : client.phone ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Phone size={13} aria-hidden="true" className="shrink-0 text-dim" />
+              {client.phone}
+            </span>
           ) : (
             "No phone number"
           )}
@@ -212,7 +214,7 @@ function EnquiriesPanel({
   return (
     <Panel
       title="Enquiries"
-      description={query.data ? `${formatNumber(rows.length)} for ${client.name} · newest first` : "Trip requests from this client"}
+      description={query.data ? `${formatNumber(query.data.total)} for ${client.name} · newest first` : "Trip requests from this client"}
       flush
     >
       {query.isError ? (
@@ -261,8 +263,10 @@ function EnquiriesPanel({
               />
             }
           />
-          {client.enquiry_count > rows.length && !query.isPending && rows.length >= LIST_LIMIT && (
-            <p className="border-t border-line px-4 py-2 text-xs text-dim">Showing the {formatNumber(rows.length)} newest enquiries.</p>
+          {query.data && query.data.total > query.data.items.length && (
+            <p className="border-t border-line px-4 py-2 text-xs text-dim">
+              Showing the {formatNumber(query.data.items.length)} newest of {formatNumber(query.data.total)} enquiries.
+            </p>
           )}
         </>
       )}

@@ -18,7 +18,7 @@ import { Panel } from "../../ui/Panel";
 import { PanelError } from "../command/PanelError";
 import { formatWholeMoney } from "../pipeline/enquiryFacts";
 import { ClientFormDrawer } from "./ClientFormDrawer";
-import { daysFromToday, kindLabel, tagCounts, tripRoute } from "./clientFacts";
+import { kindLabel, tagCounts, tripRoute, tripWhen } from "./clientFacts";
 
 /** The list shows up to this many clients (the API's page limit), most recently updated first. */
 const LIST_LIMIT = 200;
@@ -47,12 +47,11 @@ function TagList({ tags, max = SHOWN_TAGS }: { tags: readonly string[]; max?: nu
 function NextTrip({ client }: { client: ClientOut }) {
   const trip = client.next_trip;
   if (!trip) return <span className="whitespace-nowrap text-faint">None booked</span>;
-  const days = daysFromToday(trip.depart_date);
   return (
     <span className="flex flex-col whitespace-nowrap leading-4">
       <span className="font-mono text-[13px] font-medium text-ink">{tripRoute(trip)}</span>
       <span className="text-[11px] text-dim">
-        {formatDayMonth(trip.depart_date)} · in {days} d
+        {tripWhen(trip)}
       </span>
     </span>
   );

@@ -11,6 +11,10 @@ type AirportPickerProps = {
   value: Airport | null;
   onChange: (airport: Airport | null) => void;
   placeholder?: string;
+  /** Id of a message outside the picker (a hint or field error) that describes it. */
+  describedBy?: string;
+  /** Marks the field as refused, e.g. by a server check, with a danger border and aria-invalid. */
+  invalid?: boolean;
 };
 
 /** "New Delhi, India": where the airport is, for the second line of an option. */
@@ -37,7 +41,14 @@ function Code({ code, className }: { code: string; className?: string }) {
  * Airport combobox: type a city, airport or code; arrow keys move, Enter picks, Escape closes. Once picked,
  * the field shows the code and city with a Change button, at the same height as the input it replaces.
  */
-export function AirportPicker({ label, value, onChange, placeholder = "City, airport or code" }: AirportPickerProps) {
+export function AirportPicker({
+  label,
+  value,
+  onChange,
+  placeholder = "City, airport or code",
+  describedBy,
+  invalid = false,
+}: AirportPickerProps) {
   const id = useId();
   const listId = `${id}-list`;
   const hintId = `${id}-hint`;
@@ -62,7 +73,10 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
         <p className={FIELD_LABEL}>{label}</p>
         <div
           title={`${value.iata_code} · ${value.name}${place(value) ? ` · ${place(value)}` : ""}`}
-          className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-line-strong bg-surface-2 pl-1.5 pr-1"
+          className={cn(
+            "flex h-9 min-w-0 items-center gap-2 rounded-md border bg-surface-2 pl-1.5 pr-1",
+            invalid ? "border-danger" : "border-line-strong",
+          )}
         >
           <Code code={value.iata_code} className="bg-selected text-primary" />
           <span className="min-w-0 flex-1 truncate text-sm">
@@ -73,6 +87,7 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
             ref={changeRef}
             type="button"
             aria-label={`Change ${label}`}
+            aria-describedby={describedBy}
             onClick={() => {
               pendingFocus.current = "input";
               onChange(null);
@@ -119,12 +134,13 @@ export function AirportPicker({ label, value, onChange, placeholder = "City, air
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={activeOption ? `${id}-opt-${active}` : undefined}
-          aria-describedby={tooShort ? hintId : undefined}
+          aria-describedby={[tooShort ? hintId : null, describedBy].filter(Boolean).join(" ") || undefined}
+          aria-invalid={invalid || undefined}
           autoComplete="off"
           spellCheck={false}
           placeholder={placeholder}
           value={term}
-          className={cn(FIELD_CONTROL, "border-line-strong pl-8")}
+          className={cn(FIELD_CONTROL, invalid ? "border-danger" : "border-line-strong", "pl-8")}
           onChange={(event) => {
             setTerm(event.target.value);
             setOpen(true);

@@ -3,7 +3,8 @@ import { expect, test, vi } from "vitest";
 import { clientOut } from "../../test/workspaceFixtures";
 import { mockApi, type MockCall, type MockHandler } from "../../test/mockApi";
 import { renderApp } from "../../test/renderApp";
-import { clientMocks, listClients } from "./clientFixtures";
+import { dayFromToday } from "../quotes/quoteFixtures";
+import { CLIENTS, PRIYA, clientMocks, listClients } from "./clientFixtures";
 
 vi.mock("../globe/webgl", () => ({ hasWebGL: () => false }));
 
@@ -160,6 +161,85 @@ test("a duplicate email and an unknown airport are shown on their fields", async
   );
   await user.click(within(drawer).getByRole("button", { name: "Add client" }));
   expect(await within(drawer).findByText("Unknown airport code XYZ.")).toBeInTheDocument();
+  const airport = within(drawer).getByRole("combobox", { name: "Home airport" });
+  expect(airport).toHaveAccessibleDescription("Unknown airport code XYZ.");
+  expect(airport).toHaveAttribute("aria-invalid", "true");
+});
+
+test("editing a field clears the server's message for that field only", async () => {
+  const { user } = clientsPage({
+    "POST /api/v1/clients": {
+      status: 422,
+      body: {
+        detail: "Some of the information you entered isn't valid.",
+        errors: [
+          { field: "email", message: "value is not a valid email address" },
+          { field: "phone", message: "String should have at most 40 characters" },
+        ],
+      },
+    },
+  });
+  await user.click(await screen.findByRole("button", { name: "New client" }));
+  const drawer = screen.getByRole("dialog", { name: "New client" });
+  await user.type(within(drawer).getByLabelText("Name"), "Kavya Nair");
+  await user.type(within(drawer).getByLabelText("Email"), "kavya");
+  await user.click(within(drawer).getByRole("button", { name: "Add client" }));
+  const email = within(drawer).getByLabelText("Email");
+  const phone = within(drawer).getByLabelText("Phone");
+  await waitFor(() => expect(email).toHaveAccessibleDescription("Enter a valid email address, like name@example.com."));
+  await user.type(email, "@example.com");
+  expect(email).not.toHaveAccessibleDescription("Enter a valid email address, like name@example.com.");
+  expect(email).not.toHaveAttribute("aria-invalid");
+  expect(phone).toHaveAccessibleDescription("Enter a phone number of up to 40 characters.");
+});
+
+test("typed or pasted commas split into separate tags within the limits", async () => {
+  const { user } = clientsPage();
+  await user.click(await screen.findByRole("button", { name: "New client" }));
+  const drawer = screen.getByRole("dialog", { name: "New client" });
+  const tags = within(drawer).getByLabelText("Tags");
+  await user.type(tags, "VIP,family,golf");
+  for (const tag of ["vip", "family"]) expect(within(drawer).getByRole("button", { name: `Remove tag ${tag}` })).toBeInTheDocument();
+  expect(tags).toHaveValue("golf");
+  await user.type(tags, "{Enter}");
+  expect(within(drawer).getByRole("button", { name: "Remove tag golf" })).toBeInTheDocument();
+
+  await user.click(tags);
+  await user.paste(" a , b,,c, vip,d,e,f,g,h,i");
+  const chips = within(drawer).getAllByRole("button", { name: /^Remove tag / });
+  expect(chips.map((chip) => chip.getAttribute("aria-label"))).toEqual(
+    ["vip", "family", "golf", "a", "b", "c", "d", "e", "f", "g"].map((tag) => `Remove tag ${tag}`),
+  );
+  expect(tags).toHaveAccessibleDescription("A client can have up to 10 tags.");
+
+  for (const chip of chips.slice(3)) await user.click(chip);
+  await user.click(tags);
+  await user.clear(tags);
+  await user.paste(`${"x".repeat(41)},ok,`);
+  expect(within(drawer).getByRole("button", { name: "Remove tag ok" })).toBeInTheDocument();
+  expect(tags).toHaveAccessibleDescription("Keep each tag to 40 characters.");
+  expect(within(drawer).queryByRole("button", { name: `Remove tag ${"x".repeat(41)}` })).not.toBeInTheDocument();
+});
+
+test("pressing Cancel does not add the half-typed tag on its way out", async () => {
+  const { user } = clientsPage();
+  await user.click(await screen.findByRole("button", { name: "New client" }));
+  const drawer = screen.getByRole("dialog", { name: "New client" });
+  await user.type(within(drawer).getByLabelText("Tags"), "draft");
+  const cancel = within(drawer).getByRole("button", { name: "Cancel" });
+  await user.pointer({ keys: "[MouseLeft>]", target: cancel });
+  expect(within(drawer).queryByRole("button", { name: "Remove tag draft" })).not.toBeInTheDocument();
+  await user.pointer({ keys: "[/MouseLeft]", target: cancel });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New client" })).not.toBeInTheDocument());
+});
+
+test("a next trip dated in the past reads as days ago, never a negative count", async () => {
+  const late = { ...PRIYA, next_trip: { origin: "DEL", destination: "GOI", depart_date: dayFromToday(-2) } };
+  clientsPage({ "GET /api/v1/clients": listClients([late, ...CLIENTS.slice(1)]) });
+  const table = await screen.findByRole("table", { name: "Clients" });
+  const row = (await within(table).findByText("Priya Sharma")).closest("tr") as HTMLElement;
+  expect(within(row).getByText(/2 days ago/)).toBeInTheDocument();
+  expect(row).not.toHaveTextContent(/in -/);
 });
 
 test("an agency without clients sees what a record holds and how to add one", async () => {

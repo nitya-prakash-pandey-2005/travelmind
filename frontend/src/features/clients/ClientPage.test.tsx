@@ -1,9 +1,11 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
+import type { EnquiryOut } from "../../api/enquiries";
 import { mockApi, type MockHandler } from "../../test/mockApi";
 import { renderApp } from "../../test/renderApp";
+import { clientOut, enquiryOut } from "../../test/workspaceFixtures";
 import { routeStore } from "../route/routeStore";
-import { PRIYA, clientMocks } from "./clientFixtures";
+import { PRIYA, PRIYA_ENQUIRIES, clientMocks, listEnquiries } from "./clientFixtures";
 
 vi.mock("../globe/webgl", () => ({ hasWebGL: () => false }));
 
@@ -119,4 +121,86 @@ test("an unknown client shows a not-found state with a way back", async () => {
   clientPage({ "GET /api/v1/clients/c-gone": { status: 404, body: { detail: "Client not found." } } }, "c-gone");
   expect(await screen.findByText("Client not found")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Back to clients" })).toHaveAttribute("href", "/app/clients");
+});
+
+test("the enquiries panel asks the server for this client's enquiries by id", async () => {
+  const { calls } = clientPage();
+  await screen.findByRole("heading", { level: 1, name: "Priya Sharma" });
+  const enquiries = screen.getByRole("region", { name: "Enquiries" });
+  expect(await within(enquiries).findAllByRole("link", { name: "E-0005" })).not.toHaveLength(0);
+  const list = calls.find((c) => c.method === "GET" && c.path === "/api/v1/enquiries");
+  expect(list?.search.get("client_id")).toBe("c-priya");
+  expect(list?.search.get("q")).toBeNull();
+  expect(within(enquiries).getByText(/^2 for Priya Sharma/)).toBeInTheDocument();
+});
+
+test("a client whose name reads like an enquiry number still lists its enquiries", async () => {
+  const named = clientOut("c-e12", "E-12", { enquiry_count: 1 });
+  const theirs = enquiryOut({ id: "e-31", number: "E-0031", origin: "BLR", destination: "SIN", status: "new", client: { id: "c-e12", name: "E-12" } });
+  const numbered = enquiryOut({ id: "e-12", number: "E-0012", origin: "DEL", destination: "DXB", status: "new", client: { id: "c-priya", name: "Priya Sharma" } });
+  clientPage(
+    {
+      "GET /api/v1/clients/c-e12": { status: 200, body: named },
+      "GET /api/v1/clients/c-e12/activity": { status: 200, body: { items: [] } },
+      "GET /api/v1/enquiries": listEnquiries([theirs, numbered] as unknown as EnquiryOut[]),
+    },
+    "c-e12",
+  );
+  await screen.findByRole("heading", { level: 1, name: "E-12" });
+  const enquiries = screen.getByRole("region", { name: "Enquiries" });
+  expect((await within(enquiries).findAllByRole("link", { name: "E-0031" }))[0]).toHaveAttribute("href", "/app/enquiries/e-31");
+  expect(within(enquiries).queryByText("E-0012")).not.toBeInTheDocument();
+});
+
+test("a client with more enquiries than one page says only the newest are shown", async () => {
+  clientPage({
+    "GET /api/v1/enquiries": { status: 200, body: { items: PRIYA_ENQUIRIES.slice(0, 2), total: 250 } },
+  });
+  await screen.findByRole("heading", { level: 1, name: "Priya Sharma" });
+  const enquiries = screen.getByRole("region", { name: "Enquiries" });
+  expect(await within(enquiries).findByText("Showing the 2 newest of 250 enquiries.")).toBeInTheDocument();
+});
+
+test("contact links escape the email and skip a phone without digits", async () => {
+  clientPage({
+    "GET /api/v1/clients/c-priya": {
+      status: 200,
+      body: { ...PRIYA, email: "ravi&sons?x@example.com", phone: "ask reception" },
+    },
+  });
+  await screen.findByRole("heading", { level: 1, name: "Priya Sharma" });
+  const contact = screen.getByRole("region", { name: "Contact" });
+  expect(within(contact).getByRole("link", { name: "ravi&sons?x@example.com" })).toHaveAttribute(
+    "href",
+    "mailto:ravi%26sons%3Fx@example.com",
+  );
+  expect(within(contact).getByText("ask reception")).toBeInTheDocument();
+  expect(within(contact).queryByRole("link", { name: "ask reception" })).not.toBeInTheDocument();
+});
+
+test("a duplicate email on edit is shown under Email", async () => {
+  const { user } = clientPage({
+    "PATCH /api/v1/clients/c-priya": { status: 409, body: { detail: "A client with this email already exists." } },
+  });
+  await user.click(await screen.findByRole("button", { name: "Edit" }));
+  const drawer = screen.getByRole("dialog", { name: "Edit Priya Sharma" });
+  const email = within(drawer).getByLabelText("Email");
+  await user.clear(email);
+  await user.type(email, "rahul@example.com");
+  await user.click(within(drawer).getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(email).toHaveAccessibleDescription("A client with this email already exists."));
+  expect(email).toHaveAttribute("aria-invalid", "true");
+  expect(within(drawer).queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("an unknown saved airport on edit is described on the picker", async () => {
+  const { user } = clientPage({
+    "PATCH /api/v1/clients/c-priya": { status: 422, body: { detail: "Unknown airport code DEL." } },
+  });
+  await user.click(await screen.findByRole("button", { name: "Edit" }));
+  const drawer = screen.getByRole("dialog", { name: "Edit Priya Sharma" });
+  await user.type(within(drawer).getByLabelText("Phone"), "1");
+  await user.click(within(drawer).getByRole("button", { name: "Save changes" }));
+  const change = within(drawer).getByRole("button", { name: "Change Home airport" });
+  await waitFor(() => expect(change).toHaveAccessibleDescription("Unknown airport code DEL."));
 });
