@@ -105,13 +105,16 @@ export function KpiTile({
           {(delta || hint) && (
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               {delta && <DeltaChip delta={delta} />}
-              {hint && <p className="min-w-0 truncate text-xs text-dim">{hint}</p>}
+              {/* One line on wider screens; phones give the captions two lines rather than cut them short. */}
+              {hint && <p className="min-w-0 truncate text-xs text-dim max-sm:line-clamp-2 max-sm:whitespace-normal">{hint}</p>}
             </div>
           )}
           {series && series.length > 0 && (
             <div className="mt-1.5">
               <Sparkline label={trendLabel ?? `${label} trend`} values={series} />
-              {trendLabel && <p className="mt-1 truncate text-[11px] leading-4 text-faint">{trendLabel}</p>}
+              {trendLabel && (
+                <p className="mt-1 truncate text-[11px] leading-4 text-faint max-sm:line-clamp-2 max-sm:whitespace-normal">{trendLabel}</p>
+              )}
             </div>
           )}
         </>

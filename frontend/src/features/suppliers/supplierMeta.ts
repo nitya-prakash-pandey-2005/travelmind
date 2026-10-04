@@ -22,7 +22,7 @@ export const MODE: Record<NonNullable<SupplierStatus["mode"]>, { tone: BadgeTone
 };
 
 /** The API process's circuit breaker for a supplier (the status endpoint sends it; older servers may not). */
-export type BreakerState = "closed" | "open" | "half_open";
+export type BreakerState = NonNullable<SupplierStatus["breaker"]>;
 
 export const BREAKER: Record<BreakerState, { tone: BadgeTone; label: string }> = {
   closed: { tone: "neutral", label: "Breaker closed" },
@@ -30,10 +30,9 @@ export const BREAKER: Record<BreakerState, { tone: BadgeTone; label: string }> =
   open: { tone: "danger", label: "Breaker open" },
 };
 
-/** The breaker state, when the server sent one. */
+/** The breaker state, when the server sent a known one. */
 export function breakerOf(s: SupplierStatus): BreakerState | null {
-  const value = (s as SupplierStatus & { breaker?: unknown }).breaker;
-  return value === "closed" || value === "open" || value === "half_open" ? value : null;
+  return s.breaker && s.breaker in BREAKER ? s.breaker : null;
 }
 
 /** Sources that answer searches with offers; the rest add data to results. */

@@ -3,7 +3,7 @@
  * the kit; colours come from theme tokens only, and motion is CSS (stopped by the global reduced-motion rule).
  */
 import type { LucideIcon } from "lucide-react";
-import type { ComponentProps, CSSProperties, ReactNode } from "react";
+import type { AriaAttributes, ComponentProps, CSSProperties, ReactNode } from "react";
 import { Drawer } from "../ui/Drawer";
 import { cn } from "../ui/cn";
 
@@ -108,15 +108,32 @@ export function Seg<T extends string>({
   );
 }
 
-/** On/off switch. */
-export function Toggle({ on, onChange, disabled, label }: { on: boolean; onChange?: (on: boolean) => void; disabled?: boolean; label: string }) {
+/**
+ * On/off switch. Name it with `label`, or point `aria-labelledby` at a visible label; other ARIA props
+ * (`aria-describedby` for a note that explains a disabled switch, ...) pass through to the button.
+ */
+export function Toggle({
+  on,
+  onChange,
+  disabled,
+  label,
+  className,
+  ...aria
+}: {
+  on: boolean;
+  onChange?: (on: boolean) => void;
+  disabled?: boolean;
+  label?: string;
+  className?: string;
+} & Omit<AriaAttributes, "aria-checked">) {
   return (
     <button
       type="button"
       role="switch"
-      className={cn("toggle", on && "on")}
-      aria-checked={on}
+      className={cn("toggle", on && "on", className)}
       aria-label={label}
+      {...aria}
+      aria-checked={on}
       disabled={disabled}
       onClick={() => onChange?.(!on)}
     />

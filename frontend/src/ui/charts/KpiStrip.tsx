@@ -21,7 +21,7 @@ const WIDE: Record<2 | 3 | 4 | 5 | 6 | 7 | 8, string> = {
 
 /**
  * The kit's KPI row: a grid of compact glass Stat cards. Put KpiTile children inside; the grid is 2 columns on
- * phones, 3 on tablets and `columns` on wide screens.
+ * phones (an odd last tile spans the row), 3 on tablets and `columns` on wide screens.
  */
 export function KpiStrip({
   label,
@@ -43,7 +43,14 @@ export function KpiStrip({
       aria-busy={busy || undefined}
       className={cn("min-w-0", className)}
     >
-      <div className={cn("grid grid-cols-2 gap-3", columns > 2 && "sm:grid-cols-3", WIDE[columns])}>
+      {/* On the 2-column phone grid an odd last tile takes the whole row instead of leaving a hole beside it. */}
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-3 max-sm:[&>:last-child:nth-child(odd)]:col-span-2",
+          columns > 2 && "sm:grid-cols-3",
+          WIDE[columns],
+        )}
+      >
         <InStrip value>{children}</InStrip>
       </div>
     </section>

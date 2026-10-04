@@ -5,6 +5,7 @@ import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { teamQueryOptions } from "../../api/queries";
 import type { Me, Role } from "../../api/types";
 import type { AgencyProfile } from "../../api/workspace";
+import { Toggle } from "../../kit";
 import { formatDate } from "../../lib/format";
 import { formatClock, useClock, zoneAbbreviation } from "../../shell/useClock";
 import { daysUntil } from "../../shell/DemoBanner";
@@ -206,16 +207,13 @@ export function AppearancePanel() {
           <span id={contrastId} className={cn("text-[13px]", fixed ? "text-dim" : "text-ink")}>
             High contrast
           </span>
-          {/* The kit's Toggle, as a switch named by its label and described by the fixed-theme note. */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={choice.contrast}
+          {/* Named by its visible label and described by the fixed-theme note. */}
+          <Toggle
+            on={choice.contrast}
+            onChange={(contrast) => setChoice({ contrast })}
             aria-labelledby={contrastId}
             aria-describedby={fixed ? noteId : undefined}
             disabled={fixed}
-            onClick={() => setChoice({ contrast: !choice.contrast })}
-            className={cn("toggle", choice.contrast && "on")}
           />
         </div>
         {fixed && (
