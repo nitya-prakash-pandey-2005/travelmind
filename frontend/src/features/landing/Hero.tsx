@@ -29,19 +29,17 @@ const GLOW: CSSProperties = {
   background: "radial-gradient(closest-side, color-mix(in oklab, var(--tm-primary) 15%, transparent), transparent)",
 };
 
-/** Floating cards sit above the window like popovers: the one elevation the design system allows. */
-const FLOAT = "absolute z-10 w-64 shadow-pop";
-
 /**
  * The product as the hero's picture: a Command Center screen with the fare insight and supplier
- * status cards lifted off it. Past 1240 px it grows into the right margin (capped), never off-screen.
+ * status cards in a row beneath it (never on top of it). Past 1240 px it grows into the right
+ * margin (capped), never off-screen.
  */
 function HeroComposition() {
   return (
     <div className="tm-rise relative min-w-0 lg:mr-[calc(-1_*_clamp(0px,_(100vw_-_1240px)_/_2_-_24px,_280px))]" style={enter(2)}>
       <div aria-hidden="true" className="decor-gradient pointer-events-none absolute -inset-x-16 -inset-y-20 -z-10" style={GLOW} />
       <Illustration caption="Illustration with sample data: names, fares, latencies and figures are examples, not live results.">
-        <div className="relative sm:pb-8 sm:pl-6 xl:pr-8">
+        <div className="relative">
           <PreviewWindow active="Command Center" sidebar="xl" className="shadow-frame">
             <ScreenHeader
               crumb="Operate / Command Center"
@@ -67,8 +65,10 @@ function HeroComposition() {
               </MiniPanel>
             </div>
           </PreviewWindow>
-          <SupplierStatusCard className={cn(FLOAT, "right-0 top-[41%] max-xl:hidden")} />
-          <FareInsightCard className={cn(FLOAT, "bottom-0 left-0 max-sm:hidden")} />
+          <div className="mt-3 grid gap-3 max-sm:hidden sm:grid-cols-2">
+            <FareInsightCard className="shadow-raise" />
+            <SupplierStatusCard className="shadow-raise" />
+          </div>
         </div>
       </Illustration>
     </div>

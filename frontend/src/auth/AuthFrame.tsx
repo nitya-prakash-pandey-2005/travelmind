@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Gauge, ScrollText, Tags } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { FareInsightCard, FareRowsCard, Illustration, SupplierStatusCard } from "../features/landing/ConsolePreview";
+import { FareConsole, Illustration } from "../features/landing/ConsolePreview";
 import { DATA_SOURCES, SourceMark } from "../features/landing/IntegrationsStrip";
 import { Wordmark } from "../features/landing/Wordmark";
 import { ThemeSwitcher } from "../theme/ThemeSwitcher";
@@ -49,11 +49,7 @@ function ProductPanel() {
           </ul>
         </div>
         <Illustration caption="Illustration with sample data, not live fares.">
-          <div className="relative pb-28 pl-8">
-            <FareRowsCard rows={3} className="shadow-frame" />
-            <FareInsightCard className="absolute bottom-0 left-0 z-10 w-60 shadow-pop" />
-            <SupplierStatusCard className="absolute bottom-3 right-6 z-10 w-60 shadow-pop max-xl:hidden" />
-          </div>
+          <FareConsole className="shadow-frame" />
         </Illustration>
         <div className="border-t border-line pt-6">
           <p className="text-[13px] font-medium text-ink">Connects to</p>
