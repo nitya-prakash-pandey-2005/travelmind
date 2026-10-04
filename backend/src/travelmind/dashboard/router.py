@@ -95,8 +95,9 @@ PIPELINE_TAG = schema_tag(PipelineOut)
 def summary_body(range_: Range, currency: str, cached_kpis: bytes, searches: Kpi) -> bytes:
     """The summary's JSON: `SummaryOut(range_, currency, [*cached_kpis, searches])`, built around
     the cached cards' JSON array without decoding it. The same bytes as
-    `SummaryOut.model_dump_json()` (tested)."""
-    tail = SummaryOut(range=range_, currency=currency, kpis=[searches]).model_dump_json().encode()
+    `SummaryOut.model_dump_json(by_alias=True)`, as FastAPI sends it (tested)."""
+    live = SummaryOut(range=range_, currency=currency, kpis=[searches])
+    tail = live.model_dump_json(by_alias=True).encode()
     at = tail.index(b'"kpis":[') + len(b'"kpis":[')
     cards = cached_kpis.strip()[1:-1]
     return tail[:at] + cards + (b"," if cards else b"") + tail[at:]
@@ -114,7 +115,8 @@ async def summary_route(
     today = now.astimezone(ZoneInfo(agency.timezone)).date().isoformat()
 
     async def load() -> bytes:
-        return _KPIS.dump_json(await metrics.workspace_kpis(db, agency, range_, now=now))
+        kpis = await metrics.workspace_kpis(db, agency, range_, now=now)
+        return _KPIS.dump_json(kpis, by_alias=True)
 
     cached = await cached_agency_json(
         redis,
@@ -135,7 +137,7 @@ async def pipeline_route(current: AuthedUser, db: DbSession, redis: RedisClient)
     await _expire_first(db, redis, agency.id, utcnow())
 
     async def load() -> bytes:
-        return (await metrics.pipeline(db, agency)).model_dump_json().encode()
+        return (await metrics.pipeline(db, agency)).model_dump_json(by_alias=True).encode()
 
     body = await cached_agency_json(
         redis,

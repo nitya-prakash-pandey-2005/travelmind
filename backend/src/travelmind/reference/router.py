@@ -57,7 +57,8 @@ async def search_airports_route(
         index = await get_airport_index(db)
         await release_connection(db)  # the (hourly) index load is the only database read
         hits = await run_in_threadpool(index.search, q, limit)  # fuzzy scan is CPU-heavy
-        return _AIRPORTS.dump_json([AirportOut.from_record(hit.airport) for hit in hits])
+        airports = [AirportOut.from_record(hit.airport) for hit in hits]
+        return _AIRPORTS.dump_json(airports, by_alias=True)
 
     # The search folds its query first, so equal folds give equal results; hashed for a short key.
     digest = hashlib.sha256(fold(q).encode()).hexdigest()[:32]

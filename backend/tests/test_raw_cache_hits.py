@@ -9,7 +9,7 @@ import os
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, computed_field, field_serializer
 from redis.asyncio import Redis
 
 from tests.helpers import signup
@@ -61,3 +61,44 @@ def test_the_schema_tag_follows_the_shape():
     assert schema_tag(Before) != schema_tag(After)
     assert schema_tag(Before) == schema_tag(Before)  # stable across calls (and processes)
     assert len(schema_tag(SummaryOut)) == 8
+
+
+
+def _plain() -> type[BaseModel]:
+    class Out(BaseModel):
+        a: int
+
+    return Out
+
+
+def _with_computed_field() -> type[BaseModel]:
+    class Out(BaseModel):
+        a: int
+
+        @computed_field  # type: ignore[prop-decorator]
+        @property
+        def b(self) -> str:
+            return "b"
+
+    return Out
+
+
+def _with_serializer() -> type[BaseModel]:
+    class Out(BaseModel):
+        a: int
+
+        @field_serializer("a")
+        def as_text(self, value: int) -> str:
+            return str(value)
+
+    return Out
+
+
+def test_the_schema_tag_follows_what_is_sent():
+    """Stored bytes are what serialisation produces, so the tag changes with anything that
+    changes it, for a model of the same name: a computed field added, a field sent another way."""
+    plain, computed, serialized = (
+        schema_tag(model()) for model in (_plain, _with_computed_field, _with_serializer)
+    )
+    assert plain == schema_tag(_plain())
+    assert len({plain, computed, serialized}) == 3

@@ -176,9 +176,11 @@ async def _call[R](what: str, command: Callable[[], Awaitable[R]]) -> R:
 
 
 def schema_tag(tp: Any) -> str:
-    """A short fingerprint of a response type's JSON schema, for the keys of entries that are
-    served as stored bytes (see the module docstring)."""
-    schema = json.dumps(TypeAdapter(tp).json_schema(), sort_keys=True)
+    """A short fingerprint of a response type's JSON schema as it is sent (serialisation mode:
+    computed fields and serialisers count), for the keys of entries that are served as stored
+    bytes (see the module docstring). Their loaders serialise with `by_alias=True`, as FastAPI
+    does."""
+    schema = json.dumps(TypeAdapter(tp).json_schema(mode="serialization"), sort_keys=True)
     return hashlib.sha256(schema.encode()).hexdigest()[:8]
 
 
