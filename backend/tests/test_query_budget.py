@@ -120,6 +120,19 @@ async def test_enquiries_list_query_budget(client, airports, statements):
     assert small == large <= ENQUIRIES_BUDGET, (small, large)
 
 
+async def test_enquiries_by_client_query_budget(client, airports, statements):
+    """Filtering by client costs no more statements than the plain list."""
+    agency_id, user_id = await _owner(client)
+    await seed_workspace(agency_id, user_id, first=1, count=30)
+    plain = await _count(client, statements, "/api/v1/enquiries")
+    people = (await client.get("/api/v1/clients")).json()["items"]
+    path = f"/api/v1/enquiries?client_id={people[0]['id']}"
+    statements.clear()
+    r = await client.get(path)
+    assert r.status_code == 200 and r.json()["total"] == 1, r.text
+    assert len(statements) == plain <= ENQUIRIES_BUDGET, (plain, len(statements))
+
+
 async def test_quotes_list_query_budget(client, airports, statements):
     small, large = await _counts_for_3_and_30(client, statements, "/api/v1/quotes")
     assert small == large <= QUOTES_BUDGET, (small, large)

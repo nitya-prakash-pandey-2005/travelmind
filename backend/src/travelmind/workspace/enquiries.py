@@ -503,13 +503,15 @@ async def update_enquiry(
 
 
 def _filters(
-    status_: str | None, assignee: UUID | None, q: str | None
+    status_: str | None, assignee: UUID | None, client_id: UUID | None, q: str | None
 ) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = []
     if status_:
         conditions.append(Enquiry.status == status_)
     if assignee:
         conditions.append(Enquiry.assignee_user_id == assignee)
+    if client_id:
+        conditions.append(Enquiry.client_id == client_id)
     if q:
         by_number = _NUMBER_QUERY.match(q)
         if by_number:
@@ -533,13 +535,15 @@ async def list_enquiries(
     *,
     status_: str | None = None,
     assignee: UUID | None = None,
+    client_id: UUID | None = None,
     q: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> EnquiryList:
-    """Newest first. `q` matches an exact number ("E-0007"), else route codes, client name or
-    notes."""
-    conditions = _filters(status_, assignee, q.strip() if q else None)
+    """Newest first; the filters combine. `client_id` keeps one client's enquiries (RLS keeps
+    the list to the agency, so another agency's client id finds nothing). `q` matches an exact
+    number ("E-0007"), else route codes, client name or notes."""
+    conditions = _filters(status_, assignee, client_id, q.strip() if q else None)
     total = await db.scalar(
         select(func.count())
         .select_from(Enquiry)
@@ -582,6 +586,7 @@ async def list_enquiries_route(
     db: DbSession,
     status_: Annotated[EnquiryStatus | None, Query(alias="status")] = None,
     assignee: UUID | None = None,
+    client_id: UUID | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -591,6 +596,7 @@ async def list_enquiries_route(
         current.agency_id,
         status_=status_,
         assignee=assignee,
+        client_id=client_id,
         q=q,
         limit=limit,
         offset=offset,
