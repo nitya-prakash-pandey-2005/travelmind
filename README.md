@@ -155,6 +155,13 @@ pauses the plan and shows exactly what will be saved, for example "Create an enq
 3 Nov 2026, 2 adults". Nothing is written until someone approves it, and a declined write is
 reported as not done.
 
+**When the model stumbles.** A rate-limited call (429) is retried twice after a short backoff (about
+2 s, then 4 s) within the run's time; a 429 does not count toward the Gemini circuit breaker, since
+one key's quota is not an outage. An empty turn, an answer cut off at the token limit, or a tool
+call the model may not make is explained to the model and retried once. The last allowed step is
+sent without tools ("answer now with what you have"); if that answer can't be used, the run still
+ends with the board of what the searches found (not verified) rather than failing.
+
 **Demo planner.** Outside production, with no model key set, the agent uses a rule-based demo
 planner. It is labelled "Demo planner" in the page header and uses the same tools, guard and
 confirmations, so the whole flow can be tried without a key. Production never falls back to it:
@@ -169,9 +176,11 @@ Set these in `backend/.env` (or the environment):
 | `TM_GOOGLE_API_KEY` (or `GOOGLE_API_KEY`) | none | Gemini API key. When it is set, the agent uses Gemini; without it, the demo planner (outside production). The key is never logged or returned by the API. |
 | `TM_AGENT_PROVIDER` | `auto` | `auto` uses Gemini when a key is set, otherwise the demo planner. `gemini` or `fake` (the demo planner) forces one. |
 | `TM_AGENT_MODEL` | `gemini-2.5-flash` | The Gemini model id. |
-| `TM_AGENT_MAX_STEPS` | `12` | Model calls per run. |
+| `TM_AGENT_MAX_STEPS` | `12` | Model calls per run. The last one is sent without tools, to answer with what the run found. |
 | `TM_AGENT_STEP_TIMEOUT_S` / `TM_AGENT_RUN_TIMEOUT_S` | `20` / `120` | One model call (retried once), and a whole run's running time. |
 | `TM_AGENT_RUN_TOKEN_CAP` | `60000` | Tokens per run. |
+| `TM_AGENT_THINKING_BUDGET` | `1024` | Gemini thinking tokens per model call (billed as output). `0` turns thinking off (Flash models). |
+| `TM_AGENT_RATE_LIMIT_RETRIES` / `TM_AGENT_RATE_LIMIT_BACKOFF_S` | `2` / `2.0` | Retries of a rate-limited (429) model call per step, and the first wait (doubled for the next, plus jitter). |
 | `TM_AGENT_MONTHLY_TOKEN_BUDGET` | `2000000` | Tokens per agency per month. Past it, runs stop with "budget used up". |
 | `TM_AGENT_MAX_CONCURRENT_RUNS_PER_AGENCY` | `3` | Runs one agency can have going at once. |
 | `TM_AGENT_RUNS_PER_MINUTE` | `10` | New runs per agency per minute. |
@@ -190,13 +199,21 @@ instance. Setting `TM_OPENTRIPMAP_KEY` makes OpenTripMap find places instead of 
 shows the weather's attribution (CC BY 4.0), and the agent page lists both sources with their
 licences.
 
+**Production key.** Use a paid Gemini API key (a Google Cloud project with billing on) in
+production. Client names, enquiry notes and the user's own words reach the model, and on the free
+tier Google may use prompts and responses to improve its products. The free tier's low rate limits
+also mean frequent 429s.
+
+**Not yet.** The traveller-only tools (`save_trip`, `add_reminder`, `watch_fare`) are deferred to
+the traveller app step. Traveller runs today get the travel, place, weather and planning tools only.
+
 API (under `/api/v1/agent`, session required): `GET /availability`, `POST /runs`, `GET /runs`,
 `GET /runs/{id}`, `GET /runs/{id}/events` (server-sent events), `POST /runs/{id}/reply`,
 `POST /runs/{id}/confirm`, `POST /runs/{id}/cancel`.
 
 ### Evals
 
-An evaluation suite (`backend/tests/agent/evals/cases.yaml`, 51 cases) runs the real loop, tools
+An evaluation suite (`backend/tests/agent/evals/cases.yaml`, 52 cases) runs the real loop, tools
 and guard against the sandbox flight supplier, with weather, places, geocoding and hotel rates
 answered by local mocks, so it is offline and repeatable. It covers trip extraction, clarifying
 questions, tool choice, grounding, prompt injection, safety (hand-off, no spending tools) and
@@ -230,6 +247,34 @@ case are listed as "not run". The grounding gate is enforced only by the offline
 its cases need scripted wrong answers. In GitHub Actions, the `agent-evals-live` job does the same
 on a manual run (Actions → backend → Run workflow) with the repository secret `GOOGLE_API_KEY`.
 Without the secret, the job fails and says so.
+
+**Recording a live smoke run.** Before switching a deployment to a new key or model, run one plan
+by hand and keep a short record next to the eval reports (`docs/perf/agent-smoke-<date>.md`):
+
+1. Start the API with the key set (`TM_AGENT_PROVIDER=gemini`) and open `/app/agent`. The header
+   names the model; it must not say "Demo planner".
+2. Run three prompts: a full trip ("Delhi to Goa for 2 adults, <dates>, with a hotel"), one with a
+   detail missing ("Mumbai to Dubai next month"), and one that asks for a write ("create an
+   enquiry for it").
+3. For each run, note: the status, the grounded badge, the number of steps and the tokens (the run's
+   `input_tokens` / `output_tokens` from `GET /api/v1/agent/runs/{id}`), any error steps
+   (`rate_limited`, `timeout`, `empty`, `max_tokens`) and whether the confirmation named the
+   right trip and client.
+4. Note the date, `TM_AGENT_MODEL`, `TM_AGENT_THINKING_BUDGET` and the prompt version
+   (`prompt_version` on the run). Never paste the key, client details or full responses into the
+   record.
+
+A smoke record template:
+
+```markdown
+# Agent smoke run, <date>
+Model: <TM_AGENT_MODEL> · thinking budget: <n> · prompt version: <prompt_version>
+| Prompt | Status | Grounded | Steps | Tokens in/out | Error steps | Notes |
+|---|---|---|---|---|---|---|
+| Full trip | | | | | | |
+| Missing detail | | | | | | |
+| Write (confirm) | | | | | | |
+```
 
 ## Run locally
 
