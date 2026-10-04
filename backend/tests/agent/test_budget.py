@@ -144,3 +144,52 @@ async def test_run_slots_fail_open_when_redis_is_down():
 
     await budget.acquire_run_slot(DownRedis(), uuid4(), "run", limit=1)  # type: ignore[arg-type]
     await budget.release_run_slot(DownRedis(), uuid4(), "run")  # type: ignore[arg-type]
+
+
+async def test_each_model_call_checks_the_budget_with_the_runs_unrecorded_tokens():
+    """Before every model call: the month's usage plus what this run has spent but not yet
+    recorded must stay under the budget, so a run overshoots by at most one call."""
+    agency_id = await _agency()
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency_id)
+        await budget.record(db, agency_id, OCT, input_tokens=900, output_tokens=0)
+        await budget.assert_within_budget(db, agency_id, OCT, budget=1000)
+        await budget.assert_within_budget(db, agency_id, OCT, extra_tokens=99, budget=1000)
+        with pytest.raises(BudgetExceeded) as caught:
+            await budget.assert_within_budget(db, agency_id, OCT, extra_tokens=100, budget=1000)
+        assert (caught.value.used, caught.value.budget) == (1000, 1000)
+        await budget.assert_within_budget(db, agency_id, NOV, extra_tokens=100, budget=1000)
+
+
+async def test_assert_within_budget_uses_the_settings_budget(monkeypatch):
+    from travelmind.config import get_settings
+
+    agency_id = await _agency()
+    monkeypatch.setattr(get_settings(), "agent_monthly_token_budget", 10)
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency_id)
+        await budget.assert_within_budget(db, agency_id, OCT, extra_tokens=9)
+        with pytest.raises(BudgetExceeded):
+            await budget.assert_within_budget(db, agency_id, OCT, extra_tokens=10)
+
+
+def test_the_run_slot_ttl_is_a_setting_that_outlasts_queue_and_run():
+    from travelmind.config import Settings
+
+    settings = Settings(_env_file=None)
+    assert settings.agent_run_slot_ttl_s > settings.agent_run_timeout_s
+
+
+async def test_the_slot_ttl_setting_is_counted_from_acquisition(monkeypatch):
+    import asyncio
+
+    from travelmind.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "agent_run_slot_ttl_s", 0.3)
+    redis = get_shared_redis()
+    agency = uuid4()
+    await budget.acquire_run_slot(redis, agency, "queued-run", limit=1)
+    with pytest.raises(TooManyRuns):
+        await budget.acquire_run_slot(redis, agency, "next", limit=1)
+    await asyncio.sleep(0.4)  # from acquisition, whether the run ever started or not
+    await budget.acquire_run_slot(redis, agency, "next", limit=1)

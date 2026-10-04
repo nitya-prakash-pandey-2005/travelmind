@@ -1,7 +1,10 @@
 """Agent run storage: runs, their steps (the visible trace) and monthly token usage.
 
 All three are tenant data under forced RLS (migration 0012_agent_runs). Steps are append-only for
-the application role: a run's trace is written once, step by step, in `seq` order.
+the application role: a run's trace is written once, step by step, in `seq` order. A step
+references its run by (run_id, agency_id), so it belongs to a run of its own agency, and that key
+restricts deletes: a run goes only with its agency (whose delete cascades to runs and steps);
+the application role can't delete runs (migration 0013_agent_steps_integrity).
 """
 
 from datetime import date, datetime
@@ -15,6 +18,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Identity,
     Index,
     Integer,
@@ -54,6 +58,8 @@ class AgentRun(Base):
     __table_args__ = (
         CheckConstraint(_in("kind", RUN_KINDS), name="ck_agent_runs_kind"),
         CheckConstraint(_in("status", RUN_STATUSES), name="ck_agent_runs_status"),
+        CheckConstraint("input_tokens >= 0 AND output_tokens >= 0", name="ck_agent_runs_tokens"),
+        UniqueConstraint("id", "agency_id", name="uq_agent_runs_id_agency"),
         Index("ix_agent_runs_agency_created", "agency_id", text("created_at DESC")),
     )
 
@@ -81,10 +87,18 @@ class AgentStep(Base):
     __table_args__ = (
         UniqueConstraint("run_id", "seq", name="uq_agent_steps_seq"),
         CheckConstraint(_in("kind", STEP_KINDS), name="ck_agent_steps_kind"),
+        CheckConstraint("seq >= 0", name="ck_agent_steps_seq"),
+        CheckConstraint("duration_ms IS NULL OR duration_ms >= 0", name="ck_agent_steps_duration"),
+        ForeignKeyConstraint(
+            ["run_id", "agency_id"],
+            ["agent_runs.id", "agent_runs.agency_id"],
+            name="fk_agent_steps_run_agency",
+            ondelete="RESTRICT",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    run_id: Mapped[UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"))
+    run_id: Mapped[UUID] = mapped_column()
     agency_id: Mapped[UUID] = mapped_column(ForeignKey("agencies.id", ondelete="CASCADE"))
     seq: Mapped[int] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(16))
@@ -97,7 +111,10 @@ class AgentUsageMonthly(Base):
     """Tokens an agency's runs used in one calendar month (UTC); `month` is its first day."""
 
     __tablename__ = "agent_usage_monthly"
-    __table_args__ = (CheckConstraint("EXTRACT(DAY FROM month) = 1", name="ck_agent_usage_month"),)
+    __table_args__ = (
+        CheckConstraint("EXTRACT(DAY FROM month) = 1", name="ck_agent_usage_month"),
+        CheckConstraint("input_tokens >= 0 AND output_tokens >= 0", name="ck_agent_usage_tokens"),
+    )
 
     agency_id: Mapped[UUID] = mapped_column(
         ForeignKey("agencies.id", ondelete="CASCADE"), primary_key=True
