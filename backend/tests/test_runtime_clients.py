@@ -84,7 +84,10 @@ def captured_engine_kwargs(monkeypatch):
         return captured
 
     yield use
+    # Start the next test from a fresh engine *and* a sessionmaker bound to it (a sessionmaker
+    # left on the old engine would bypass listeners that tests attach to get_engine()).
     db_module.get_engine.cache_clear()
+    db_module.get_sessionmaker.cache_clear()
 
 
 def test_engine_pgbouncer_mode_disables_statement_cache(captured_engine_kwargs):
