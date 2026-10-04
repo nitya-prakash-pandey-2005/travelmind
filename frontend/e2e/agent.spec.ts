@@ -75,7 +75,9 @@ test("an agent asks for what a request leaves out, then completes the plan", asy
   await signUp(page, owner, "India");
   await openAgent(page);
 
-  await plan(page, "I want to go to Dubai");
+  // CI imports only a dozen fixture airports (no Dubai, where the fuzzy lookup would settle on Mumbai), so the
+  // trip stays on a route both that fixture and the full OurAirports data have.
+  await plan(page, "I want to go to Mumbai");
 
   // The question takes the answer box; the reply fills the gaps.
   const form = page.getByRole("form", { name: "Answer the question" });
@@ -88,5 +90,5 @@ test("an agent asks for what a request leaves out, then completes the plan", asy
   const board = page.getByRole("region", { name: "Plan board" });
   await expect(board.getByText(VERIFIED)).toBeVisible({ timeout: 30_000 });
   await expect(board.getByRole("article", { name: /^F1 / })).toBeVisible();
-  await expect(page.getByRole("log", { name: "Plan trace" }).getByText(/Plan for DEL → DXB/)).toBeVisible();
+  await expect(page.getByRole("log", { name: "Plan trace" }).getByText(/Plan for DEL → BOM/)).toBeVisible();
 });

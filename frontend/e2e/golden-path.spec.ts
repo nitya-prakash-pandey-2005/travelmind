@@ -53,8 +53,9 @@ test("an owner plots a route, invites an agent, and the agent joins the workspac
   await agentPage.getByPlaceholder(/command or an airport/i).fill("team");
   await agentPage.keyboard.press("Enter");
   await expect(agentPage).toHaveURL(/\/app\/team$/);
-  const table = agentPage.getByRole("table", { name: "Team members" });
-  await expect(table.getByRole("row")).toHaveCount(3);
+  // The owner and the agent who just joined.
+  const members = agentPage.getByRole("list", { name: "Team members" });
+  await expect(members.getByRole("listitem")).toHaveCount(2);
   await expect(agentPage.getByText(/ask an agency owner or admin/i)).toBeVisible();
   await agentContext.close();
 });
