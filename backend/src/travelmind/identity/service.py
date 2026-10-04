@@ -195,6 +195,11 @@ async def delete_demo_agency(db: AsyncSession, agency_id: UUID) -> None:
     await db.execute(delete(Agency).where(Agency.id == agency_id, Agency.is_demo.is_(True)))
 
 
+async def list_agency_ids(db: AsyncSession) -> list[UUID]:
+    """Every agency's id (for background jobs that visit each tenant in turn)."""
+    return list((await db.scalars(select(Agency.id).order_by(Agency.id))).all())
+
+
 async def delete_expired_demo_agencies(
     db: AsyncSession, *, now: datetime, limit: int
 ) -> list[UUID]:

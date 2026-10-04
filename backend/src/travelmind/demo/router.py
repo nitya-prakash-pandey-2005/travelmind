@@ -1,15 +1,12 @@
 """/api/v1/demo: start a labelled demo workspace in one click, and leave it."""
 
-from datetime import timedelta
-
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from travelmind.cache import RedisClient
 from travelmind.config import get_settings
-from travelmind.db import DbSession, pinned_session, utcnow
-from travelmind.demo.data import AGENCY_NAME, AGENT_NAMES, PRESENTER_NAME
-from travelmind.demo.generator import DemoUnavailable, seed_demo_workspace
-from travelmind.identity import service as identity_service
+from travelmind.db import DbSession, utcnow
+from travelmind.demo.generator import DemoUnavailable
+from travelmind.demo.service import DemoBusy, start_demo_workspace
 from travelmind.identity.cookies import set_session_cookie
 from travelmind.identity.deps import client_ip, session_context
 from travelmind.identity.ratelimit import LoginRateLimiter
@@ -30,29 +27,12 @@ async def start_demo_route(
     limiter = LoginRateLimiter(redis, settings.demo_max_per_ip, settings.demo_window_seconds)
     if not await limiter.hit(f"rl:demo:{client_ip(request) or 'unknown'}"):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, RATE_LIMIT_MESSAGE)
-    now = utcnow()
-    owner, agency, team, token = await identity_service.create_demo_agency(
-        db,
-        agency_name=AGENCY_NAME,
-        owner_name=PRESENTER_NAME,
-        agent_names=AGENT_NAMES,
-        expires_at=now + timedelta(days=settings.demo_ttl_days),
-        ctx=session_context(request),
-    )
-    agency_settings = await identity_service.get_agency_settings(db, agency.id)
     try:
-        # Seeding commits after every search: one pinned connection serves them all.
-        async with pinned_session() as seed_db:
-            await seed_demo_workspace(
-                seed_db, redis, settings, agency=agency_settings, users=team, now=now
-            )
-    except Exception as exc:
-        # Never leave a half-built demo behind: its owner's session goes with it.
-        await identity_service.delete_demo_agency(db, agency_settings.id)
-        await db.commit()
-        if isinstance(exc, DemoUnavailable):
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from None
-        raise
+        owner, agency, token = await start_demo_workspace(
+            db, redis, settings, ctx=session_context(request), now=utcnow()
+        )
+    except (DemoBusy, DemoUnavailable) as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from None
     set_session_cookie(response, token)
     return me_response(owner, agency)
 

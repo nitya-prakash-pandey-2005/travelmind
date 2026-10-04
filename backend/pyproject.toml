@@ -20,6 +20,7 @@ dependencies = [
   "defusedxml>=0.7.1",
   "tzdata>=2026.4",
   "prometheus-client>=0.26.0",
+  "arq>=0.28.0",
 ]
 
 [dependency-groups]

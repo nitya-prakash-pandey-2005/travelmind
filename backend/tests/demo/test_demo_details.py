@@ -138,12 +138,12 @@ async def test_demo_fills_every_panel_in_working_hours(client, airports):
 
 
 async def test_a_failed_demo_is_removed(client, app, airports, monkeypatch):
-    from travelmind.demo import router
+    from travelmind.demo import service
 
     async def unavailable(*args, **kwargs):
         raise DemoUnavailable("The demo needs airport reference data. Please try again later.")
 
-    monkeypatch.setattr(router, "seed_demo_workspace", unavailable)
+    monkeypatch.setattr(service, "seed_demo_workspace", unavailable)
     r = await client.post("/api/v1/demo")
     assert r.status_code == 503 and "airport reference data" in r.json()["detail"]
     assert "tm_session" not in r.cookies
@@ -151,7 +151,7 @@ async def test_a_failed_demo_is_removed(client, app, airports, monkeypatch):
     async def broken(*args, **kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(router, "seed_demo_workspace", broken)
+    monkeypatch.setattr(service, "seed_demo_workspace", broken)
     async with make_client(app, raise_app_exceptions=False) as c:
         assert (await c.post("/api/v1/demo")).status_code == 500
 

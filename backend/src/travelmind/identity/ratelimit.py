@@ -1,3 +1,6 @@
+from collections.abc import Awaitable
+from typing import Any, cast
+
 import structlog
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -44,6 +47,7 @@ class LoginRateLimiter:
     async def refund(self, key: str) -> None:
         """Give back one attempt, e.g. after a successful login."""
         try:
-            await self._redis.eval(_REFUND_SCRIPT, 1, key)
+            # redis-py 5 types eval for sync and async clients alike.
+            await cast(Awaitable[Any], self._redis.eval(_REFUND_SCRIPT, 1, key))
         except RedisError as exc:
             log.warning("rate_limiter_unavailable", error_type=type(exc).__name__)
