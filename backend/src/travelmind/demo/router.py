@@ -10,7 +10,7 @@ from travelmind.demo.service import DemoBusy, start_demo_workspace
 from travelmind.identity.cookies import set_session_cookie
 from travelmind.identity.deps import client_ip, session_context
 from travelmind.identity.ratelimit import LoginRateLimiter
-from travelmind.identity.router import logout_route, me_response
+from travelmind.identity.router import logout_route, me_response, revoke_replaced_session
 from travelmind.identity.schemas import MeResponse
 from travelmind.readcache import InvalidatesAgencyCache
 
@@ -33,6 +33,8 @@ async def start_demo_route(
         )
     except (DemoBusy, DemoUnavailable) as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from None
+    # The demo's session is committed: the one this browser held before is revoked.
+    await revoke_replaced_session(request, db, redis, token)
     set_session_cookie(response, token)
     return me_response(owner, agency)
 

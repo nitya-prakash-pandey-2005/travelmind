@@ -99,3 +99,25 @@ async def test_exit_signs_out(client, airports):
     await client.post("/api/v1/demo")
     assert (await client.post("/api/v1/demo/exit")).status_code == 204
     assert (await client.get("/api/v1/auth/me")).status_code == 401
+
+
+async def _replay_me(app, token: str) -> int:  # type: ignore[no-untyped-def]
+    cookie = get_settings().session_cookie_name
+    async with make_client(app) as replay:
+        r = await replay.get("/api/v1/auth/me", headers={"Cookie": f"{cookie}={token}"})
+    return r.status_code
+
+
+async def test_starting_a_demo_revokes_the_browsers_previous_session(client, app, airports):
+    """Starting a demo replaces the browser's cookie; the session it replaced is revoked
+    (database and session cache)."""
+    cookie = get_settings().session_cookie_name
+    await signup(client)
+    old = client.cookies.get(cookie)
+    assert (await client.get("/api/v1/auth/me")).status_code == 200  # cached now
+    r = await client.post("/api/v1/demo")
+    assert r.status_code == 201
+    new = client.cookies.get(cookie)
+    assert new and new != old
+    assert await _replay_me(app, old) == 401
+    assert await _replay_me(app, new) == 200
