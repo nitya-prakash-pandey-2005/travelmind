@@ -20,6 +20,12 @@ Redis is an optimisation, never a dependency:
 - Any failure, or a call skipped by the open breaker, falls through to the loader and counts as
   `error`. The `read_cache_unavailable` warning (error type only) is logged once per opening.
 
+Serving stored bytes: the hot JSON reads (summary, pipeline, airports) cache the response body
+exactly as it is sent (`encode=as_bytes, decode=as_bytes`) and a hit returns it as is
+(`json_response`), skipping a decode and a re-serialise. Nothing then checks a stored entry
+against the current model, so those keys carry `schema_tag(<response type>)`: a release that
+changes the response's shape reads and writes other keys, and never serves the old shape.
+
 A short `SET NX` lock, holding a random owner token, stops a stampede of identical loads; waiters
 poll for the value for at most `LOCK_WAIT_SECONDS` and then load it themselves, so a holder that
 dies never blocks anyone. The holder releases it with a compare-and-delete, so a holder whose lock
@@ -49,6 +55,8 @@ the breaker and the short deadline, and a failure skips the bump: a search never
 
 import asyncio
 import contextlib
+import hashlib
+import json
 import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, Literal, cast
@@ -56,9 +64,11 @@ from uuid import UUID
 
 import structlog
 from fastapi import Depends, Request
+from pydantic import TypeAdapter
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
 from travelmind.cache import RedisClient
 from travelmind.config import get_settings
@@ -77,6 +87,7 @@ __all__ = [
     "ThrottledInvalidatesAgencyCache",
     "agency_key",
     "agency_version",
+    "as_bytes",
     "bump_agency_version",
     "bump_agency_throttled_after",
     "bump_agency_version_throttled",
@@ -84,11 +95,13 @@ __all__ = [
     "cached_json",
     "discard_agency_changes",
     "invalidate_agency",
+    "json_response",
     "mark_agency_changed",
     "publish_agency_changes",
     "publish_agency_changes_after",
     "publish_marked_changes_after",
     "reset_breaker",
+    "schema_tag",
 ]
 
 log = structlog.get_logger()
@@ -170,6 +183,24 @@ async def _call[R](what: str, command: Callable[[], Awaitable[R]]) -> R:
     return result
 
 
+def schema_tag(tp: Any) -> str:
+    """A short fingerprint of a response type's JSON schema, for the keys of entries that are
+    served as stored bytes (see the module docstring)."""
+    schema = json.dumps(TypeAdapter(tp).json_schema(), sort_keys=True)
+    return hashlib.sha256(schema.encode()).hexdigest()[:8]
+
+
+def as_bytes(raw: str | bytes) -> bytes:
+    """`encode` and `decode` for entries kept as the response body itself."""
+    return raw if isinstance(raw, bytes) else raw.encode()
+
+
+def json_response(body: bytes) -> Response:
+    """A JSON body serialised already (a cached entry), sent as is. For a model, FastAPI's own
+    serialisation sends the same bytes with the same content type."""
+    return Response(content=body, media_type="application/json")
+
+
 def _count(cache: CacheName, result: Literal["hit", "miss", "error"]) -> None:
     CACHE_REQUESTS.labels(cache=cache, result=result).inc()
 
@@ -180,7 +211,7 @@ async def cached_json[T](
     ttl_s: int,
     loader: Callable[[], Awaitable[T]],
     *,
-    encode: Callable[[T], str],
+    encode: Callable[[T], str | bytes],
     decode: Callable[[str | bytes], T],
     cache: CacheName,
 ) -> T:
@@ -311,7 +342,7 @@ async def cached_agency_json[T](
     ttl_s: int,
     loader: Callable[[], Awaitable[T]],
     *,
-    encode: Callable[[T], str],
+    encode: Callable[[T], str | bytes],
     decode: Callable[[str | bytes], T],
     cache: CacheName,
 ) -> T:

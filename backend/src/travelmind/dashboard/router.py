@@ -36,8 +36,11 @@ from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
 from travelmind.readcache import (
     PublishesMarkedAgencyChanges,
+    as_bytes,
     cached_agency_json,
+    json_response,
     publish_agency_changes,
+    schema_tag,
 )
 from travelmind.workspace.quotes import expire_overdue_quotes
 
@@ -81,41 +84,56 @@ async def _expire_first(db: AsyncSession, redis: Redis, agency_id: UUID, now: da
     await publish_agency_changes(db, redis)
 
 
-@dashboard_router.get("/summary")
+# Cached as the response body and served as is (readcache: "Serving stored bytes").
+SUMMARY_TAG = schema_tag(SummaryOut)
+PIPELINE_TAG = schema_tag(PipelineOut)
+
+
+@dashboard_router.get("/summary", response_model=SummaryOut)
 async def summary_route(
     current: AuthedUser, db: DbSession, redis: RedisClient, range_: RangeQuery = "30d"
-) -> SummaryOut:
+) -> Response:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
     now = utcnow()
     await _expire_first(db, redis, agency.id, now)
     # The windows are the agency's local days, so the local date is part of the key.
     today = now.astimezone(ZoneInfo(agency.timezone)).date().isoformat()
-    return await cached_agency_json(
+
+    async def load() -> bytes:
+        return (await metrics.summary(db, agency, range_, now=now)).model_dump_json().encode()
+
+    body = await cached_agency_json(
         redis,
         agency.id,
-        (range_, today),
+        (range_, today, SUMMARY_TAG),
         DASHBOARD_TTL_SECONDS,
-        releasing(db, lambda: metrics.summary(db, agency, range_, now=now)),
-        encode=SummaryOut.model_dump_json,
-        decode=SummaryOut.model_validate_json,
+        releasing(db, load),
+        encode=as_bytes,
+        decode=as_bytes,
         cache="summary",
     )
+    return json_response(body)
 
 
-@dashboard_router.get("/pipeline")
-async def pipeline_route(current: AuthedUser, db: DbSession, redis: RedisClient) -> PipelineOut:
+@dashboard_router.get("/pipeline", response_model=PipelineOut)
+async def pipeline_route(current: AuthedUser, db: DbSession, redis: RedisClient) -> Response:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
     await _expire_first(db, redis, agency.id, utcnow())
-    return await cached_agency_json(
+
+    async def load() -> bytes:
+        return (await metrics.pipeline(db, agency)).model_dump_json().encode()
+
+    body = await cached_agency_json(
         redis,
         agency.id,
-        (),
+        (PIPELINE_TAG,),
         DASHBOARD_TTL_SECONDS,
-        releasing(db, lambda: metrics.pipeline(db, agency)),
-        encode=PipelineOut.model_dump_json,
-        decode=PipelineOut.model_validate_json,
+        releasing(db, load),
+        encode=as_bytes,
+        decode=as_bytes,
         cache="pipeline",
     )
+    return json_response(body)
 
 
 @dashboard_router.get("/activity")

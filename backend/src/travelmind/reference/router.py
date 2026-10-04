@@ -1,14 +1,14 @@
 import hashlib
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel, TypeAdapter
 from starlette.concurrency import run_in_threadpool
 
 from travelmind.cache import RedisClient
 from travelmind.db import DbSession, release_connection
 from travelmind.identity.deps import AuthedUser
-from travelmind.readcache import CACHE_PREFIX, cached_json
+from travelmind.readcache import CACHE_PREFIX, as_bytes, cached_json, json_response, schema_tag
 from travelmind.reference.search import AirportRecord, fold
 from travelmind.reference.service import get_airport_index
 
@@ -41,30 +41,33 @@ class AirportOut(BaseModel):
 
 
 _AIRPORTS = TypeAdapter(list[AirportOut])
+# Cached as the response body and served as is (readcache: "Serving stored bytes").
+AIRPORTS_TAG = schema_tag(list[AirportOut])
 
 
-@reference_router.get("/airports")
+@reference_router.get("/airports", response_model=list[AirportOut])
 async def search_airports_route(
     q: Annotated[str, Query(min_length=2, max_length=100)],
     _current: AuthedUser,
     db: DbSession,
     redis: RedisClient,
     limit: Annotated[int, Query(ge=1, le=25)] = 8,
-) -> list[AirportOut]:
-    async def load() -> list[AirportOut]:
+) -> Response:
+    async def load() -> bytes:
         index = await get_airport_index(db)
         await release_connection(db)  # the (hourly) index load is the only database read
         hits = await run_in_threadpool(index.search, q, limit)  # fuzzy scan is CPU-heavy
-        return [AirportOut.from_record(hit.airport) for hit in hits]
+        return _AIRPORTS.dump_json([AirportOut.from_record(hit.airport) for hit in hits])
 
     # The search folds its query first, so equal folds give equal results; hashed for a short key.
     digest = hashlib.sha256(fold(q).encode()).hexdigest()[:32]
-    return await cached_json(
+    body = await cached_json(
         redis,
-        f"{CACHE_PREFIX}airports:{limit}:{digest}",
+        f"{CACHE_PREFIX}airports:{AIRPORTS_TAG}:{limit}:{digest}",
         AIRPORTS_TTL_SECONDS,
         load,
-        encode=lambda airports: _AIRPORTS.dump_json(airports).decode(),
-        decode=_AIRPORTS.validate_json,
+        encode=as_bytes,
+        decode=as_bytes,
         cache="airports",
     )
+    return json_response(body)
