@@ -109,3 +109,47 @@ test("without a band the chart is unchanged: areas under every series, no band",
   expect(container.querySelectorAll("[data-band]")).toHaveLength(0);
   expect(container.querySelectorAll("[data-area]")).toHaveLength(1);
 });
+
+test("a series that breaks at gaps draws one line piece per run, with a dot for a lone day", () => {
+  const { container } = render(
+    <AreaTrend
+      label="Broken"
+      valueFormat={String}
+      series={[
+        {
+          key: "m",
+          label: "Median",
+          color: 1,
+          breakAtGaps: true,
+          points: [
+            { date: "2026-09-01", value: 4 },
+            { date: "2026-09-02", value: 5 },
+            { date: "2026-09-03", value: null },
+            { date: "2026-09-04", value: 6 },
+            { date: "2026-09-05", value: null },
+            { date: "2026-09-06", value: 7 },
+            { date: "2026-09-07", value: 8 },
+          ],
+        },
+      ]}
+    />,
+  );
+  const line = container.querySelector("[data-line]");
+  expect(line?.getAttribute("d")?.match(/M/g)).toHaveLength(3);
+  expect(container.querySelectorAll("[data-lone-point]")).toHaveLength(1);
+  const area = container.querySelector("[data-area]");
+  expect(area?.getAttribute("d")?.match(/M/g)).toHaveLength(3);
+  expect(container.innerHTML).not.toMatch(/NaN|undefined/);
+});
+
+test("by default a line still joins the points either side of a gap", () => {
+  const { container } = render(
+    <AreaTrend
+      label="Joined"
+      valueFormat={String}
+      series={[{ key: "a", label: "A", color: 1, points: [{ date: "2026-09-01", value: 1 }, { date: "2026-09-02", value: null }, { date: "2026-09-03", value: 2 }] }]}
+    />,
+  );
+  expect(container.querySelector("[data-line]")?.getAttribute("d")?.match(/M/g)).toHaveLength(1);
+  expect(container.querySelectorAll("[data-lone-point]")).toHaveLength(0);
+});

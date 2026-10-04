@@ -56,11 +56,19 @@ function saved(client: QueryClient, profile: AgencyProfile): void {
   }
 }
 
-export function updateAgencyMutation(client: QueryClient) {
+/**
+ * `onSaved` runs as part of the mutation's own success handling (not a per-call callback), so it still runs
+ * when the form that saved remounts on the new profile.
+ */
+export function updateAgencyMutation(client: QueryClient, onSaved?: (profile: AgencyProfile) => void) {
   return mutationOptions({
     mutationFn: (changes: AgencyUpdate) => agencyApi.update(changes),
-    onSuccess: (profile) => saved(client, profile),
+    onSuccess: (profile) => {
+      saved(client, profile);
+      onSaved?.(profile);
+    },
   });
 }
 
-export const useUpdateAgency = () => useMutation(updateAgencyMutation(useQueryClient()));
+export const useUpdateAgency = (onSaved?: (profile: AgencyProfile) => void) =>
+  useMutation(updateAgencyMutation(useQueryClient(), onSaved));

@@ -63,14 +63,20 @@ function lockNote(profile: AgencyProfile, me: Me): string | null {
   return null;
 }
 
-function ProfileForm({ profile, me }: { profile: AgencyProfile; me: Me }) {
-  const { toast } = useToast();
-  const update = useUpdateAgency();
+type AgencySave = ReturnType<typeof useUpdateAgency>;
+
+/** The saved colour, only when it is a valid brand colour: anything else never reaches a style. */
+function savedBrand(profile: AgencyProfile): string | null {
+  const colour = profile.brand_color.toLowerCase();
+  return isBrandColor(colour) ? colour : null;
+}
+
+function ProfileForm({ profile, me, update }: { profile: AgencyProfile; me: Me; update: AgencySave }) {
   const locked = lockNote(profile, me);
-  const saved = profile.brand_color.toLowerCase();
+  const saved = savedBrand(profile);
   const [name, setName] = useState(profile.name);
   const [timezone, setTimezone] = useState(profile.timezone);
-  const [hex, setHex] = useState(saved);
+  const [hex, setHex] = useState(saved ?? "");
   const [hexTouched, setHexTouched] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const zones = useMemo(() => timeZoneOptions(profile.timezone), [profile.timezone]);
@@ -94,7 +100,7 @@ function ProfileForm({ profile, me }: { profile: AgencyProfile; me: Me }) {
   function reset() {
     setName(profile.name);
     setTimezone(profile.timezone);
-    setHex(saved);
+    setHex(saved ?? "");
     setHexTouched(false);
     setSubmitted(false);
     update.reset();
@@ -104,12 +110,8 @@ function ProfileForm({ profile, me }: { profile: AgencyProfile; me: Me }) {
     event.preventDefault();
     setSubmitted(true);
     if (locked || !dirty || !hexValid || blocked || nameProblem(name)) return;
-    update.mutate(changes, {
-      onSuccess: () => {
-        setSubmitted(false);
-        toast({ tone: "ok", title: "Settings saved", description: "Your agency profile is up to date." });
-      },
-    });
+    // The toast is raised by the mutation itself (see SettingsPage): this form remounts on the saved profile.
+    update.mutate(changes);
   }
 
   return (
@@ -210,6 +212,10 @@ function SettingsLayout({ main, side }: { main: ReactNode; side: ReactNode }) {
 export function SettingsPage() {
   const me = useCurrentUser();
   const agency = useQuery(agencyQueryOptions);
+  const { toast } = useToast();
+  const update = useUpdateAgency(() =>
+    toast({ tone: "ok", title: "Settings saved", description: "Your agency profile is up to date." }),
+  );
 
   const header = (
     <PageHeader
@@ -261,7 +267,7 @@ export function SettingsPage() {
       <SettingsLayout
         main={
           <>
-            <ProfileForm key={`${profile.name}|${profile.timezone}|${profile.brand_color}`} profile={profile} me={me} />
+            <ProfileForm key={`${profile.name}|${profile.timezone}|${profile.brand_color}`} profile={profile} me={me} update={update} />
             <PrivacyPanel />
           </>
         }

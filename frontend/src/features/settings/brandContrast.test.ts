@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { contrastRatio, resolvePalette } from "../../theme";
-import { MIN_ACCENT_CONTRAST, brandChecks, brandInk, isBrandColor, normaliseBrandInput } from "./brandContrast";
+import { brandAccent } from "../publicQuote/brandAccent";
+import { MIN_ACCENT_CONTRAST, MIN_TEXT_CONTRAST, brandChecks, isBrandColor, normaliseBrandInput } from "./brandContrast";
 
 const DARK = resolvePalette({ theme: "orbital", mode: "dark", contrast: false });
 const LIGHT = resolvePalette({ theme: "orbital", mode: "light", contrast: false });
@@ -42,8 +43,32 @@ test("an invalid colour has no checks", () => {
   expect(brandChecks("#12")).toEqual([]);
 });
 
-test("text on the accent is the theme colour that reads best on it", () => {
-  expect(brandInk("#ffffff", LIGHT)).toBe(LIGHT.ink);
-  expect(brandInk("#000000", DARK)).toBe(DARK.ink);
-  expect(contrastRatio(brandInk("#0b84c6", DARK), "#0b84c6")).toBeGreaterThanOrEqual(4.5);
+test("a mid-tone that clears 3:1 but can't carry readable text fails, as the client page would fall back", () => {
+  const mid = "#767676";
+  for (const palette of [DARK, LIGHT]) {
+    expect(Math.min(contrastRatio(mid, palette.bg), contrastRatio(mid, palette.surface))).toBeGreaterThanOrEqual(MIN_ACCENT_CONTRAST);
+    expect(Math.max(contrastRatio(palette.ink, mid), contrastRatio(palette.bg, mid))).toBeLessThan(MIN_TEXT_CONTRAST);
+  }
+  const checks = brandChecks(mid);
+  expect(checks.map((check) => [check.mode, check.passes, check.problem])).toEqual([
+    ["dark", false, "text"],
+    ["light", false, "text"],
+  ]);
+});
+
+test("a check passes exactly when the client page would use the brand colour", () => {
+  for (const colour of ["#0b84c6", "#767676", "#000000", "#ffffff", "#7c3aed", "#22d3ee", "#808080"]) {
+    for (const check of brandChecks(colour)) {
+      const accent = brandAccent(colour, check.palette);
+      expect(check.passes, `${colour} ${check.mode}`).toBe(accent.fromBrand);
+      expect(check.accent).toEqual(accent);
+      expect(check.problem === null).toBe(check.passes);
+    }
+  }
+});
+
+test("a too-faint colour is reported as faint before anything else", () => {
+  const [, light] = brandChecks("#ffffff");
+  expect(light?.problem).toBe("faint");
+  expect(light?.accent.accent).toBe(LIGHT.primary);
 });

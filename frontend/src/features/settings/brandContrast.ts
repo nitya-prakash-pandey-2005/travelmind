@@ -1,12 +1,19 @@
 import { BRAND_COLOR } from "../../api/agency";
 import { contrastRatio, DEFAULT_CHOICE, resolvePalette, type Palette, type ThemeMode } from "../../theme";
+import { brandAccent, type BrandAccent } from "../publicQuote/brandAccent";
 
 /**
- * The brand colour marks buttons, the header rule and the selection on the client's quote page, so as a
- * non-text accent (WCAG 1.4.11) it needs 3:1 against the page and the cards. It is checked against the
- * default theme in both modes: what a client sees unless they pick another look.
+ * The brand colour marks buttons, the header rule and the selection on the client's quote page. That page uses
+ * it only when `brandAccent` accepts it: 3:1 against the page and the cards (non-text contrast, WCAG 1.4.11)
+ * and a theme text colour reaching 4.5:1 on it, for the button labels; otherwise the theme's own accent stands
+ * in. Settings applies the very same rule, against the default theme in both modes: what a client sees unless
+ * they pick another look.
  */
 export const MIN_ACCENT_CONTRAST = 3;
+export const MIN_TEXT_CONTRAST = 4.5;
+
+/** Why the client page wouldn't use the colour: too close to the page or cards, or no readable text on it. */
+export type BrandProblem = "faint" | "text";
 
 export type BrandCheck = {
   mode: ThemeMode;
@@ -15,7 +22,13 @@ export type BrandCheck = {
   page: number;
   card: number;
   ratio: number;
+  /** The best contrast a theme text colour reaches on the colour (for button labels). */
+  text: number;
+  /** What the client page shows in this mode: the brand colour, or the theme's accent in its place. */
+  accent: BrandAccent;
+  /** True when the client page uses the brand colour (`accent.fromBrand`). */
   passes: boolean;
+  problem: BrandProblem | null;
 };
 
 const MODES: readonly ThemeMode[] = ["dark", "light"];
@@ -43,13 +56,12 @@ export function brandChecks(color: string): BrandCheck[] {
     const page = contrastRatio(color, palette.bg);
     const card = contrastRatio(color, palette.surface);
     const ratio = Math.min(page, card);
-    return { mode, palette, page, card, ratio, passes: ratio >= MIN_ACCENT_CONTRAST };
+    const text = Math.max(contrastRatio(palette.ink, color), contrastRatio(palette.bg, color));
+    const accent = brandAccent(color, palette);
+    const passes = accent.fromBrand;
+    const problem: BrandProblem | null = passes ? null : ratio < MIN_ACCENT_CONTRAST ? "faint" : "text";
+    return { mode, palette, page, card, ratio, text, accent, passes, problem };
   });
-}
-
-/** Text on an accent fill: the theme's text or background colour, whichever reads better on it. */
-export function brandInk(color: string, palette: Palette): string {
-  return contrastRatio(palette.ink, color) >= contrastRatio(palette.bg, color) ? palette.ink : palette.bg;
 }
 
 /** "4.6:1", rounded down so a ratio just under a threshold never reads as meeting it. */

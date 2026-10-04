@@ -44,6 +44,34 @@ export function previousDay(intel: RouteIntel): DailyFares | undefined {
   return intel.daily.at(-2);
 }
 
+/** One local day on the trend: the day's median and middle half, or nulls for a day without fares. */
+export type TrendDay = { date: string; median: number | null; low: number | null; high: number | null };
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Every local day from the first day with fares to the last, in order. `daily` lists only days with fares,
+ * and the chart spaces points by position, so the missing days are added as gaps to keep the time axis true.
+ */
+export function calendarDays(daily: readonly DailyFares[]): TrendDay[] {
+  const first = daily[0];
+  const last = daily.at(-1);
+  if (!first || !last) return [];
+  const byDate = new Map(daily.map((day) => [day.date, day]));
+  const days: TrendDay[] = [];
+  const end = Date.parse(`${last.date}T00:00:00Z`);
+  for (let at = Date.parse(`${first.date}T00:00:00Z`); at <= end; at += DAY_MS) {
+    const date = new Date(at).toISOString().slice(0, 10);
+    const fares = byDate.get(date);
+    days.push(
+      fares
+        ? { date, median: fares.median_minor, low: fares.p25_minor, high: fares.p75_minor }
+        : { date, median: null, low: null, high: null },
+    );
+  }
+  return days;
+}
+
 export function totalSamples(intel: RouteIntel): number {
   return intel.daily.reduce((sum, day) => sum + day.samples, 0);
 }

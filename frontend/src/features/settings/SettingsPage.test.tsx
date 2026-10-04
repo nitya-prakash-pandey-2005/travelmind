@@ -116,9 +116,57 @@ test("the contrast check rates the colour on both themes and blocks one below 3:
   await user.clear(hex);
   await user.type(hex, "#f5f5f5");
   expect(within(checks).getByText("Too faint")).toBeInTheDocument();
-  expect(within(form).getByText(/needs at least 3:1 against both themes/)).toBeInTheDocument();
+  expect(within(form).getByRole("alert")).toHaveTextContent(
+    "Clients would see the theme's accent instead. Light theme: too close to the page or cards (1.0:1, needs 3:1). Pick a darker shade.",
+  );
   expect(within(form).getByRole("button", { name: "Save changes" })).toBeDisabled();
   expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+});
+
+test("a mid-tone that clears 3:1 but carries no readable text is blocked, and the preview shows the fallback", async () => {
+  const { user, calls } = settings();
+  const form = await profileForm();
+  const hex = within(form).getByLabelText("Brand colour hex");
+  await user.clear(hex);
+  await user.type(hex, "#767676");
+  const checks = within(form).getByRole("list", { name: "Contrast check" });
+  expect(within(checks).getAllByText("Text won't read")).toHaveLength(2);
+  expect(within(checks).queryByText("Passes")).not.toBeInTheDocument();
+  expect(within(form).getByRole("alert")).toHaveTextContent(/Dark theme: no text colour reads on it \(4\.\d:1, button labels need 4\.5:1\)/);
+  expect(within(form).getByRole("button", { name: "Save changes" })).toBeDisabled();
+  const preview = screen.getByRole("group", { name: "Client quote preview" });
+  for (const tile of within(preview).getAllByText("Accept option 1")) {
+    expect(tile.style.background).not.toBe("rgb(118, 118, 118)");
+  }
+  expect(within(preview).getAllByText("Theme accent shown instead")).toHaveLength(2);
+  expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+});
+
+test("a saved colour the client page can't use is never put into a style, and the picker starts from the theme accent", async () => {
+  settings(ME_OWNER, {}, profileOf(ME_OWNER, { brand_color: "teal; background: url(x)" }));
+  const form = await profileForm();
+  expect(within(form).getByLabelText("Brand colour hex")).toHaveValue("");
+  expect(within(form).getByLabelText("Brand colour picker")).toHaveValue("#3cc6f0");
+  expect(within(form).queryByRole("list", { name: "Contrast check" })).not.toBeInTheDocument();
+  expect(document.body.innerHTML).not.toContain("url(x)");
+  const preview = screen.getByRole("group", { name: "Client quote preview" });
+  expect(within(preview).getAllByText("Accept option 1")).toHaveLength(2);
+});
+
+test("the saved toast survives the form re-reading the new profile", async () => {
+  const { user } = settings(ME_OWNER, {
+    "PATCH /api/v1/agency": async (call) => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { status: 200, body: { ...profileOf(ME_OWNER), ...(call.body as object) } };
+    },
+  });
+  const form = await profileForm();
+  await user.clear(within(form).getByLabelText("Agency name"));
+  await user.type(within(form).getByLabelText("Agency name"), "Alpha Three");
+  await user.click(within(form).getByRole("button", { name: "Save changes" }));
+  expect(await screen.findByText("Settings saved")).toBeInTheDocument();
+  expect(await screen.findByDisplayValue("Alpha Three")).toBeInTheDocument();
+  expect(screen.getAllByText("Settings saved")).toHaveLength(1);
 });
 
 test("a saved colour that fails a theme is flagged, but other changes can still be saved", async () => {

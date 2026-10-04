@@ -15,6 +15,7 @@ import {
   agencyStamp,
   bucketLabel,
   bucketRange,
+  calendarDays,
   changePct,
   cheapestBucket,
   latestDay,
@@ -109,6 +110,7 @@ export function RouteFigures({ intel, timeZone, now }: { intel: RouteIntel; time
 /** The daily median as a line over the shaded 25th–75th percentile band. */
 export function TrendPanel({ intel }: { intel: RouteIntel }) {
   const format = (value: number) => money(value, intel.currency);
+  const days = calendarDays(intel.daily);
   return (
     <Panel
       title="Daily median fare"
@@ -124,13 +126,14 @@ export function TrendPanel({ intel }: { intel: RouteIntel }) {
             label: "Median",
             color: 1,
             area: false,
-            points: intel.daily.map((day) => ({ date: day.date, value: day.median_minor })),
+            breakAtGaps: true,
+            points: days.map((day) => ({ date: day.date, value: day.median })),
           },
         ]}
         band={{
           label: "Middle half",
           color: 1,
-          points: intel.daily.map((day) => ({ date: day.date, low: day.p25_minor, high: day.p75_minor })),
+          points: days.map((day) => ({ date: day.date, low: day.low, high: day.high })),
         }}
       />
     </Panel>

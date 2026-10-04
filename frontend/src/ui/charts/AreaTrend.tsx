@@ -25,6 +25,11 @@ export type TrendSeries = {
   points: { date: string; value: number | null }[];
   /** Shade the area under the line (default true). Off for a line drawn over a band. */
   area?: boolean;
+  /**
+   * Stop the line (and area) at a gap instead of joining the values either side of it; a value with gaps
+   * on both sides is drawn as a dot. For series where a gap means "nothing recorded that day".
+   */
+  breakAtGaps?: boolean;
 };
 
 /**
@@ -105,6 +110,18 @@ export function AreaTrend({ series, height = 180, valueFormat, label, band }: Ar
       return isValue(v) ? [[x(di), y(Math.max(0, v))]] : [];
     }),
   );
+  // Each series as runs of consecutive dates with values: one run for a series that joins across gaps.
+  const runs = series.map((s, si): Point[][] => {
+    if (!s.breakAtGaps) return [plotted[si] ?? []];
+    const pieces: Point[][] = [[]];
+    dates.forEach((_, di) => {
+      const v = valueAt(si, di);
+      if (isValue(v)) pieces.at(-1)?.push([x(di), y(Math.max(0, v))]);
+      else if ((pieces.at(-1)?.length ?? 0) > 0) pieces.push([]);
+    });
+    return pieces.filter((piece) => piece.length > 0);
+  });
+  const runsOf = (seriesIndex: number) => runs[seriesIndex] ?? [];
 
   const rangeAt = (dateIndex: number): [number, number] | null => {
     const point = bandLookup.get(dates[dateIndex] ?? "");
@@ -295,7 +312,9 @@ export function AreaTrend({ series, height = 180, valueFormat, label, band }: Ar
                 <path
                   key={`area-${s.key}`}
                   data-area=""
-                  d={areaPath(pointsOf(si), baseline)}
+                  d={runsOf(si)
+                    .map((run) => areaPath(run, baseline))
+                    .join("")}
                   fill={colors.series(s.color)}
                   fillOpacity={0.15}
                   data-animate={animate ? "" : undefined}
@@ -308,7 +327,7 @@ export function AreaTrend({ series, height = 180, valueFormat, label, band }: Ar
               <path
                 key={`line-${s.key}`}
                 data-line=""
-                d={pathFromPoints(pointsOf(si))}
+                d={runsOf(si).map(pathFromPoints).join("")}
                 fill="none"
                 stroke={colors.series(s.color)}
                 strokeWidth={1.75}
@@ -320,6 +339,16 @@ export function AreaTrend({ series, height = 180, valueFormat, label, band }: Ar
                 style={animate ? { animationDelay: `${si * 80}ms` } : undefined}
               />
             ))}
+            {n > 1 &&
+              series.map((s, si) =>
+                s.breakAtGaps
+                  ? runsOf(si)
+                      .flatMap((run) => (run.length === 1 && run[0] ? [run[0]] : []))
+                      .map(([px, py]) => (
+                        <circle key={`lone-${s.key}-${px}`} data-lone-point="" cx={px} cy={py} r={2.5} fill={colors.series(s.color)} />
+                      ))
+                  : null,
+              )}
             {n === 1 &&
               series.map((s, si) =>
                 pointsOf(si).map(([px, py]) => (

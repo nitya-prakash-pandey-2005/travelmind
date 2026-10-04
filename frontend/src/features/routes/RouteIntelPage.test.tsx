@@ -91,6 +91,18 @@ test("a long search history shows the newest six until expanded", async () => {
   expect(within(panel).getByRole("button", { name: "Show fewer" })).toHaveAttribute("aria-expanded", "true");
 });
 
+test("the trend keeps calendar spacing: days without fares are gaps, not squeezed out", async () => {
+  const [first, , , , last] = DEL_BOM.daily;
+  mockApi(routeIntelMocks({ ...DEL_BOM, daily: [first!, last!] }));
+  renderApp("/app/routes?origin=DEL&destination=BOM");
+  const table = await screen.findByRole("table", { name: "Daily median fare data" });
+  const rows = within(table).getAllByRole("row");
+  expect(rows).toHaveLength(6);
+  expect(within(table).getByRole("row", { name: "1 Oct — —" })).toBeInTheDocument();
+  expect(within(table).getByRole("row", { name: /3 Oct ₹4,750 ₹4,300–₹5,400/ })).toBeInTheDocument();
+  expect(document.querySelectorAll("[data-band]")).toHaveLength(2);
+});
+
 test("sandbox fares are labelled as demonstration data", async () => {
   mockApi(routeIntelMocks({ ...DEL_BOM, family: "sandbox" }));
   renderApp("/app/routes?origin=DEL&destination=BOM");
