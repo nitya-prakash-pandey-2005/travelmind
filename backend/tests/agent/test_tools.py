@@ -717,12 +717,55 @@ async def test_another_agencys_records_are_not_found(airports):
     assert borrowed["error"]["code"] == "not_found"
 
 
-async def test_search_flights_reads_a_city_alias_before_a_code(agency, airports):
+async def test_a_city_written_as_a_name_in_a_code_field_is_its_airport(agency, airports):
     async with run_context(*agency) as ctx:
         goa = await call(ctx, "search_flights", **flights_args(destination="goa"))
-        capitals = await call(ctx, "search_flights", **flights_args(destination="GOA"))
+        named = await call(ctx, "search_flights", **flights_args(destination="Goa"))
     assert goa["trip"]["destination"] == "GOI"
-    assert capitals["trip"]["destination"] == "GOI"  # ruling: the alias wins over Genoa's code
+    assert named["trip"]["destination"] == "GOI"
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("search_flights", flights_args(destination="GOA")),
+        ("search_hotels", {"destination": "GOA", "check_in": day(30), "check_out": day(32)}),
+        ("fare_insight", {"origin": "DEL", "destination": "GOA", "depart_date": day(30)}),
+        ("create_enquiry", {"origin": "DEL", "destination": "GOA", "adults": 1}),
+    ],
+)
+async def test_goa_in_a_code_field_is_refused_until_genoa_is_looked_up(
+    agency, airports, tool, args
+):
+    """GOA spells Genoa's code but reads as Goa: never swapped silently either way."""
+    async with run_context(*agency) as ctx:
+        refused = await call(ctx, tool, **args)
+    assert refused["error"]["code"] == "invalid_arguments"
+    assert refused["error"]["message"].startswith("GOA reads as Goa (GOI). For Genoa")
+    assert "look the airport up first" in refused["error"]["message"]
+
+
+async def test_genoa_end_to_end_lookup_then_search(agency, airports):
+    async with run_context(*agency) as ctx:
+        found = await call(ctx, "lookup_airport", query="Genoa")
+        assert found["matches"][0]["code"] == "GOA"
+        searched = await call(ctx, "search_flights", **flights_args(destination="GOA"))
+        snapshot = ctx.memory.snapshot()
+    assert "error" not in searched, searched
+    assert searched["trip"]["destination"] == "GOA"
+    assert searched["trip"]["destination_city"] == "Genova"
+    assert "GOA" in snapshot["airports"]
+    assert "GOA" in RunMemory.restore(snapshot).airports  # a resumed run still knows
+
+
+async def test_looking_up_goa_does_not_unlock_genoa(agency, airports):
+    async with run_context(*agency) as ctx:
+        found = await call(ctx, "lookup_airport", query="Goa")
+        assert found["matches"][0]["code"] == "GOI"
+        refused = await call(ctx, "search_flights", **flights_args(destination="GOA"))
+        goa = await call(ctx, "search_flights", **flights_args(destination="GOI"))
+    assert refused["error"]["code"] == "invalid_arguments"
+    assert goa["trip"]["destination"] == "GOI"
 
 
 # Converted prices: a supplier billing in USD, shown in the agency's rupees.

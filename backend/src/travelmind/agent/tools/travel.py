@@ -10,11 +10,14 @@ Converted prices: a total shown in the agency's currency but billed by the suppl
 is marked `converted: true` with the rates' date (`fx_as_of`), its formatted amounts start with
 "≈ " as in the app, and the card also gives the supplier's own total (`supplier_total_*`).
 
-Places and codes: a city alias ("Goa", "goa", "GOA", "Delhi": `reference.search.CITY_ALIASES`)
-is that city's main airport in any case, never the code it happens to spell: "GOA" is Goa (GOI),
-not Genoa, which stays reachable by name ("Genoa"). Other text in capitals ("DEL") is an airport
-code; anything else is read as a name. The code fields here apply that rule before a code is
-checked, and `places.resolve` applies it to place names.
+Places and codes: in text a person typed (`lookup_airport`'s query, `places.resolve`'s place), a
+city alias ("Goa", "goa", "GOA", "Delhi": `reference.search.CITY_ALIASES`) is that city's main
+airport in any case, never the code it happens to spell: "GOA" is Goa (GOI), and Genoa is reached
+by name ("Genoa"). A code field (search_flights, search_hotels, fare_insight, create_enquiry)
+takes a city written as a name ("goa", "Goa", "New Delhi") as its airport, but a code in capitals
+as a code: "GOA" there is Genoa only when this run's `lookup_airport` returned it (the run memory
+keeps the codes it returned, `RunMemory.airports`); otherwise the call is refused ("GOA reads as
+Goa (GOI). For Genoa ... look the airport up first."), never swapped silently either way.
 
 Dates count from the agency's own today (`RunContext.today`).
 """
@@ -90,13 +93,41 @@ def alias_code(text: object) -> str | None:
     return codes[0] if codes else None
 
 
+def ambiguous_code(code: str) -> str | None:
+    """The alias airport a code in capitals reads as, when that is another airport ("GOA" reads
+    as Goa, GOI, but is Genoa's code), else None."""
+    target = alias_code(code) if written_as_code(code) else None
+    return target if target is not None and target != code else None
+
+
 def _code_or_alias(value: object) -> object:
+    if isinstance(value, str) and written_as_code(" ".join(value.split())):
+        return value  # a code in capitals is a code (checked against the run: check_codes)
     return alias_code(value) or value
 
 
-# An airport code field: a city alias written as a name becomes its airport ("goa" → GOI);
-# anything else must be a code (case aside: "bom" is BOM).
+# An airport code field: a city alias written as a name becomes its airport ("goa" → GOI); a
+# code in capitals stays a code (see check_codes); anything else must be a code ("bom" is BOM).
 AirportCode = Annotated[IataCode, BeforeValidator(_code_or_alias)]
+
+
+async def check_codes(ctx: RunContext, *codes: str | None) -> None:
+    """Refuse a code in capitals that reads as a city alias's airport ("GOA" reads as Goa) unless
+    this run's lookup_airport returned it: the model must have looked Genoa up to mean it."""
+    for given in codes:
+        if given is None or given in ctx.memory.airports:
+            continue
+        target = ambiguous_code(given)
+        if target is None:
+            continue
+        airport = (await get_airport_index(ctx.db)).get(given)
+        named = clean_text(airport.name, 80) if airport else None
+        meant = f"{named} ({given})" if named else given
+        city = " ".join(word.capitalize() for word in fold(given).split())
+        raise ToolError(
+            "invalid_arguments",
+            f"{given} reads as {city} ({target}). For {meant}, look the airport up first.",
+        )
 
 
 def check_trip_start(ctx: RunContext, start: date, what: str) -> None:
@@ -156,6 +187,12 @@ async def lookup_airport(ctx: RunContext, args: LookupAirportArgs) -> dict[str, 
     exact = index.get(query) if written_as_code(query) and alias_code(query) is None else None
     if exact is not None:  # a code in capitals is that airport first (an alias's code is not)
         found = [exact, *(a for a in found if a.iata_code != exact.iata_code)][:MAX_AIRPORTS]
+    # What the model may now write as a code. Looking up an alias ("Goa") never vouches for
+    # the other airport its code spells (GOA, Genoa), even when the search lists it too.
+    asked_alias = alias_code(query) is not None
+    ctx.memory.note_airports(
+        a.iata_code for a in found if not (asked_alias and ambiguous_code(a.iata_code))
+    )
     return {
         "matches": [
             {
@@ -293,6 +330,7 @@ async def search_flights(ctx: RunContext, args: SearchFlightsArgs) -> dict[str, 
         },
     )
     check_trip_start(ctx, request.departure_date, "departure")
+    await check_codes(ctx, request.origin, request.destination)
     try:
         found = await offers_service.search_flights(
             ctx.db,
@@ -391,6 +429,7 @@ async def search_hotels(ctx: RunContext, args: SearchHotelsArgs) -> dict[str, An
         },
     )
     check_trip_start(ctx, request.checkin, "check-in")
+    await check_codes(ctx, request.destination)
     try:
         found = await hotels_service.search_hotels(
             ctx.db,
@@ -516,6 +555,7 @@ def _baseline(baseline: Baseline) -> dict[str, Any]:
 
 async def fare_insight(ctx: RunContext, args: FareInsightArgs) -> dict[str, Any]:
     check_trip_start(ctx, args.depart_date, "departure")
+    await check_codes(ctx, args.origin, args.destination)
     if (await get_airport_index(ctx.db)).get(args.destination) is None:
         raise ToolError("not_found", f"Unknown airport code {args.destination}.")
     try:

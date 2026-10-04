@@ -19,13 +19,17 @@ bills, which differs from `price` when the shown total was converted) and the of
 a tool can refuse an offer before a service would (draft_quote: wrong currency, expired) with a
 message that names the short id only.
 
+The memory also keeps the airport codes `lookup_airport` returned (`airports`): a code that
+reads as a city alias ("GOA" reads as Goa) is taken as the other airport (Genoa) only when the
+run looked it up (`tools.travel.check_codes`).
+
 `snapshot()` / `RunMemory.restore()` round-trip the memory through JSON, so the engine can store
 it with the run (after each tool step, say) and rebuild it for a resumed run. The snapshot also
 keeps every supplier id a short id has stood for (a price check's fresh offer replaces the one
-searched, and both keep the same short id).
+searched, and both keep the same short id), and the looked-up airport codes.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any, Literal, cast
@@ -110,6 +114,10 @@ class RunMemory:
         self._items: dict[str, SeenItem] = {}
         self._refs: dict[tuple[ItemKind, str], str] = {}
         self._counts: dict[ItemKind, int] = dict.fromkeys(PREFIXES, 0)
+        self.airports: set[str] = set()  # codes lookup_airport returned in this run
+
+    def note_airports(self, codes: Iterable[str]) -> None:
+        self.airports.update(code for code in codes if isinstance(code, str))
 
     def remember(
         self,
@@ -175,6 +183,7 @@ class RunMemory:
                 {"kind": kind, "source_id": source_id, "ref": ref}
                 for (kind, source_id), ref in self._refs.items()
             ],
+            "airports": sorted(self.airports),
         }
 
     @classmethod
@@ -190,6 +199,7 @@ class RunMemory:
             kind, ref = alias.get("kind"), alias.get("ref")
             if kind in PREFIXES and ref in memory._items:
                 memory._refs[(cast(ItemKind, kind), str(alias.get("source_id")))] = ref
+        memory.note_airports(str(code) for code in (data or {}).get("airports") or [])
         return memory
 
 

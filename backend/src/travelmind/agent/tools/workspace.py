@@ -31,7 +31,7 @@ from travelmind.agent.tools.base import (
     format_money,
     validate,
 )
-from travelmind.agent.tools.travel import ChildAge, seen, unknown_ids
+from travelmind.agent.tools.travel import ChildAge, check_codes, seen, unknown_ids
 from travelmind.offers.models import MAX_PASSENGERS, Cabin, IataCode
 from travelmind.offers.money import CurrencyCode, Money
 from travelmind.readcache import invalidate_agency
@@ -115,6 +115,7 @@ class CreateEnquiryArgs(Args):
 
 
 async def create_enquiry_tool(ctx: RunContext, args: CreateEnquiryArgs) -> dict[str, Any]:
+    await check_codes(ctx, args.origin, args.destination)  # "GOA" only for a looked-up Genoa
     data = validate(EnquiryCreate, args.model_dump() | {"source": ENQUIRY_SOURCE})
     try:
         enquiry = await create_enquiry(ctx.db, ctx.agency_id, ctx.user_id, data)

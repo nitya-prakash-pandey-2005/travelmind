@@ -250,6 +250,11 @@ def test_codes_typed_by_the_user_skip_the_lookup():
     assert [c.name for c in turn.calls] == ["search_flights", "weather_forecast"]
 
 
+def test_goa_typed_in_capitals_is_looked_up_as_the_city_not_used_as_a_code():
+    turn = plan_turn([_user("DEL to GOA 12-16 Dec, 2 adults")], TODAY)
+    assert [(c.name, c.args) for c in turn.calls] == [("lookup_airport", {"query": "GOA"})]
+
+
 def test_flights_only_skips_hotels():
     turn = plan_turn([_user("DEL to DXB 12-16 Dec, 2 adults, flights only, hotel")], TODAY)
     assert "search_hotels" not in [c.name for c in turn.calls]

@@ -3,7 +3,8 @@
 Extraction is pure: `extract_trip` reads origin, destination, dates, travellers, cabin and scope
 (flights, hotels) from plain text with regular expressions. Places stay as written ("Mumbai",
 "New York", "DXB"); the planner resolves names through the `lookup_airport` tool, exactly as the
-model would, and uses 3-letter codes typed in capitals as they are.
+model would, and uses 3-letter codes typed in capitals as they are, except one that reads as a
+city ("GOA" is Goa: looked up, which gives GOI).
 
 `plan_turn` derives everything from the conversation, so it holds no state between turns:
 1. Merge what every user message said (a reply to a question fills the fields it asked for).
@@ -33,6 +34,7 @@ from functools import partial
 from typing import Any, Literal
 
 from travelmind.agent.provider import Generation, Message, ToolCall
+from travelmind.agent.tools.travel import ambiguous_code
 from travelmind.offers.models import Cabin
 
 # The planner reads at most this many characters of each message: a trip request fits in far
@@ -658,7 +660,7 @@ def plan_turn(messages: Sequence[Message], today: date) -> Generation:
     lookups: list[str] = []
     for name in ("origin", "destination") if trip.flights else ("destination",):
         place = getattr(trip, name)
-        if _CODE.fullmatch(place):
+        if _CODE.fullmatch(place) and ambiguous_code(place) is None:  # "GOA" is looked up
             codes[name] = place
             continue
         found = [
