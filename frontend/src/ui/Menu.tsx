@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "./cn";
 
 export type MenuItem = {
@@ -9,6 +9,8 @@ export type MenuItem = {
   onSelect: () => void;
   icon?: LucideIcon;
   danger?: boolean;
+  /** Draw a divider above this item (to set apart a group, e.g. Sign out). */
+  separated?: boolean;
 };
 
 type MenuProps = {
@@ -20,14 +22,27 @@ type MenuProps = {
   /** Which trigger edge the menu lines up with. */
   align?: "start" | "end";
   className?: string;
+  /** secondary: bordered button (default) · ghost: borderless, for icon and avatar triggers in toolbars. */
+  triggerVariant?: "secondary" | "ghost";
   triggerClassName?: string;
+  /** Non-interactive content above the items (e.g. who is signed in). Kept outside the menu role. */
+  header?: ReactNode;
 };
 
 /**
  * Action menu (menu button pattern): Enter/Space/ArrowDown open on the first item, ArrowUp on the last;
  * arrows wrap, Home/End jump, Escape closes back to the trigger, Tab or an outside click dismisses.
  */
-export function Menu({ trigger, items, label, align = "end", className, triggerClassName }: MenuProps) {
+export function Menu({
+  trigger,
+  items,
+  label,
+  align = "end",
+  className,
+  triggerVariant = "secondary",
+  triggerClassName,
+  header,
+}: MenuProps) {
   const [open, setOpen] = useState(false);
   const [initialIndex, setInitialIndex] = useState(0);
   const menuId = useId();
@@ -111,9 +126,10 @@ export function Menu({ trigger, items, label, align = "end", className, triggerC
         onClick={() => (open ? close(false) : openAt(0))}
         onKeyDown={onTriggerKeyDown}
         className={cn(
-          "inline-flex h-8 items-center gap-1.5 rounded-sm border border-line px-2.5 text-sm text-dim",
-          "transition-colors duration-200 ease-tm hover:border-primary/60 hover:text-ink",
-          open && "border-primary/60 text-ink",
+          "inline-flex h-8 items-center gap-1.5 rounded-md text-[13px] font-medium transition-colors duration-150 ease-tm",
+          triggerVariant === "secondary"
+            ? cn("border border-line-strong px-2.5 text-ink hover:bg-hover", open ? "bg-hover" : "bg-surface-2")
+            : cn("text-dim hover:bg-hover hover:text-ink", open && "bg-hover text-ink"),
           triggerClassName,
         )}
       >
@@ -121,39 +137,39 @@ export function Menu({ trigger, items, label, align = "end", className, triggerC
       </button>
       {open && (
         <div
-          id={menuId}
-          role="menu"
-          aria-labelledby={triggerId}
-          onKeyDown={onMenuKeyDown}
           className={cn(
-            "tm-enter tm-edge absolute top-full z-40 mt-1.5 flex min-w-44 max-w-[calc(100vw-2rem)] flex-col rounded-md p-1",
-            "bg-glass-strong shadow-(--tm-shadow-pop) backdrop-blur-xl",
+            "tm-enter tm-popover absolute top-full z-40 mt-1 flex min-w-48 max-w-[calc(100vw-2rem)] flex-col rounded-lg",
             align === "end" ? "right-0" : "left-0",
           )}
         >
-          {items.map((item, index) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id ?? index}
-                ref={(node) => {
-                  itemRefs.current[index] = node;
-                }}
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                onClick={() => select(item)}
-                className={cn(
-                  "flex h-8 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-sm",
-                  "transition-colors duration-150 ease-tm hover:bg-hover focus:bg-hover focus-visible:-outline-offset-2",
-                  item.danger ? "text-danger" : "text-ink",
-                )}
-              >
-                {Icon && <Icon size={15} aria-hidden="true" className={item.danger ? undefined : "text-dim"} />}
-                {item.label}
-              </button>
-            );
-          })}
+          {header && <div className="border-b border-line px-3 py-2.5">{header}</div>}
+          <div id={menuId} role="menu" aria-labelledby={triggerId} onKeyDown={onMenuKeyDown} className="flex flex-col p-1">
+            {items.map((item, index) => {
+              const Icon = item.icon;
+              return (
+                <Fragment key={item.id ?? index}>
+                  {item.separated && index > 0 && <div role="separator" className="-mx-1 my-1 h-px bg-line" />}
+                  <button
+                    ref={(node) => {
+                      itemRefs.current[index] = node;
+                    }}
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    onClick={() => select(item)}
+                    className={cn(
+                      "flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-[13px]",
+                      "transition-colors duration-100 ease-tm hover:bg-hover focus:bg-hover focus-visible:-outline-offset-2",
+                      item.danger ? "text-danger" : "text-ink",
+                    )}
+                  >
+                    {Icon && <Icon size={15} strokeWidth={1.75} aria-hidden="true" className={item.danger ? undefined : "text-dim"} />}
+                    {item.label}
+                  </button>
+                </Fragment>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

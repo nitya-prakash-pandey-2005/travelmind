@@ -7,10 +7,14 @@ All signed-in and bound to the caller's agency. The figures come from `metrics`,
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from travelmind.cache import RedisClient
 from travelmind.config import get_settings
 from travelmind.dashboard import metrics
 from travelmind.dashboard.schemas import (
@@ -30,6 +34,12 @@ from travelmind.dashboard.schemas import (
 from travelmind.db import DbSession, utcnow
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
+from travelmind.readcache import (
+    PublishesMarkedAgencyChanges,
+    cached_agency_json,
+    publish_agency_changes,
+)
+from travelmind.workspace.quotes import expire_overdue_quotes
 
 __all__ = [
     "dashboard_router",
@@ -40,27 +50,71 @@ __all__ = [
 
 SEARCH_MIN_LENGTH = 2
 SEARCH_TOO_SHORT_MESSAGE = f"Type at least {SEARCH_MIN_LENGTH} characters to search."
+# Summary and pipeline are read through the agency's Redis cache (readcache): a write to the
+# agency's workspace retires them at once. Searches don't, so the "searches" KPI may lag by up to
+# this TTL.
+DASHBOARD_TTL_SECONDS = 30
 
 dashboard_router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
-notifications_router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
+# Notifications and global search run lazy quote expiry, which marks the agency when it expired
+# a quote. Marking notifications seen changes nothing the cache holds, so it doesn't bump.
+notifications_router = APIRouter(
+    prefix="/api/v1/notifications",
+    tags=["notifications"],
+    dependencies=[PublishesMarkedAgencyChanges],
+)
 onboarding_router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
-search_router = APIRouter(prefix="/api/v1/search", tags=["search"])
+search_router = APIRouter(
+    prefix="/api/v1/search", tags=["search"], dependencies=[PublishesMarkedAgencyChanges]
+)
 
 RangeQuery = Annotated[Range, Query(alias="range")]
 
 
+async def _expire_first(db: AsyncSession, redis: Redis, agency_id: UUID, now: datetime) -> None:
+    """Run lazy quote expiry before the cache read and keep it; if it changed any quote, the
+    agency's cached entries are retired first. Commits, so no transaction is held open while
+    the cache read waits."""
+    await expire_overdue_quotes(db, agency_id, now=now)
+    await db.commit()
+    await publish_agency_changes(db, redis)
+
+
 @dashboard_router.get("/summary")
 async def summary_route(
-    current: AuthedUser, db: DbSession, range_: RangeQuery = "30d"
+    current: AuthedUser, db: DbSession, redis: RedisClient, range_: RangeQuery = "30d"
 ) -> SummaryOut:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    return await metrics.summary(db, agency, range_, now=utcnow())
+    now = utcnow()
+    await _expire_first(db, redis, agency.id, now)
+    # The windows are the agency's local days, so the local date is part of the key.
+    today = now.astimezone(ZoneInfo(agency.timezone)).date().isoformat()
+    return await cached_agency_json(
+        redis,
+        agency.id,
+        (range_, today),
+        DASHBOARD_TTL_SECONDS,
+        lambda: metrics.summary(db, agency, range_, now=now),
+        encode=SummaryOut.model_dump_json,
+        decode=SummaryOut.model_validate_json,
+        cache="summary",
+    )
 
 
 @dashboard_router.get("/pipeline")
-async def pipeline_route(current: AuthedUser, db: DbSession) -> PipelineOut:
+async def pipeline_route(current: AuthedUser, db: DbSession, redis: RedisClient) -> PipelineOut:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    return await metrics.pipeline(db, agency)
+    await _expire_first(db, redis, agency.id, utcnow())
+    return await cached_agency_json(
+        redis,
+        agency.id,
+        (),
+        DASHBOARD_TTL_SECONDS,
+        lambda: metrics.pipeline(db, agency),
+        encode=PipelineOut.model_dump_json,
+        decode=PipelineOut.model_validate_json,
+        cache="pipeline",
+    )
 
 
 @dashboard_router.get("/activity")
@@ -115,7 +169,9 @@ async def onboarding_route(current: AuthedUser, db: DbSession) -> OnboardingOut:
 @notifications_router.get("")
 async def notifications_route(current: AuthedUser, db: DbSession) -> NotificationsOut:
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    return await metrics.notifications(db, agency, current.id)
+    out = await metrics.notifications(db, agency, current.id, now=utcnow())
+    await db.commit()  # keep any lazy quote expiry
+    return out
 
 
 class NotificationsSeen(BaseModel):
@@ -143,4 +199,6 @@ async def search_route(
     if len(query) < SEARCH_MIN_LENGTH:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, SEARCH_TOO_SHORT_MESSAGE)
     agency = await identity_service.get_agency_settings(db, current.agency_id)
-    return await metrics.global_search(db, agency, query)
+    out = await metrics.global_search(db, agency, query, now=utcnow())
+    await db.commit()  # keep any lazy quote expiry
+    return out

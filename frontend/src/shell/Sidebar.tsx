@@ -1,12 +1,17 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   BedDouble,
+  ChartLine,
+  FileText,
   LayoutDashboard,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
   Plane,
   PlugZap,
+  Settings,
+  SquareKanban,
+  UserRound,
   Users,
   X,
   type LucideIcon,
@@ -14,34 +19,63 @@ import {
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "../ui/cn";
 
+export type NavPath =
+  | "/app"
+  | "/app/pipeline"
+  | "/app/quotes"
+  | "/app/clients"
+  | "/app/fares"
+  | "/app/hotels"
+  | "/app/routes"
+  | "/app/team"
+  | "/app/suppliers"
+  | "/app/settings"
+  | "/app/design";
 type NavItem = {
-  to: "/app" | "/app/fares" | "/app/hotels" | "/app/team" | "/app/suppliers" | "/app/design";
+  to: NavPath;
   label: string;
   icon: LucideIcon;
+  /** Other path prefixes that belong to this item (an enquiry page sits under Pipeline). */
+  also?: string[];
 };
 type NavGroup = { label: string; items: NavItem[] };
 
 /** The sidebar's sections. The command palette offers the same destinations. */
 export const NAV_GROUPS: NavGroup[] = [
-  { label: "Operate", items: [{ to: "/app", label: "Command Center", icon: LayoutDashboard }] },
+  {
+    label: "Operate",
+    items: [
+      { to: "/app", label: "Command Center", icon: LayoutDashboard },
+      { to: "/app/pipeline", label: "Pipeline", icon: SquareKanban, also: ["/app/enquiries/"] },
+      { to: "/app/quotes", label: "Quotes", icon: FileText },
+      { to: "/app/clients", label: "Clients", icon: UserRound },
+    ],
+  },
   {
     label: "Market",
     items: [
-      { to: "/app/fares", label: "Fare scan", icon: Plane },
-      { to: "/app/hotels", label: "Hotel scan", icon: BedDouble },
+      { to: "/app/fares", label: "Fare search", icon: Plane },
+      { to: "/app/hotels", label: "Hotel search", icon: BedDouble },
+      { to: "/app/routes", label: "Route intel", icon: ChartLine },
     ],
   },
   {
     label: "Admin",
     items: [
-      { to: "/app/team", label: "Crew roster", icon: Users },
+      { to: "/app/team", label: "Team", icon: Users },
       { to: "/app/suppliers", label: "Suppliers", icon: PlugZap },
+      { to: "/app/settings", label: "Settings", icon: Settings },
       { to: "/app/design", label: "Design system", icon: Palette },
     ],
   },
 ];
 
 const STORAGE_KEY = "tm-sidebar";
+
+/** The product wordmark: Inter semibold with slight tracking. */
+function Wordmark({ className }: { className?: string }) {
+  return <span className={cn("text-[13px] font-semibold tracking-[0.02em]", className ?? "text-ink")}>TravelMind</span>;
+}
 
 function readCollapsed(): boolean {
   try {
@@ -75,6 +109,7 @@ export function Sidebar({ id, mobileOpen, onCloseMobile }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const headingPrefix = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   useEffect(() => {
     if (mobileOpen) closeRef.current?.focus();
@@ -99,7 +134,7 @@ export function Sidebar({ id, mobileOpen, onCloseMobile }: SidebarProps) {
         <div
           aria-hidden="true"
           onClick={() => onCloseMobile(true)}
-          className="tm-fade-in fixed inset-0 z-40 bg-(--tm-backdrop) backdrop-blur-[3px] lg:hidden"
+          className="tm-fade-in fixed inset-0 z-40 bg-(--tm-backdrop) lg:hidden"
         />
       )}
       <div
@@ -107,26 +142,26 @@ export function Sidebar({ id, mobileOpen, onCloseMobile }: SidebarProps) {
         onKeyDown={onKeyDown}
         data-collapsed={collapsed}
         className={cn(
-          "flex shrink-0 flex-col border-line bg-glass-strong backdrop-blur-xl",
+          "flex shrink-0 flex-col border-line bg-surface",
           // Small screens: an off-canvas drawer, hidden (and out of the tab order) until opened.
           "fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] border-r shadow-(--tm-shadow-pop)",
-          "transition-[translate,visibility] duration-200 ease-tm",
+          "transition-[translate,visibility] duration-180 ease-tm",
           mobileOpen ? "visible translate-x-0" : "invisible -translate-x-full",
           // Large screens: a column beside the page, collapsible to an icon rail.
           // Raised above the page so the icon rail's tooltips paint over panels.
-          "lg:visible lg:relative lg:z-20 lg:max-w-none lg:translate-x-0 lg:bg-glass lg:shadow-none",
-          "lg:transition-[width]",
-          collapsed ? "lg:w-[4.25rem]" : "lg:w-60",
+          "lg:visible lg:relative lg:z-20 lg:max-w-none lg:translate-x-0 lg:shadow-none",
+          "lg:transition-[width] lg:duration-150",
+          collapsed ? "lg:w-14" : "lg:w-60",
         )}
       >
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4 lg:hidden">
-          <span className="font-display text-sm tracking-[0.35em] text-primary">TRAVELMIND</span>
+        <div className="flex h-12 shrink-0 items-center justify-between border-b border-line px-4 lg:hidden">
+          <Wordmark />
           <button
             ref={closeRef}
             type="button"
             aria-label="Close navigation"
             onClick={() => onCloseMobile(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-dim transition-colors duration-200 ease-tm hover:bg-hover hover:text-ink"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink"
           >
             <X size={18} aria-hidden="true" />
           </button>
@@ -134,7 +169,7 @@ export function Sidebar({ id, mobileOpen, onCloseMobile }: SidebarProps) {
         <nav
           aria-label="Primary"
           className={cn(
-            "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden px-3 py-4",
+            "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden px-2 py-3",
             // The icon rail's tooltips reach past its edge.
             collapsed && "lg:overflow-visible",
           )}
@@ -142,36 +177,40 @@ export function Sidebar({ id, mobileOpen, onCloseMobile }: SidebarProps) {
           {NAV_GROUPS.map((group) => {
             const headingId = `${headingPrefix}-${group.label}`;
             return (
-              <div key={group.label} className="flex flex-col gap-1">
+              <div key={group.label} className="flex flex-col gap-0.5">
                 <h2
                   id={headingId}
                   className={cn(
-                    "px-3 pb-1 font-mono text-[10px] font-medium uppercase tracking-[0.24em] text-dim",
+                    "tm-micro px-2.5 pb-1 pt-1",
                     collapsed && "lg:sr-only",
                   )}
                 >
                   {group.label}
                 </h2>
-                {collapsed && <span aria-hidden="true" className="mx-3 mb-1 hidden h-px bg-line lg:block" />}
+                {collapsed && <span aria-hidden="true" className="mx-2 mb-1 hidden h-px bg-line lg:block" />}
                 <ul aria-labelledby={headingId} className="flex flex-col gap-0.5">
-                  {group.items.map(({ to, label, icon: Icon }) => (
+                  {group.items.map(({ to, label, icon: Icon, also }) => (
                     <li key={to}>
                       <Link
                         to={to}
                         activeOptions={{ exact: to === "/app" }}
+                        // The router marks only its own path active; a related page is marked here the same way.
+                        {...(also?.some((prefix) => pathname.startsWith(prefix))
+                          ? { "data-status": "active", "aria-current": "page" as const }
+                          : {})}
                         onClick={() => onCloseMobile(false)}
                         className={cn(
-                          "group relative flex h-9 items-center gap-3 rounded-md px-3 text-sm text-dim",
-                          "transition-colors duration-200 ease-tm hover:bg-hover hover:text-ink",
-                          // Active marker: a slim bar tinted with the agency's brand colour.
-                          "before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full",
-                          "before:bg-(--tm-brand) before:opacity-0 before:transition-opacity",
-                          "data-[status=active]:bg-raised data-[status=active]:text-ink data-[status=active]:before:opacity-100",
+                          "group relative flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium text-dim",
+                          "transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink",
+                          // Active: surface-2 fill, a 2px accent bar on the left edge, ink text.
+                          "before:absolute before:inset-y-1.5 before:-left-2 before:w-0.5 before:rounded-r-full",
+                          "before:bg-primary before:opacity-0",
+                          "data-[status=active]:bg-surface-2 data-[status=active]:text-ink data-[status=active]:before:opacity-100",
                           collapsed && "lg:justify-center lg:px-0",
                         )}
                       >
                         <Icon
-                          size={17}
+                          size={16}
                           strokeWidth={1.75}
                           aria-hidden="true"
                           className="shrink-0 transition-colors group-data-[status=active]:text-primary"
@@ -181,8 +220,8 @@ export function Sidebar({ id, mobileOpen, onCloseMobile }: SidebarProps) {
                           <span
                             aria-hidden="true"
                             className={cn(
-                              "pointer-events-none absolute left-full top-1/2 z-50 ml-3 hidden -translate-y-1/2 whitespace-nowrap rounded-sm",
-                              "border border-line bg-glass-strong px-2 py-1 text-xs text-ink shadow-(--tm-shadow-pop)",
+                              "tm-popover pointer-events-none absolute left-full top-1/2 z-50 ml-3 hidden -translate-y-1/2 whitespace-nowrap rounded-md",
+                              "px-2 py-1 text-xs font-medium text-ink",
                               "opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 lg:block",
                             )}
                           >
@@ -197,7 +236,7 @@ export function Sidebar({ id, mobileOpen, onCloseMobile }: SidebarProps) {
             );
           })}
         </nav>
-        <div className="hidden shrink-0 items-center gap-2 border-t border-line p-3 lg:flex">
+        <div className="hidden h-11 shrink-0 items-center gap-2 border-t border-line px-2 lg:flex">
           <button
             type="button"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -206,19 +245,17 @@ export function Sidebar({ id, mobileOpen, onCloseMobile }: SidebarProps) {
             aria-controls={id}
             onClick={toggle}
             className={cn(
-              "inline-flex h-8 items-center gap-2 rounded-md px-2 text-dim transition-colors duration-200 ease-tm hover:bg-hover hover:text-ink",
+              "inline-flex h-8 items-center gap-2 rounded-md px-2 text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink",
               collapsed ? "w-full justify-center" : "w-auto",
             )}
           >
             {collapsed ? (
-              <PanelLeftOpen size={17} strokeWidth={1.75} aria-hidden="true" />
+              <PanelLeftOpen size={16} strokeWidth={1.75} aria-hidden="true" />
             ) : (
-              <PanelLeftClose size={17} strokeWidth={1.75} aria-hidden="true" />
+              <PanelLeftClose size={16} strokeWidth={1.75} aria-hidden="true" />
             )}
           </button>
-          {!collapsed && (
-            <span className="ml-auto font-display text-[10px] tracking-[0.35em] text-dim">TRAVELMIND</span>
-          )}
+          {!collapsed && <Wordmark className="ml-auto pr-1 text-faint" />}
         </div>
       </div>
     </>

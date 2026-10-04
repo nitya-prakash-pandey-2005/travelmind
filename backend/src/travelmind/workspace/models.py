@@ -94,6 +94,7 @@ class Enquiry(Base):
         ),
         CheckConstraint("source IN ('manual','pasted','copilot')", name="ck_enquiries_source"),
         Index("ix_enquiries_agency_status", "agency_id", "status", "created_at"),
+        Index("ix_enquiries_client_depart", "client_id", "depart_date"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -134,6 +135,8 @@ class Quote(Base):
         CheckConstraint("markup_kind IN ('fixed','percent')", name="ck_quotes_markup_kind"),
         CheckConstraint("markup_value >= 0", name="ck_quotes_markup_value"),
         Index("ix_quotes_agency_status", "agency_id", "status", "created_at"),
+        Index("ix_quotes_client_status", "client_id", "status"),
+        Index("ix_quotes_enquiry", "enquiry_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -153,6 +156,8 @@ class Quote(Base):
     sent_at: Mapped[datetime | None] = mapped_column(_TS)
     first_viewed_at: Mapped[datetime | None] = mapped_column(_TS)
     decided_at: Mapped[datetime | None] = mapped_column(_TS)
+    # The option the client accepted on the public page (index into the sent version's options).
+    accepted_option: Mapped[int | None] = mapped_column(SmallInteger)
     created_by: Mapped[UUID | None] = _user_fk()
     created_at: Mapped[datetime] = _timestamp()
     updated_at: Mapped[datetime] = _timestamp()
@@ -179,7 +184,12 @@ class ActivityEvent(Base):
     """What happened in the workspace, for the activity feed (append-only)."""
 
     __tablename__ = "activity_events"
-    __table_args__ = (Index("ix_activity_agency_time", "agency_id", "occurred_at"),)
+    __table_args__ = (
+        Index("ix_activity_agency_time", "agency_id", "occurred_at"),
+        Index(
+            "ix_activity_entity", "agency_id", "entity_type", "entity_id", text("occurred_at DESC")
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     agency_id: Mapped[UUID] = _agency_fk()

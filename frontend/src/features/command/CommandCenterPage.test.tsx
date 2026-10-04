@@ -29,11 +29,14 @@ async function loaded(name: string): Promise<HTMLElement> {
 test("command center renders every panel from real API data", async () => {
   mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: true })));
   renderApp("/app");
-  expect(await screen.findByRole("heading", { level: 1, name: /Asha/ })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { level: 1, name: "Command Center" })).toBeInTheDocument();
   expect(await screen.findByRole("group", { name: /Open enquiries/ })).toHaveTextContent("12");
   expect(screen.getByRole("group", { name: /Win rate/ })).toHaveTextContent("58.3%");
   expect(screen.getByRole("region", { name: "Pipeline" })).toHaveTextContent("Quoted");
   expect(screen.getByRole("region", { name: "Market pulse" })).toHaveTextContent("DEL → BOM");
+  expect(screen.getByRole("table", { name: "Routes with the biggest fare moves" })).toBeInTheDocument();
+  expect(screen.getByRole("table", { name: "Suppliers" })).toBeInTheDocument();
+  expect(screen.getByRole("table", { name: "Won value by teammate" })).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "Supplier health" })).toHaveTextContent("sandbox");
   expect(screen.getByRole("region", { name: "Live activity" })).toHaveTextContent("Searched DEL → BOM");
   expect(screen.getByRole("table", { name: "Upcoming departures" })).toBeInTheDocument();
@@ -53,12 +56,17 @@ test("command center empty workspace", async () => {
   expect(document.body.textContent).not.toMatch(/NaN|undefined/);
 });
 
-test("the header greets by agency time and offers the range switch and New enquiry", async () => {
+test("the header names the page, greets by agency time and offers the range switch and New enquiry", async () => {
   mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: true })));
   renderApp("/app");
   const heading = await screen.findByRole("heading", { level: 1 });
-  expect(heading).toHaveTextContent(/^Good (morning|afternoon|evening), Asha$/);
-  expect(within(screen.getByRole("main")).getByText("Command Center")).toBeInTheDocument();
+  expect(heading).toHaveTextContent(/^Command Center$/);
+  const main = screen.getByRole("main");
+  expect(within(main).getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(/^Workspace.*Command Center$/);
+  // One line under the title: greeting on the agency's clock, local time with its zone, agency name.
+  const time = within(main).getByText(/\d{2}:\d{2} IST$/);
+  expect(time.tagName).toBe("TIME");
+  expect(time.parentElement).toHaveTextContent(/^Good (morning|afternoon|evening), Asha · \w+ \d{1,2} \w+, \d{2}:\d{2} IST · Alpha Travels$/);
   const range = screen.getByRole("radiogroup", { name: "Range" });
   expect(within(range).getByRole("radio", { name: "30d" })).toBeChecked();
   expect(screen.getByRole("button", { name: "New enquiry" })).toBeInTheDocument();
@@ -269,11 +277,11 @@ test("an empty workspace explains every panel and offers the next step", async (
   renderApp("/app");
   await screen.findByRole("region", { name: "Supplier health" });
   const supplier = await loaded("Supplier health");
-  expect(within(supplier).getByText("No supplier calls yet.")).toBeInTheDocument();
+  expect(within(supplier).getByText("No supplier calls yet")).toBeInTheDocument();
   expect(within(supplier).getByRole("link", { name: "Open suppliers" })).toHaveAttribute("href", "/app/suppliers");
   const departures = await loaded("Upcoming departures");
   expect(within(departures).getByText("Won trips with upcoming departures show here.")).toBeInTheDocument();
-  for (const name of ["Live activity", "Pipeline", "Activity trend", "Team", "Market pulse"]) {
+  for (const name of ["Live activity", "Pipeline", "Activity trend", "Team performance", "Market pulse", "Route map"]) {
     expect(within(await loaded(name)).getByRole("status")).toBeInTheDocument();
   }
 });
@@ -306,6 +314,43 @@ test("the onboarding checklist tracks progress and can be dismissed per agency",
   expect(screen.queryByRole("region", { name: "Get set up" })).not.toBeInTheDocument();
 });
 
+test.each([
+  ["with the server's links", "/app/settings", "/app/quotes"],
+  ["without links", null, null],
+])(
+  "once agency details and quotes are available, their steps open Settings and Quotes (%s)",
+  async (_case, profileHref, quoteHref) => {
+    mockApi(
+      withSession(ME_OWNER, {
+        ...commandCenterMocks({ populated: true }),
+        "GET /api/v1/onboarding": {
+          status: 200,
+          body: {
+            items: [
+              { key: "profile", label: "Add your agency details", done: false, available: true, href: profileHref },
+              { key: "supplier", label: "Connect a live supplier", done: true, available: true, href: "/app/suppliers" },
+              { key: "team", label: "Invite a teammate", done: true, available: true, href: "/app/team" },
+              { key: "fare_scan", label: "Run your first fare scan", done: true, available: true, href: "/app/fares" },
+              { key: "client", label: "Add a client", done: false, available: true, href: "/app" },
+              { key: "quote", label: "Send your first quote", done: false, available: true, href: quoteHref },
+            ],
+            completed: 3,
+            total: 6,
+          },
+        },
+      }),
+    );
+    const { user, router } = renderApp("/app");
+    await screen.findByRole("region", { name: "Get set up" });
+    const checklist = await loaded("Get set up");
+    expect(within(checklist).getByRole("link", { name: /Add your agency details/ })).toHaveAttribute("href", "/app/settings");
+    expect(within(checklist).getByRole("link", { name: /Send your first quote/ })).toHaveAttribute("href", "/app/quotes");
+    expect(within(checklist).queryByText("Coming in the next release")).not.toBeInTheDocument();
+    await user.click(within(checklist).getByRole("link", { name: /Send your first quote/ }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/app/quotes"));
+  },
+);
+
 test("a finished checklist is hidden", async () => {
   const mocks = commandCenterMocks({ populated: true });
   mockApi(
@@ -333,17 +378,18 @@ test("a finished checklist is hidden", async () => {
   await waitFor(() => expect(screen.queryByText(/of 6 done/)).not.toBeInTheDocument());
 });
 
-test("plotting a route in Quick route draws it on the globe and remembers it", async () => {
+test("plotting a route in the route planner draws it on the globe and remembers it", async () => {
   mockApi(withSession(ME_OWNER, commandCenterMocks()));
   const { user } = renderApp("/app");
-  const scanner = await screen.findByRole("region", { name: "Plot a route" });
+  const scanner = await screen.findByRole("region", { name: "Route planner" });
   await user.type(within(scanner).getByRole("combobox", { name: "From" }), "del");
   await user.click(await within(scanner).findByRole("option", { name: /DEL/ }));
   await user.type(within(scanner).getByRole("combobox", { name: "To" }), "bom");
   await user.click(await within(scanner).findByRole("option", { name: /BOM/ }));
 
   expect(await screen.findByTestId("globe")).toHaveTextContent("DEL-BOM*");
-  const recent = screen.getByRole("region", { name: "Recent routes" });
+  // Recent routes sit inside the planner card.
+  const recent = within(scanner).getByRole("region", { name: "Recent routes" });
   expect(within(recent).getByRole("button", { name: /DEL → BOM/ })).toHaveTextContent("1,138 km");
   expect(window.localStorage.getItem("tm-recent-routes:u-owner")).toContain('"BOM"');
 });
@@ -367,5 +413,59 @@ test("a plotted route can be sent to the fare scanner", async () => {
   const { user, router } = renderApp("/app");
   await user.click(await screen.findByRole("button", { name: "Scan fares for this route" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/fares"));
-  expect(await screen.findByRole("heading", { name: "Scan live fares" })).toBeInTheDocument();
+  // The fare search page (its exact title belongs to that page).
+  expect(await screen.findByRole("heading", { level: 1, name: /fare/i })).toBeInTheDocument();
+});
+
+test("the pipeline lists each stage with its count, quoted value and conversion from the stage before", async () => {
+  mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: true })));
+  renderApp("/app");
+  const pipeline = await loaded("Pipeline");
+  const stages = within(within(pipeline).getByRole("list", { name: "Pipeline by stage" })).getAllByRole("listitem");
+  expect(stages.map((stage) => stage.textContent)).toEqual([
+    "New5 enquiries,—",
+    "Quoting80% of the previous stage4 enquiries,₹2.1L",
+    "Quoted75% of the previous stage3 enquiries,₹1.9L",
+    "Won67% of the previous stage2 enquiries,₹1.2L",
+  ]);
+  // Open = new + quoting + quoted; the lost line says what it means.
+  expect(pipeline).toHaveTextContent("12 open");
+  expect(pipeline).toHaveTextContent("Lost1 enquiry₹52Kclosed without a booking");
+});
+
+test("cards with a full page behind them link to it", async () => {
+  mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: true })));
+  renderApp("/app");
+  const links: [string, string, string][] = [
+    ["Supplier health", "View all suppliers", "/app/suppliers"],
+    ["Team performance", "Manage team", "/app/team"],
+    ["Market pulse", "Open fare search", "/app/fares"],
+  ];
+  for (const [card, link, href] of links) {
+    expect(within(await loaded(card)).getByRole("link", { name: link })).toHaveAttribute("href", href);
+  }
+});
+
+test("team performance ranks teammates by won value with their enquiries and quotes", async () => {
+  mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: true })));
+  renderApp("/app");
+  const table = within(await loaded("Team performance")).getByRole("table", { name: "Won value by teammate" });
+  const rows = within(table).getAllByRole("row").slice(1);
+  expect(rows.map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent))).toEqual([
+    ["1", "ARAsha RaoYou", "9", "11", "₹82K"],
+    ["2", "RKRavi Kumar", "6", "5", "₹42K"],
+    ["3", "NSNeha Singh", "3", "2", "—"],
+  ]);
+});
+
+test("supplier health reads as a status table", async () => {
+  mockApi(withSession(ME_OWNER, commandCenterMocks({ populated: true })));
+  renderApp("/app");
+  const table = within(await loaded("Supplier health")).getByRole("table", { name: "Suppliers" });
+  const rows = within(table).getAllByRole("row").slice(1);
+  expect(rows).toHaveLength(3);
+  expect(rows[0]).toHaveTextContent(/sandbox.*flights.*Healthy.*95\.2%.*40 of 42 calls.*12\.4/);
+  expect(within(rows[0]!).getByRole("img", { name: "sandbox flights latency: p50 180 ms, p95 420 ms" })).toBeInTheDocument();
+  expect(rows[1]).toHaveTextContent(/duffel.*Degraded.*83\.3%/);
+  expect(rows[2]).toHaveTextContent(/liteapi.*Failing.*0%.*No successful calls.*—/);
 });

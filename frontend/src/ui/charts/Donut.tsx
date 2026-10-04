@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { formatNumber } from "../../lib/format";
-import { ChartDataTable, GRID, chartColor, useChartAnimation, type ChartColor } from "./shared";
+import { ChartDataTable, useChartAnimation, useChartColors, type ChartColor, type ChartColors } from "./shared";
 
 export type DonutSlice = { label: string; value: number };
 
@@ -20,8 +20,8 @@ function fold(slices: DonutSlice[]): DonutSlice[] {
   return [...sorted.slice(0, MAX_SLICES - 1), { label: "Other", value: rest }];
 }
 
-function sliceColor(index: number): string {
-  return chartColor((index + 1) as ChartColor);
+function sliceColor(colors: ChartColors, index: number): string {
+  return colors.series((index + 1) as ChartColor);
 }
 
 function share(value: number, total: number): number {
@@ -41,6 +41,7 @@ export function Donut({
   valueFormat?: (value: number) => string;
 }) {
   const animate = useChartAnimation();
+  const colors = useChartColors();
   const [active, setActive] = useState<number | null>(null);
   const shown = fold(slices.map((s) => ({ ...s, value: Number.isFinite(s.value) ? Math.max(0, s.value) : 0 })));
   const total = shown.reduce((sum, s) => sum + s.value, 0);
@@ -51,7 +52,7 @@ export function Donut({
     slice,
     dash: Math.max(0, (lengths[i] ?? 0) - gap),
     offset: lengths.slice(0, i).reduce((sum, length) => sum + length, 0),
-    color: sliceColor(i),
+    color: sliceColor(colors, i),
   }));
 
   const summary = total > 0 ? shown.map((s) => `${s.label} ${share(s.value, total)}%`).join(", ") : "no data";
@@ -61,7 +62,7 @@ export function Donut({
     <div className="flex min-w-0 flex-wrap items-center gap-5">
       <div role="img" aria-label={`${label}: ${summary}`} className="relative h-34 w-34 shrink-0">
         <svg aria-hidden="true" viewBox={`0 0 ${SIZE} ${SIZE}`} width="100%" height="100%" className="block -rotate-90">
-          <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" stroke={GRID} strokeWidth={RING} />
+          <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" stroke={colors.grid} strokeWidth={RING} />
           <g data-animate={animate ? "" : undefined} className={animate ? "tm-fade-in" : undefined}>
             {arcs.map((arc, i) =>
               arc.dash > 0 ? (
@@ -95,7 +96,7 @@ export function Donut({
             (center ?? (
               <div className="flex flex-col items-center">
                 <span className="font-mono text-lg tabular-nums text-ink">{valueFormat(total)}</span>
-                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-dim">Total</span>
+                <span className="tm-micro">Total</span>
               </div>
             ))
           )}
@@ -109,7 +110,7 @@ export function Donut({
             onPointerEnter={() => setActive(i)}
             onPointerLeave={() => setActive(null)}
           >
-            <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[3px]" style={{ background: sliceColor(i) }} />
+            <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[3px]" style={{ background: sliceColor(colors, i) }} />
             <span className="truncate text-ink">{slice.label}</span>
             <span className="font-mono text-xs tabular-nums text-dim">{`${share(slice.value, total)}%`}</span>
           </li>

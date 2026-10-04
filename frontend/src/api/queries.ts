@@ -4,6 +4,7 @@ import { dashboardKeys } from "./dashboard";
 import { checkHealth } from "./health";
 import { offersApi, type FlightSearchRequest, type HotelSearchRequest } from "./offers";
 import { referenceApi } from "./reference";
+import { routeIntelKeys } from "./routeIntel";
 import { teamApi } from "./team";
 import { workspaceKeys } from "./workspace";
 
@@ -50,13 +51,15 @@ export function airportSearchQueryOptions(term: string) {
 }
 
 /**
- * A search is logged server-side (activity, the Searches figure, supplier health, the setup checklist), so
- * once one completes the Command Center and the checklist refetch instead of waiting out their stale time.
+ * A search is logged server-side (activity, the Searches figure, supplier health, the setup checklist, a
+ * route's fare history and "your searches"), so once one completes the Command Center, the checklist and
+ * route intel refetch instead of waiting out their stale time.
  */
 async function recordedSearch<T>(client: QueryClient, run: Promise<T>): Promise<T> {
   const result = await run;
   void client.invalidateQueries({ queryKey: dashboardKeys.all });
   void client.invalidateQueries({ queryKey: workspaceKeys.onboarding });
+  void client.invalidateQueries({ queryKey: routeIntelKeys.all });
   return result;
 }
 

@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { DesignGallery } from "./DesignGallery";
 import { ToastProvider } from "./toast/ToastProvider";
@@ -10,6 +11,7 @@ test("the design gallery documents every token and component family", () => {
     </ToastProvider>,
   );
   for (const section of [
+    "Themes",
     "Colour tokens",
     "Chart palette",
     "Charts",
@@ -29,7 +31,7 @@ test("the design gallery documents every token and component family", () => {
   ]) {
     expect(screen.getByRole("heading", { name: section })).toBeInTheDocument();
   }
-  for (const token of ["--tm-void", "--tm-primary", "--tm-ai", "--tm-warn", "--tm-danger", "--tm-ok", "--tm-chart-1", "--tm-chart-6"]) {
+  for (const token of ["--tm-bg", "--tm-surface", "--tm-primary", "--tm-ai", "--tm-warn", "--tm-danger", "--tm-ok", "--tm-chart-1", "--tm-chart-6"]) {
     expect(screen.getByText(token)).toBeInTheDocument();
   }
   expect(screen.getByRole("table", { name: "Specimen enquiries" })).toBeInTheDocument();
@@ -37,4 +39,19 @@ test("the design gallery documents every token and component family", () => {
   expect(screen.getByRole("img", { name: /^Specimen trend/ })).toBeInTheDocument();
   expect(screen.getByRole("table", { name: "Specimen funnel data" })).toBeInTheDocument();
   expect(screen.getByRole("group", { name: "Metric C" })).toHaveAttribute("aria-busy", "true");
+  // One preview per theme, each with a button that applies it.
+  expect(within(screen.getByRole("list", { name: "Theme previews" })).getAllByRole("listitem")).toHaveLength(6);
+  expect(screen.getByRole("button", { name: "Use Orbital" })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a theme preview applies its theme", async () => {
+  const user = userEvent.setup();
+  render(
+    <ToastProvider>
+      <DesignGallery />
+    </ToastProvider>,
+  );
+  await user.click(screen.getByRole("button", { name: "Use Terminal" }));
+  expect(document.documentElement.dataset.theme).toBe("terminal");
+  expect(screen.getByRole("button", { name: "Use Terminal" })).toHaveAttribute("aria-pressed", "true");
 });

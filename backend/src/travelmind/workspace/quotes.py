@@ -7,23 +7,46 @@ client. Share tokens are returned once, on send, and stored only as their sha256
 
 Lifecycle: draft → sent (→ viewed, by the public page) → accepted | declined | expired.
 Sending shares the current version (`sent_version`); versions added later wait until the agent
-re-sends (from sent, viewed or expired), which also rotates the share token. The enquiry follows
+re-sends (from sent, viewed or expired), which also rotates the share token. A sent or viewed
+quote whose link is past `share_expires_at` becomes expired the next time anything reads the
+agency's quotes (`expire_overdue_quotes`: lists, details, the Command Center, the public page).
+The enquiry follows
 along where its pipeline allows: new → quoting on the first quote, → quoted on send, → won on
 accept, → lost on decline (unless another of its quotes is still open). A won or lost enquiry
 takes no new quotes, versions or sends until it is reopened.
+
+One value per quote, everywhere (quote reads, client and team won value, the Command Center):
+an accepted quote is worth the option the client accepted in the version they were sent (the
+cheapest option there when the agent marked it accepted); any other sent quote, the cheapest
+option of its sent version; a quote never sent, the cheapest option of its current version; a
+quote without versions has no value. Won value counts at most one accepted quote per enquiry:
+the one decided last.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
 from redis.asyncio import Redis
-from sqlalchemy import ColumnElement, Select, exists, func, select
+from sqlalchemy import (
+    BigInteger,
+    ColumnElement,
+    Select,
+    String,
+    case,
+    cast,
+    exists,
+    func,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from travelmind.cache import RedisClient
 from travelmind.db import DbSession, utcnow
@@ -34,8 +57,9 @@ from travelmind.offers.cache import recall_offer
 from travelmind.offers.money import CurrencyCode
 from travelmind.offers.schemas import OfferView
 from travelmind.offers.service import offer_view
+from travelmind.readcache import InvalidatesAgencyCache, mark_agency_changed
 from travelmind.workspace._common import NO_NUL, WorkspaceError, http_error
-from travelmind.workspace.activity import ActivityKind, record_activity
+from travelmind.workspace.activity import ActivityKind, ActivityValue, record_activity
 from travelmind.workspace.counters import format_number, next_number
 from travelmind.workspace.enquiries import (
     ALLOWED,
@@ -46,8 +70,15 @@ from travelmind.workspace.enquiries import (
 from travelmind.workspace.models import Client, Enquiry, Quote, QuoteVersion
 
 __all__ = [
+    "LATEST_ACCEPTED_SQL",
     "MAX_OPTIONS",
+    "QUOTE_STATUSES",
+    "QUOTE_VALUE",
+    "QUOTE_VALUE_SQL",
     "SHARE_TTL",
+    "VALUED_VERSION",
+    "VALUED_VERSION_SQL",
+    "QuoteClientRef",
     "QuoteCreate",
     "QuoteDecision",
     "QuoteDetail",
@@ -59,9 +90,11 @@ __all__ = [
     "QuoteVersionCreate",
     "add_version",
     "add_version_from_views",
+    "agencies_with_overdue_quotes",
     "apply_markup",
     "create_quote",
     "decide_quote",
+    "expire_overdue_quotes",
     "get_quote",
     "list_quotes",
     "load_quote",
@@ -70,6 +103,7 @@ __all__ = [
 ]
 
 QuoteStatus = Literal["draft", "sent", "viewed", "accepted", "declined", "expired"]
+QUOTE_STATUSES: tuple[QuoteStatus, ...] = get_args(QuoteStatus)
 DecisionStatus = Literal["accepted", "declined", "expired"]
 MarkupKind = Literal["percent", "fixed"]
 
@@ -159,9 +193,10 @@ class QuoteDecision(BaseModel):
     status: DecisionStatus
 
 
-class ClientRef(BaseModel):
+class QuoteClientRef(BaseModel):
     id: UUID
     name: str
+    kind: Literal["individual", "company"]
 
 
 class EnquiryRef(BaseModel):
@@ -177,12 +212,16 @@ class QuoteSummary(BaseModel):
     number: str
     status: str
     currency: str
-    client: ClientRef | None
+    client: QuoteClientRef | None
     enquiry: EnquiryRef
     current_version: int
     sent_version: int | None
+    # The cheapest option of the current version.
     min_sell_minor: int | None
+    # What the quote is worth, in `currency` (see the module docstring); None without versions.
+    value_minor: int | None
     sent_at: datetime | None
+    decided_at: datetime | None
     created_at: datetime
 
 
@@ -200,13 +239,16 @@ class QuoteDetail(QuoteSummary):
     markup_value: int
     share_expires_at: datetime | None
     first_viewed_at: datetime | None
-    decided_at: datetime | None
+    # The option the client accepted on the public page (index into the sent version's options).
+    accepted_option: int | None
     versions: list[QuoteVersionOut]
 
 
 class QuoteList(BaseModel):
     items: list[QuoteSummary]
     total: int
+    # Quotes per status under the list's client and enquiry filters (not its status or page).
+    counts: dict[QuoteStatus, int]
 
 
 class QuoteSent(BaseModel):
@@ -245,7 +287,7 @@ async def _log(
     summary: str,
     actor_user_id: UUID | None,
     at: datetime,
-    data: dict[str, str | int] | None = None,
+    data: Mapping[str, ActivityValue] | None = None,
 ) -> None:
     await record_activity(
         db,
@@ -458,8 +500,9 @@ async def add_version(
 async def send_quote(
     db: AsyncSession, quote: Quote, actor_user_id: UUID | None, *, now: datetime | None = None
 ) -> str:
-    """Send the current version: issue a fresh share token (replacing any earlier one) valid for
-    SHARE_TTL, record it as `sent_version` and mark the quote sent; the enquiry moves to
+    """Send the current version: issue a fresh share token (replacing any earlier one, which
+    stops working) valid for SHARE_TTL, record it as `sent_version` and mark the quote sent (a
+    re-send after expiry clears `decided_at`); the enquiry moves to
     `quoted`. Returns the token: it is never stored or shown again. Lock the quote first; the
     caller commits."""
     _check_revisable(quote)
@@ -473,8 +516,11 @@ async def send_quote(
     quote.status = "sent"
     quote.sent_version = quote.current_version
     quote.sent_at = quote.sent_at or at
+    quote.decided_at = None  # a re-send after expiry reopens the decision
     quote.updated_at = at
     await db.flush()
+    # The public page finds the agency through this lookup; the previous token stops resolving.
+    await db.execute(_SET_SHARE_TOKEN, {"quote_id": quote.id, "token_hash": quote.share_token_hash})
     await _log(
         db,
         quote,
@@ -488,6 +534,52 @@ async def send_quote(
         db, enquiry, frozenset({"new", "quoting"}), "quoted", actor_user_id, at
     )
     return token
+
+
+_SET_SHARE_TOKEN = text("SELECT set_quote_share_token(:quote_id, :token_hash)")
+
+
+async def expire_overdue_quotes(
+    db: AsyncSession, agency_id: UUID, *, now: datetime | None = None
+) -> int:
+    """Mark the agency's sent and viewed quotes whose share link is past its expiry as expired,
+    logging `quote.expired` for each; returns how many. The session must be bound to the agency;
+    the caller commits."""
+    at = now or utcnow()
+    rows = (
+        await db.execute(
+            update(Quote)
+            .where(
+                Quote.agency_id == agency_id,
+                Quote.status.in_(_DECIDABLE),
+                Quote.share_expires_at < at,
+            )
+            .values(status="expired", updated_at=at)
+            .returning(Quote.id, Quote.number)
+        )
+    ).all()
+    for quote_id, number in rows:
+        await record_activity(
+            db,
+            agency_id=agency_id,
+            kind="quote.expired",
+            summary=f"{format_number('quote', number)} expired",
+            entity_type="quote",
+            entity_id=quote_id,
+            occurred_at=at,
+        )
+    if rows:
+        await db.flush()
+        mark_agency_changed(db, agency_id)  # bumped after the request (readcache)
+    return len(rows)
+
+
+async def agencies_with_overdue_quotes(db: AsyncSession, *, now: datetime) -> list[UUID]:
+    """Ids of the agencies with at least one quote `expire_overdue_quotes` would expire at `now`,
+    in one statement (the `agencies_with_overdue_quotes` SQL function, migration 0009). It binds
+    each agency in turn under the usual RLS and restores the session's own binding."""
+    rows = await db.scalars(text("SELECT agencies_with_overdue_quotes(:now)"), {"now": now})
+    return list(rows.all())
 
 
 _DECISION_KIND: dict[str, ActivityKind] = {
@@ -518,11 +610,15 @@ async def decide_quote(
     actor_user_id: UUID | None,
     *,
     now: datetime | None = None,
+    accepted_option: int | None = None,
+    data: Mapping[str, ActivityValue] | None = None,
 ) -> None:
     """Record the client's decision on a sent quote (accepted, declined or expired).
 
     Accepting wins the enquiry; declining loses it ("Quote declined") unless another of its
-    quotes is still open. Lock the quote first; the caller commits.
+    quotes is still open. `accepted_option` (the option the client chose, when known) is kept on
+    an accepted quote; `data` goes on the activity event. Lock the quote first; the caller
+    commits.
     """
     if to_status not in _DECISION_KIND:
         raise InvalidQuote(f"A quote can't be marked {to_status}.")
@@ -535,10 +631,17 @@ async def decide_quote(
     at = now or utcnow()
     quote.status = to_status
     quote.decided_at = at
+    quote.accepted_option = accepted_option if to_status == "accepted" else None
     quote.updated_at = at
     await db.flush()
     await _log(
-        db, quote, _DECISION_KIND[to_status], f"{_label(quote)} {to_status}", actor_user_id, at
+        db,
+        quote,
+        _DECISION_KIND[to_status],
+        f"{_label(quote)} {to_status}",
+        actor_user_id,
+        at,
+        data,
     )
     if to_status == "accepted":
         await _move_enquiry_if_allowed(db, enquiry, frozenset({"quoted"}), "won", actor_user_id, at)
@@ -556,27 +659,72 @@ async def decide_quote(
 
 # --- reads ------------------------------------------------------------------------------------
 
-_MIN_SELL = QuoteVersion.totals["min_sell_minor"].as_integer()
+# The version a quote is valued at: the one the client was sent, else the current one. Join
+# QuoteVersion on it for QUOTE_VALUE.
+VALUED_VERSION = func.coalesce(Quote.sent_version, Quote.current_version)
+_CHEAPEST = cast(QuoteVersion.totals["min_sell_minor"].astext, BigInteger)
+_ACCEPTED_OPTION_SELL = cast(
+    func.jsonb_extract_path_text(
+        QuoteVersion.options, cast(Quote.accepted_option, String), "sell", "amount_minor"
+    ),
+    BigInteger,
+)
+# The quote's value (module docstring), over Quote joined to QuoteVersion at VALUED_VERSION.
+QUOTE_VALUE: ColumnElement[int | None] = case(
+    (Quote.status == "accepted", func.coalesce(_ACCEPTED_OPTION_SELL, _CHEAPEST)),
+    else_=_CHEAPEST,
+)
+# The same rule for text() SQL, over `quotes q` joined as VALUED_VERSION_SQL (`v`).
+VALUED_VERSION_SQL = (
+    "quote_versions v ON v.quote_id = q.id "
+    "AND v.version = COALESCE(q.sent_version, q.current_version)"
+)
+QUOTE_VALUE_SQL = """CASE WHEN q.status = 'accepted'
+        THEN COALESCE((v.options -> q.accepted_option::int -> 'sell' ->> 'amount_minor')::bigint,
+                      (v.totals ->> 'min_sell_minor')::bigint)
+        ELSE (v.totals ->> 'min_sell_minor')::bigint END"""
+# Each enquiry's accepted quote that counts as won, as text() SQL (`:agency` bound): the one
+# decided last, so an enquiry is never won twice.
+LATEST_ACCEPTED_SQL = """
+    SELECT DISTINCT ON (enquiry_id) *
+    FROM quotes
+    WHERE agency_id = :agency AND status = 'accepted'
+    ORDER BY enquiry_id, decided_at DESC NULLS LAST, number DESC
+"""
+
+_current = aliased(QuoteVersion)
+_MIN_SELL = _current.totals["min_sell_minor"].as_integer()
+
+_DetailRow = Select[Quote, Enquiry, str | None, str | None, int | None, int | None]
 
 
-def _with_details() -> Select[Quote, Enquiry, str | None, int | None]:
+def _with_details() -> _DetailRow:
     return (
-        select(Quote, Enquiry, Client.name, _MIN_SELL)
+        select(Quote, Enquiry, Client.name, Client.kind, _MIN_SELL, QUOTE_VALUE)
         .join(Enquiry, Enquiry.id == Quote.enquiry_id)
         .outerjoin(Client, Client.id == Quote.client_id)
         .outerjoin(
+            _current,
+            (_current.quote_id == Quote.id) & (_current.version == Quote.current_version),
+        )
+        .outerjoin(
             QuoteVersion,
-            (QuoteVersion.quote_id == Quote.id) & (QuoteVersion.version == Quote.current_version),
+            (QuoteVersion.quote_id == Quote.id) & (QuoteVersion.version == VALUED_VERSION),
         )
     )
 
 
 def _summary_fields(
-    quote: Quote, enquiry: Enquiry, client_name: str | None, min_sell: int | None
+    quote: Quote,
+    enquiry: Enquiry,
+    client_name: str | None,
+    client_kind: str | None,
+    min_sell: int | None,
+    value: int | None,
 ) -> dict[str, Any]:
     client = (
-        ClientRef(id=quote.client_id, name=client_name)
-        if quote.client_id is not None and client_name is not None
+        QuoteClientRef(id=quote.client_id, name=client_name, kind=client_kind)
+        if quote.client_id is not None and client_name is not None and client_kind is not None
         else None
     )
     return {
@@ -595,7 +743,9 @@ def _summary_fields(
         "current_version": quote.current_version,
         "sent_version": quote.sent_version,
         "min_sell_minor": min_sell,
+        "value_minor": value,
         "sent_at": quote.sent_at,
+        "decided_at": quote.decided_at,
         "created_at": quote.created_at,
     }
 
@@ -616,31 +766,50 @@ def _filters(
 async def list_quotes(
     db: AsyncSession,
     *,
+    agency_id: UUID,
+    now: datetime | None = None,
     status_: str | None = None,
     client_id: UUID | None = None,
     enquiry_id: UUID | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> QuoteList:
-    """Newest first; `min_sell_minor` is the cheapest option of the current version."""
-    conditions = _filters(status_, client_id, enquiry_id)
-    total = await db.scalar(select(func.count()).select_from(Quote).where(*conditions))
+    """Newest first, each with its value and the cheapest option of its current version, plus
+    the count per status (under the client and enquiry filters only, so status tabs can show
+    them all). Overdue quotes are expired first, so the caller commits."""
+    await expire_overdue_quotes(db, agency_id, now=now)
+    by_status: dict[str, int] = {
+        found: count
+        for found, count in await db.execute(
+            select(Quote.status, func.count())
+            .where(*_filters(None, client_id, enquiry_id))
+            .group_by(Quote.status)
+        )
+    }
+    counts = {status: by_status.get(status, 0) for status in QUOTE_STATUSES}
+    total = by_status.get(status_, 0) if status_ else sum(counts.values())
     rows = (
         await db.execute(
             _with_details()
-            .where(*conditions)
+            .where(*_filters(status_, client_id, enquiry_id))
             .order_by(Quote.created_at.desc(), Quote.number.desc())
             .limit(limit)
             .offset(offset)
         )
     ).all()
     return QuoteList(
-        items=[QuoteSummary(**_summary_fields(*row)) for row in rows], total=total or 0
+        items=[QuoteSummary(**_summary_fields(*row)) for row in rows],
+        total=total,
+        counts=counts,
     )
 
 
-async def get_quote(db: AsyncSession, quote_id: UUID) -> QuoteDetail:
-    """The quote with all its versions, newest first. Never includes the share token hash."""
+async def get_quote(
+    db: AsyncSession, quote_id: UUID, *, agency_id: UUID, now: datetime | None = None
+) -> QuoteDetail:
+    """The quote with all its versions, newest first. Never includes the share token hash.
+    Overdue quotes are expired first, so the caller commits."""
+    await expire_overdue_quotes(db, agency_id, now=now)
     row = (await db.execute(_with_details().where(Quote.id == quote_id))).one_or_none()
     if row is None:
         raise QuoteNotFound
@@ -658,7 +827,7 @@ async def get_quote(db: AsyncSession, quote_id: UUID) -> QuoteDetail:
         markup_value=quote.markup_value,
         share_expires_at=quote.share_expires_at,
         first_viewed_at=quote.first_viewed_at,
-        decided_at=quote.decided_at,
+        accepted_option=quote.accepted_option,
         versions=[
             QuoteVersionOut(
                 version=v.version,
@@ -675,7 +844,9 @@ async def get_quote(db: AsyncSession, quote_id: UUID) -> QuoteDetail:
 
 # --- router -----------------------------------------------------------------------------------
 
-quotes_router = APIRouter(prefix="/api/v1/quotes", tags=["quotes"])
+quotes_router = APIRouter(
+    prefix="/api/v1/quotes", tags=["quotes"], dependencies=[InvalidatesAgencyCache]
+)
 
 
 @quotes_router.get("")
@@ -688,14 +859,23 @@ async def list_quotes_route(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> QuoteList:
-    return await list_quotes(
+    listed = await list_quotes(
         db,
+        agency_id=current.agency_id,
         status_=status_,
         client_id=client_id,
         enquiry_id=enquiry_id,
         limit=limit,
         offset=offset,
     )
+    await db.commit()  # keep any lazy expiry
+    return listed
+
+
+async def _detail(db: AsyncSession, quote_id: UUID, agency_id: UUID) -> QuoteDetail:
+    detail = await get_quote(db, quote_id, agency_id=agency_id)
+    await db.commit()  # keep any lazy expiry
+    return detail
 
 
 @quotes_router.post("", status_code=status.HTTP_201_CREATED)
@@ -705,13 +885,13 @@ async def create_quote_route(body: QuoteCreate, current: AuthedUser, db: DbSessi
     except WorkspaceError as exc:
         raise http_error(exc) from None
     await db.commit()
-    return await get_quote(db, quote.id)
+    return await _detail(db, quote.id, current.agency_id)
 
 
 @quotes_router.get("/{quote_id}")
 async def get_quote_route(quote_id: UUID, current: AuthedUser, db: DbSession) -> QuoteDetail:
     try:
-        return await get_quote(db, quote_id)
+        return await _detail(db, quote_id, current.agency_id)
     except WorkspaceError as exc:
         raise http_error(exc) from None
 
@@ -730,7 +910,7 @@ async def add_version_route(
     except WorkspaceError as exc:
         raise http_error(exc) from None
     await db.commit()
-    return await get_quote(db, quote_id)
+    return await _detail(db, quote_id, current.agency_id)
 
 
 @quotes_router.post("/{quote_id}/send")
@@ -750,10 +930,13 @@ async def send_quote_route(quote_id: UUID, current: AuthedUser, db: DbSession) -
 async def decide_quote_route(
     quote_id: UUID, body: QuoteDecision, current: AuthedUser, db: DbSession
 ) -> QuoteDetail:
+    # An overdue quote is expired before anyone can mark it accepted or declined.
+    await expire_overdue_quotes(db, current.agency_id)
+    await db.commit()
     try:
         quote = await load_quote(db, quote_id, for_update=True)
         await decide_quote(db, quote, body.status, current.id)
     except WorkspaceError as exc:
         raise http_error(exc) from None
     await db.commit()
-    return await get_quote(db, quote_id)
+    return await _detail(db, quote_id, current.agency_id)

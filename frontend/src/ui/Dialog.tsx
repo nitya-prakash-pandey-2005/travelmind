@@ -114,19 +114,19 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
       onPointerDown={onPointerDown}
       onClick={onClick}
       className={cn(
-        "tm-edge bg-glass-strong p-0 text-ink backdrop-blur-xl",
+        "border border-line-strong bg-surface p-0 text-ink",
         "open:flex open:flex-col",
         PLACEMENT[placement],
         className,
       )}
     >
-      <header className="flex items-start justify-between gap-3 border-b border-line px-5 pb-3 pt-4">
+      <header className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
         <div className="min-w-0">
-          <h2 id={titleId} className="font-display text-lg tracking-wide text-ink">
+          <h2 id={titleId} className="text-base font-semibold leading-6 text-ink">
             {title}
           </h2>
           {description && (
-            <p id={descriptionId} className="mt-0.5 text-sm text-dim">
+            <p id={descriptionId} className="mt-0.5 text-[13px] leading-5 text-dim">
               {description}
             </p>
           )}
@@ -136,9 +136,9 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
           type="button"
           aria-label="Close"
           onClick={onClose}
-          className="-mr-1.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-dim transition-colors duration-200 ease-tm hover:bg-hover hover:text-ink"
+          className="-mr-1.5 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink"
         >
-          <X size={18} aria-hidden="true" />
+          <X size={16} aria-hidden="true" />
         </button>
       </header>
       <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -147,7 +147,7 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
       {footer && (
         <footer
           ref={footerRef}
-          className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-3"
+          className="flex flex-wrap items-center justify-end gap-2 rounded-b-[inherit] border-t border-line bg-surface-2/50 px-5 py-3"
         >
           {footer}
         </footer>

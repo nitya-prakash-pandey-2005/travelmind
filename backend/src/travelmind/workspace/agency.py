@@ -13,6 +13,7 @@ from travelmind.db import DbSession
 from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser, CurrentUser, require_role
 from travelmind.identity.schemas import AgencyName, CountryCode
+from travelmind.readcache import InvalidatesAgencyCache
 from travelmind.workspace.activity import record_activity
 from travelmind.workspace.regions import default_currency_for, default_timezone_for
 
@@ -69,7 +70,9 @@ class AgencyUpdate(BaseModel):
     brand_color: BrandColor | None = None
 
 
-agency_router = APIRouter(prefix="/api/v1/agency", tags=["agency"])
+agency_router = APIRouter(
+    prefix="/api/v1/agency", tags=["agency"], dependencies=[InvalidatesAgencyCache]
+)
 ManagerUser = Annotated[CurrentUser, Depends(require_role("owner", "admin"))]
 
 

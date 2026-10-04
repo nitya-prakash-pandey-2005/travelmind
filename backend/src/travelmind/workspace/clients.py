@@ -1,8 +1,20 @@
-"""Agency clients (travellers and companies): schemas, service and /api/v1/clients router."""
+"""Agency clients (travellers and companies): schemas, service and /api/v1/clients router.
 
-from datetime import datetime
+Each client read carries its stats in the agency currency:
+- `won_value_minor`: the value of the client's won quotes in that currency, by the one rule in
+  `quotes` (the accepted option of the version the client was sent, else that version's cheapest
+  option when the agent marked it accepted), counting at most one accepted quote per enquiry:
+  the one decided last.
+- `last_trip` / `next_trip`: among the client's enquiries that aren't lost and have an origin,
+  destination and departure date, the one with the latest departure on or before today (the
+  agency's local date), and the one with the earliest departure after today. Same-day ties go to
+  the most recently created enquiry, then the highest number.
+"""
+
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query, Response, status
 from pydantic import (
@@ -13,13 +25,29 @@ from pydantic import (
     StringConstraints,
     model_validator,
 )
-from sqlalchemy import ColumnElement, Select, exists, func, or_, select
+from sqlalchemy import (
+    BigInteger,
+    ColumnElement,
+    Row,
+    Select,
+    cast,
+    exists,
+    func,
+    or_,
+    select,
+    true,
+)
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
+from sqlalchemy.sql.selectable import LateralFromClause
 
 from travelmind.db import DbSession, utcnow
+from travelmind.identity import service as identity_service
 from travelmind.identity.deps import AuthedUser
 from travelmind.identity.schemas import NormalizedEmail, PersonName
+from travelmind.readcache import InvalidatesAgencyCache
 from travelmind.workspace._common import (
     SINGLE_LINE,
     Notes,
@@ -32,14 +60,17 @@ from travelmind.workspace._common import (
     strip_lower,
 )
 from travelmind.workspace.activity import record_activity
-from travelmind.workspace.models import Client, Enquiry, Quote
+from travelmind.workspace.models import Client, Enquiry, Quote, QuoteVersion
+from travelmind.workspace.quotes import QUOTE_VALUE, VALUED_VERSION
 
 __all__ = [
     "ClientCreate",
     "ClientError",
     "ClientList",
+    "ClientNotFound",
     "ClientOut",
     "ClientUpdate",
+    "TripRef",
     "clients_router",
     "create_client",
     "delete_client",
@@ -107,6 +138,12 @@ class ClientUpdate(BaseModel):
         return self
 
 
+class TripRef(BaseModel):
+    origin: str
+    destination: str
+    depart_date: date
+
+
 class ClientOut(BaseModel):
     id: UUID
     kind: str
@@ -121,11 +158,21 @@ class ClientOut(BaseModel):
     updated_at: datetime
     enquiry_count: int
     quote_count: int
+    won_value_minor: int
+    currency: str
+    last_trip: TripRef | None
+    next_trip: TripRef | None
 
 
-_CLIENT_FIELDS = tuple(
-    f for f in ClientOut.model_fields if f not in ("enquiry_count", "quote_count")
+_STAT_FIELDS = (
+    "enquiry_count",
+    "quote_count",
+    "won_value_minor",
+    "currency",
+    "last_trip",
+    "next_trip",
 )
+_CLIENT_FIELDS = tuple(f for f in ClientOut.model_fields if f not in _STAT_FIELDS)
 
 
 class ClientList(BaseModel):
@@ -172,13 +219,112 @@ _QUOTE_COUNT = (
 )
 
 
-def _with_counts() -> Select[Client, int, int]:
-    return select(Client, _ENQUIRY_COUNT, _QUOTE_COUNT)
+def _won_value(currency: str) -> ColumnElement[int]:
+    """The client's won value in `currency`: for each of its enquiries, the accepted quote
+    decided last (never two per enquiry), valued as everywhere else (QUOTE_VALUE)."""
+    accepted = aliased(Quote)
+    won = (
+        select(accepted.id)
+        .where(accepted.client_id == Client.id, accepted.status == "accepted")
+        .ext(distinct_on(accepted.enquiry_id))
+        .order_by(
+            accepted.enquiry_id, accepted.decided_at.desc().nulls_last(), accepted.number.desc()
+        )
+        .correlate(Client)
+    )
+    return (
+        select(cast(func.coalesce(func.sum(QUOTE_VALUE), 0), BigInteger))
+        .select_from(Quote)
+        .join(
+            QuoteVersion,
+            (QuoteVersion.quote_id == Quote.id) & (QuoteVersion.version == VALUED_VERSION),
+        )
+        .where(Quote.id.in_(won), Quote.currency == currency)
+        .correlate(Client)
+        .scalar_subquery()
+    )
 
 
-def _to_out(client: Client, enquiry_count: int, quote_count: int) -> ClientOut:
+def _trip(today: date, *, upcoming: bool) -> LateralFromClause:
+    """The client's last trip (departing on or before `today`) or next one (after `today`)."""
+    when = Enquiry.depart_date > today if upcoming else Enquiry.depart_date <= today
+    return (
+        select(Enquiry.origin, Enquiry.destination, Enquiry.depart_date)
+        .where(
+            Enquiry.client_id == Client.id,
+            Enquiry.status != "lost",
+            Enquiry.origin.is_not(None),
+            Enquiry.destination.is_not(None),
+            Enquiry.depart_date.is_not(None),
+            when,
+        )
+        .order_by(
+            Enquiry.depart_date.asc() if upcoming else Enquiry.depart_date.desc(),
+            Enquiry.created_at.desc(),
+            Enquiry.number.desc(),
+        )
+        .limit(1)
+        .correlate(Client)
+        .lateral("next_trip" if upcoming else "last_trip")
+    )
+
+
+_TripCols = tuple[str | None, str | None, date | None]
+_StatsRow = Row[
+    Client, int, int, int, str | None, str | None, date | None, str | None, str | None, date | None
+]
+
+
+def _with_stats(
+    currency: str, today: date
+) -> Select[
+    Client, int, int, int, str | None, str | None, date | None, str | None, str | None, date | None
+]:
+    """Each client with its stats, in one statement (lateral trip lookups, no per-row queries)."""
+    last, upcoming = _trip(today, upcoming=False), _trip(today, upcoming=True)
+    return (
+        select(
+            Client,
+            _ENQUIRY_COUNT,
+            _QUOTE_COUNT,
+            _won_value(currency),
+            last.c.origin,
+            last.c.destination,
+            last.c.depart_date,
+            upcoming.c.origin,
+            upcoming.c.destination,
+            upcoming.c.depart_date,
+        )
+        .outerjoin_from(Client, last, true())
+        .outerjoin_from(Client, upcoming, true())
+    )
+
+
+def _trip_ref(cols: _TripCols) -> TripRef | None:
+    origin, destination, depart_date = cols
+    if origin is None or destination is None or depart_date is None:
+        return None
+    return TripRef(origin=origin, destination=destination, depart_date=depart_date)
+
+
+def _to_out(row: _StatsRow, currency: str) -> ClientOut:
+    client, enquiry_count, quote_count, won_value = row[:4]
     fields = {name: getattr(client, name) for name in _CLIENT_FIELDS}
-    return ClientOut(**fields, enquiry_count=enquiry_count, quote_count=quote_count)
+    return ClientOut(
+        **fields,
+        enquiry_count=enquiry_count,
+        quote_count=quote_count,
+        won_value_minor=int(won_value),
+        currency=currency,
+        last_trip=_trip_ref((row[4], row[5], row[6])),
+        next_trip=_trip_ref((row[7], row[8], row[9])),
+    )
+
+
+async def _stats_context(db: AsyncSession, agency_id: UUID) -> tuple[str, date]:
+    """The agency's currency and today's date in its time zone."""
+    agency = await identity_service.get_agency_settings(db, agency_id)
+    return agency.currency, utcnow().astimezone(ZoneInfo(agency.timezone)).date()
 
 
 async def _check_email_free(db: AsyncSession, email: str | None, *, exclude: UUID | None) -> None:
@@ -200,12 +346,11 @@ async def _flush_client(db: AsyncSession, client: Client) -> None:
         raise DuplicateEmail from exc
 
 
-async def _load(db: AsyncSession, client_id: UUID) -> tuple[Client, int, int]:
-    row = (await db.execute(_with_counts().where(Client.id == client_id))).one_or_none()
-    if row is None:
+async def _load(db: AsyncSession, client_id: UUID) -> Client:
+    client = await db.scalar(select(Client).where(Client.id == client_id))
+    if client is None:
         raise ClientNotFound
-    client, enquiry_count, quote_count = row
-    return client, enquiry_count, quote_count
+    return client
 
 
 async def create_client(
@@ -261,6 +406,7 @@ def _filters(q: str | None, tag: str | None) -> list[ColumnElement[bool]]:
 async def list_clients(
     db: AsyncSession,
     *,
+    agency_id: UUID,
     q: str | None = None,
     tag: str | None = None,
     limit: int = 50,
@@ -268,27 +414,32 @@ async def list_clients(
 ) -> ClientList:
     conditions = _filters(q.strip() if q else None, tag.strip().lower() if tag else None)
     total = await db.scalar(select(func.count()).select_from(Client).where(*conditions))
+    currency, today = await _stats_context(db, agency_id)
     rows = await db.execute(
-        _with_counts()
+        _with_stats(currency, today)
         .where(*conditions)
         .order_by(Client.updated_at.desc(), Client.id)
         .limit(limit)
         .offset(offset)
     )
-    return ClientList(
-        items=[_to_out(client, enquiries, quotes) for client, enquiries, quotes in rows],
-        total=total or 0,
-    )
+    return ClientList(items=[_to_out(row, currency) for row in rows], total=total or 0)
 
 
-async def get_client(db: AsyncSession, client_id: UUID) -> ClientOut:
-    return _to_out(*await _load(db, client_id))
+async def get_client(db: AsyncSession, client_id: UUID, *, agency_id: UUID) -> ClientOut:
+    """The client with its counts and stats (see the module docstring), or ClientNotFound."""
+    currency, today = await _stats_context(db, agency_id)
+    row = (
+        await db.execute(_with_stats(currency, today).where(Client.id == client_id))
+    ).one_or_none()
+    if row is None:
+        raise ClientNotFound
+    return _to_out(row, currency)
 
 
 async def update_client(
     db: AsyncSession, client_id: UUID, actor_user_id: UUID | None, data: ClientUpdate
 ) -> ClientOut:
-    client, _, _ = await _load(db, client_id)
+    client = await _load(db, client_id)
     changes: dict[str, Any] = {
         field: value
         for field, value in data.model_dump(exclude_unset=True).items()
@@ -313,11 +464,11 @@ async def update_client(
             entity_id=client.id,
             data={"fields": sorted(changes)},
         )
-    return await get_client(db, client_id)
+    return await get_client(db, client_id, agency_id=client.agency_id)
 
 
 async def delete_client(db: AsyncSession, client_id: UUID, actor_user_id: UUID | None) -> None:
-    client, _, _ = await _load(db, client_id)
+    client = await _load(db, client_id)
     if await db.scalar(select(exists().where(Quote.client_id == client.id))):
         raise ClientHasQuotes
     await db.delete(client)
@@ -333,7 +484,9 @@ async def delete_client(db: AsyncSession, client_id: UUID, actor_user_id: UUID |
     await db.flush()
 
 
-clients_router = APIRouter(prefix="/api/v1/clients", tags=["clients"])
+clients_router = APIRouter(
+    prefix="/api/v1/clients", tags=["clients"], dependencies=[InvalidatesAgencyCache]
+)
 
 
 @clients_router.get("")
@@ -345,7 +498,9 @@ async def list_clients_route(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ClientList:
-    return await list_clients(db, q=q, tag=tag, limit=limit, offset=offset)
+    return await list_clients(
+        db, agency_id=current.agency_id, q=q, tag=tag, limit=limit, offset=offset
+    )
 
 
 @clients_router.post("", status_code=status.HTTP_201_CREATED)
@@ -355,13 +510,13 @@ async def create_client_route(body: ClientCreate, current: AuthedUser, db: DbSes
     except WorkspaceError as exc:
         raise http_error(exc) from None
     await db.commit()
-    return await get_client(db, client.id)
+    return await get_client(db, client.id, agency_id=current.agency_id)
 
 
 @clients_router.get("/{client_id}")
 async def get_client_route(client_id: UUID, current: AuthedUser, db: DbSession) -> ClientOut:
     try:
-        return await get_client(db, client_id)
+        return await get_client(db, client_id, agency_id=current.agency_id)
     except WorkspaceError as exc:
         raise http_error(exc) from None
 

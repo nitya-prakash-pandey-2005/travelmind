@@ -29,13 +29,13 @@ export function DemoBanner() {
     <div
       role="region"
       aria-label="Demo workspace"
-      className="flex shrink-0 items-center gap-3 border-b border-warn/40 bg-warn/10 px-4 py-1.5 lg:px-6"
+      className="flex min-h-10 shrink-0 items-center gap-3 border-b border-warn/25 bg-warn/[0.07] px-4 py-1.5 lg:px-6"
     >
-      <FlaskConical size={15} aria-hidden="true" className="shrink-0 text-warn" />
-      <p className="min-w-0 flex-1 text-xs leading-snug text-ink sm:text-sm">
+      <FlaskConical size={14} aria-hidden="true" className="shrink-0 text-warn" />
+      <p className="min-w-0 flex-1 text-xs leading-4 text-ink sm:text-[13px] sm:leading-5">
         {demoNotice(daysUntil(agency.data?.demo_expires_at))}
       </p>
-      <Button variant="ghost" size="sm" loading={exit.isPending} onClick={() => exit.mutate()} className="shrink-0">
+      <Button variant="secondary" size="sm" loading={exit.isPending} onClick={() => exit.mutate()} className="shrink-0">
         Exit demo
       </Button>
     </div>

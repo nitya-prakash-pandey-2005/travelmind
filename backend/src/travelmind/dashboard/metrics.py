@@ -3,7 +3,9 @@
 Every function takes `now`, so tests can pin time. A range of N days is the agency's last N
 local calendar days, today included (`AT TIME ZONE :tz`); the previous period is the N days
 before it. Daily series come from `generate_series`, so days without rows are 0. Money is summed
-only for quotes in the agency currency, from the version the client was sent (`sent_version`).
+only for quotes in the agency currency, each valued by the one rule in `workspace.quotes`
+(QUOTE_VALUE_SQL), and won value counts at most one accepted quote per enquiry (the one decided
+last).
 
 All SQL is `text()` with bound parameters; the fragments composed below are fixed strings.
 RLS already scopes every table to the session's agency: the `agency_id = :agency` filters are a
@@ -61,6 +63,12 @@ from travelmind.identity.service import AgencySettings
 from travelmind.offers.registry import supplier_statuses
 from travelmind.workspace._common import escape_like
 from travelmind.workspace.counters import format_number
+from travelmind.workspace.quotes import (
+    LATEST_ACCEPTED_SQL,
+    QUOTE_VALUE_SQL,
+    VALUED_VERSION_SQL,
+    expire_overdue_quotes,
+)
 
 __all__ = [
     "ACTIVITY_MAX",
@@ -228,18 +236,22 @@ _SENT_VERSION = """
     FROM quotes q
     JOIN quote_versions v ON v.quote_id = q.id AND v.version = q.sent_version
 """
-_MIN_SELL = "(v.totals ->> 'min_sell_minor')::bigint"
+# Quotes valued by the one rule (a sent quote's valued version is its sent version).
+_VALUED = f"""
+    FROM quotes q
+    JOIN {VALUED_VERSION_SQL}
+"""
 _PIPELINE = text(
     f"""
-    SELECT COALESCE(sum({_MIN_SELL}), 0) AS value
-    {_SENT_VERSION}
+    SELECT COALESCE(sum({QUOTE_VALUE_SQL}), 0) AS value
+    {_VALUED}
     WHERE q.agency_id = :agency AND q.status IN ('sent', 'viewed') AND q.currency = :currency
     """
 )
 _PIPELINE_DAILY = _series_sql(
     f"""
-    SELECT (q.sent_at AT TIME ZONE :tz)::date AS day, sum({_MIN_SELL}) AS value
-    {_SENT_VERSION}
+    SELECT (q.sent_at AT TIME ZONE :tz)::date AS day, sum({QUOTE_VALUE_SQL}) AS value
+    {_VALUED}
     WHERE q.agency_id = :agency AND q.currency = :currency
       AND q.sent_at >= :start AND q.sent_at < :end
     GROUP BY 1
@@ -362,6 +374,7 @@ def _kpi(
 async def summary(
     db: AsyncSession, agency: AgencySettings, range_: Range, *, now: datetime
 ) -> SummaryOut:
+    """The KPI cards. The caller expires overdue quotes first (it caches the result)."""
     params = _range_params(agency, window(now, agency.timezone, RANGE_DAYS[range_]))
 
     async def one(query: TextClause) -> Any:
@@ -418,21 +431,23 @@ async def summary(
 
 # --- pipeline ---------------------------------------------------------------------------------
 
-# Each enquiry's most recent quote, valued at the version the client has (else its latest draft).
+# One quote per enquiry, valued by the one rule: its accepted quote decided last, else its most
+# recent quote.
 _PIPELINE_STAGES = text(
     f"""
     WITH latest AS (
-        SELECT DISTINCT ON (enquiry_id)
-               id, enquiry_id, currency, COALESCE(sent_version, current_version) AS version
-        FROM quotes
-        WHERE agency_id = :agency
-        ORDER BY enquiry_id, created_at DESC, number DESC
+        SELECT DISTINCT ON (q.enquiry_id) q.enquiry_id, q.currency, {QUOTE_VALUE_SQL} AS value
+        FROM quotes q
+        LEFT JOIN {VALUED_VERSION_SQL}
+        WHERE q.agency_id = :agency
+        ORDER BY q.enquiry_id,
+                 CASE WHEN q.status = 'accepted' THEN q.decided_at END DESC NULLS LAST,
+                 q.status = 'accepted' DESC, q.created_at DESC, q.number DESC
     )
     SELECT e.status, count(*) AS count,
-           COALESCE(sum({_MIN_SELL}) FILTER (WHERE l.currency = :currency), 0) AS value
+           COALESCE(sum(l.value) FILTER (WHERE l.currency = :currency), 0) AS value
     FROM enquiries e
     LEFT JOIN latest l ON l.enquiry_id = e.id
-    LEFT JOIN quote_versions v ON v.quote_id = l.id AND v.version = l.version
     WHERE e.agency_id = :agency
     GROUP BY e.status
     """
@@ -440,6 +455,7 @@ _PIPELINE_STAGES = text(
 
 
 async def pipeline(db: AsyncSession, agency: AgencySettings) -> PipelineOut:
+    """Enquiries by stage. The caller expires overdue quotes first (it caches the result)."""
     rows = await db.execute(_PIPELINE_STAGES, {"agency": agency.id, "currency": agency.currency})
     found = {row.status: (row.count, int(row.value)) for row in rows}
     return PipelineOut(
@@ -673,7 +689,7 @@ async def supplier_health(
 # --- team -------------------------------------------------------------------------------------
 
 # Per user in the range: enquiries they hold (assignee, else creator) created, quotes they
-# created and sent, and the value of those quotes accepted.
+# created and sent, and the value of their won quotes (one per enquiry, the one decided last).
 _TEAM = text(
     f"""
     SELECT user_id, sum(enquiries) AS enquiries, sum(quotes_sent) AS quotes_sent,
@@ -688,10 +704,10 @@ _TEAM = text(
         FROM quotes
         WHERE agency_id = :agency AND sent_at >= :start AND sent_at < :end
         UNION ALL
-        SELECT q.created_by, 0, 0, {_MIN_SELL}
-        {_SENT_VERSION}
-        WHERE q.agency_id = :agency AND q.status = 'accepted' AND q.currency = :currency
-          AND q.decided_at >= :start AND q.decided_at < :end
+        SELECT q.created_by, 0, 0, {QUOTE_VALUE_SQL}
+        FROM ({LATEST_ACCEPTED_SQL}) AS q
+        JOIN {VALUED_VERSION_SQL}
+        WHERE q.currency = :currency AND q.decided_at >= :start AND q.decided_at < :end
     ) AS t
     WHERE user_id IS NOT NULL
     GROUP BY user_id
@@ -776,12 +792,12 @@ _ONBOARDING = text(
 OnboardingKey = Literal["profile", "supplier", "team", "fare_scan", "client", "quote"]
 # (key, label, link). No link: the step's screen isn't built yet, so it is listed as coming.
 _STEPS: list[tuple[OnboardingKey, str, str | None]] = [
-    ("profile", "Add your agency details", None),
+    ("profile", "Add your agency details", "/app/settings"),
     ("supplier", "Connect a live supplier", "/app/suppliers"),
     ("team", "Invite a teammate", "/app/team"),
     ("fare_scan", "Run your first fare scan", "/app/fares"),
     ("client", "Add a client", "/app"),
-    ("quote", "Send your first quote", None),
+    ("quote", "Send your first quote", "/app/quotes"),
 ]
 
 
@@ -839,8 +855,9 @@ _UNREAD = text(
 
 
 async def notifications(
-    db: AsyncSession, agency: AgencySettings, user_id: UUID
+    db: AsyncSession, agency: AgencySettings, user_id: UUID, *, now: datetime | None = None
 ) -> NotificationsOut:
+    await expire_overdue_quotes(db, agency.id, now=now)  # the caller commits
     seen = await identity_service.get_notifications_read_until(db, user_id)
     params = {
         "agency": agency.id,
@@ -914,9 +931,13 @@ def _numbered(query: str, prefix: str) -> int | None:
     return None
 
 
-async def global_search(db: AsyncSession, agency: AgencySettings, query: str) -> SearchOut:
+async def global_search(
+    db: AsyncSession, agency: AgencySettings, query: str, *, now: datetime | None = None
+) -> SearchOut:
     """Clients (name, email, company), enquiries (route codes, client name) and quotes (client
-    name), up to 5 each. 'E-0002' / 'Q-0001' match that number exactly and nothing else."""
+    name), up to 5 each. 'E-0002' / 'Q-0001' match that number exactly and nothing else.
+    Overdue quotes are expired first, so hits show their current status; the caller commits."""
+    await expire_overdue_quotes(db, agency.id, now=now)
     base = {"agency": agency.id, "limit": SEARCH_LIMIT}
     enquiry_number, quote_number = _numbered(query, "E"), _numbered(query, "Q")
 

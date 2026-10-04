@@ -1,7 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import { Fragment } from "react";
 import { formatNumber } from "../../lib/format";
-import { ChartDataTable, ChartEmpty, GRID, chartColor, formatValue, isValue, useChartAnimation } from "./shared";
+import { ChartDataTable, ChartEmpty, formatValue, isValue, useChartAnimation, useChartColors } from "./shared";
 
 export type FunnelStage = { label: string; count: number; value?: number };
 
@@ -26,6 +26,7 @@ export function Funnel({
   valueFormat: (value: number) => string;
 }) {
   const animate = useChartAnimation();
+  const colors = useChartColors();
   if (stages.length === 0) return <ChartEmpty label={label} height={120} />;
 
   const top = Math.max(0, ...stages.map((s) => s.count).filter(isValue));
@@ -61,7 +62,7 @@ export function Funnel({
               <div className={GRID_COLS}>
                 <span className="truncate text-sm text-ink">{stage.label}</span>
                 <svg aria-hidden="true" width="100%" height={BAR} className="block overflow-visible">
-                  <rect width="100%" height={BAR} rx={4} fill={GRID} />
+                  <rect width="100%" height={BAR} rx={4} fill={colors.grid} />
                   {width > 0 && (
                     <rect
                       data-stage-bar=""
@@ -69,7 +70,7 @@ export function Funnel({
                       width={`${width}%`}
                       height={BAR}
                       rx={4}
-                      fill={chartColor(1)}
+                      fill={colors.series(1)}
                       fillOpacity={0.85}
                       data-animate={animate ? "" : undefined}
                       className={animate ? "tm-grow-x" : undefined}

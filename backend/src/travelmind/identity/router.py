@@ -28,6 +28,7 @@ from travelmind.identity.schemas import (
     TeamMember,
     UserOut,
 )
+from travelmind.readcache import InvalidatesAgencyCache
 
 auth_router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -139,7 +140,9 @@ async def me_route(current: AuthedUser, db: DbSession) -> MeResponse:
     return me_response(user, agency)
 
 
-invitations_router = APIRouter(prefix="/api/v1/invitations", tags=["team"])
+invitations_router = APIRouter(
+    prefix="/api/v1/invitations", tags=["team"], dependencies=[InvalidatesAgencyCache]
+)
 team_router = APIRouter(prefix="/api/v1/team", tags=["team"])
 ManagerUser = Annotated[CurrentUser, Depends(require_role("owner", "admin"))]
 

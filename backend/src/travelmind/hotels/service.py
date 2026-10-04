@@ -17,6 +17,7 @@ from travelmind.db import utcnow
 from travelmind.hotels.liteapi import LiteApiHotelSupplier
 from travelmind.hotels.models import HotelOffer, HotelSearchRequest
 from travelmind.hotels.schemas import HotelOfferView, HotelSearchResponse
+from travelmind.metrics import supplier_call
 from travelmind.offers.display import display_money, rank_by_display
 from travelmind.offers.fx import display_currency_for, get_fx_rates
 from travelmind.offers.money import Money
@@ -31,6 +32,7 @@ from travelmind.offers.service import (
 )
 from travelmind.offers.suppliers.base import SupplierError
 from travelmind.reference.service import get_airport_index
+from travelmind.resilience import CircuitOpen, guard_for
 from travelmind.workspace.activity import record_activity
 
 log = structlog.get_logger()
@@ -61,17 +63,21 @@ async def _search_supplier(
         )
 
     try:
-        offers = await asyncio.wait_for(
-            supplier.search(
-                request,
-                latitude=latitude,
-                longitude=longitude,
-                currency=currency,
-                guest_nationality=guest_nationality,
-                timeout_s=timeout_s,
-            ),
-            timeout=timeout_s,
-        )
+        async with guard_for(SUPPLIER).call():  # outside the deadline: a timeout is a failure
+            with supplier_call(SUPPLIER):
+                offers = await asyncio.wait_for(
+                    supplier.search(
+                        request,
+                        latitude=latitude,
+                        longitude=longitude,
+                        currency=currency,
+                        guest_nationality=guest_nationality,
+                        timeout_s=timeout_s,
+                    ),
+                    timeout=timeout_s,
+                )
+    except CircuitOpen as exc:  # LiteAPI was skipped, not called
+        return [], status("error", message=exc.message)
     except TimeoutError:
         return [], status("timeout", message=f"No answer within {timeout_s:g}s.")
     except SupplierError as exc:

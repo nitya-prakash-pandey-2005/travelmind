@@ -138,12 +138,12 @@ async def test_demo_fills_every_panel_in_working_hours(client, airports):
 
 
 async def test_a_failed_demo_is_removed(client, app, airports, monkeypatch):
-    from travelmind.demo import router
+    from travelmind.demo import service
 
     async def unavailable(*args, **kwargs):
         raise DemoUnavailable("The demo needs airport reference data. Please try again later.")
 
-    monkeypatch.setattr(router, "seed_demo_workspace", unavailable)
+    monkeypatch.setattr(service, "seed_demo_workspace", unavailable)
     r = await client.post("/api/v1/demo")
     assert r.status_code == 503 and "airport reference data" in r.json()["detail"]
     assert "tm_session" not in r.cookies
@@ -151,7 +151,7 @@ async def test_a_failed_demo_is_removed(client, app, airports, monkeypatch):
     async def broken(*args, **kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(router, "seed_demo_workspace", broken)
+    monkeypatch.setattr(service, "seed_demo_workspace", broken)
     async with make_client(app, raise_app_exceptions=False) as c:
         assert (await c.post("/api/v1/demo")).status_code == 500
 
@@ -218,3 +218,67 @@ async def test_lifespan_runs_cleanup_outside_tests_and_stops_it(monkeypatch):
     async with main.lifespan(app):
         await asyncio.wait_for(started.wait(), 1)
     assert stopped.is_set()
+
+
+async def _seed_demo_backlog(expired: int) -> None:
+    await run_as_owner(
+        "INSERT INTO agencies (id, name, is_demo, demo_expires_at) "
+        "SELECT gen_random_uuid(), 'Expired demo ' || n, true, now() - n * interval '1 minute' "
+        "FROM generate_series(1, :expired) AS n",
+        {"expired": expired},
+    )
+    await run_as_owner(
+        "INSERT INTO agencies (id, name, is_demo, demo_expires_at) VALUES "
+        "(gen_random_uuid(), 'Live demo', true, now() + interval '1 day'), "
+        "(gen_random_uuid(), 'Real Co', false, NULL)"
+    )
+
+
+async def _agency_names() -> list[str]:
+    from travelmind.db import get_sessionmaker
+
+    async with get_sessionmaker()() as db:
+        rows = await db.execute(text("SELECT name FROM agencies ORDER BY name"))
+        return list(rows.scalars().all())
+
+
+async def test_cleanup_drains_a_large_backlog_in_committed_batches(monkeypatch):
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from travelmind.identity import service as identity_service
+
+    await _seed_demo_backlog(45)
+    batches: list[int] = []
+    commits = 0
+    delete_batch = identity_service.delete_expired_demo_agencies
+    commit = AsyncSession.commit
+
+    async def counting_delete(db, *, now, limit):
+        ids = await delete_batch(db, now=now, limit=limit)
+        batches.append(len(ids))
+        return ids
+
+    async def counting_commit(self):
+        nonlocal commits
+        commits += 1
+        await commit(self)
+
+    monkeypatch.setattr(cleanup, "CLEANUP_BATCH_SIZE", 10)
+    monkeypatch.setattr(identity_service, "delete_expired_demo_agencies", counting_delete)
+    monkeypatch.setattr(AsyncSession, "commit", counting_commit)
+
+    assert await cleanup.run_demo_cleanup() == 45
+    assert batches == [10, 10, 10, 10, 5]
+    assert commits == 5
+    assert await _agency_names() == ["Live demo", "Real Co"]
+
+
+async def test_cleanup_caps_batches_per_run_and_the_next_run_continues(monkeypatch):
+    await _seed_demo_backlog(25)
+    monkeypatch.setattr(cleanup, "CLEANUP_BATCH_SIZE", 10)
+    monkeypatch.setattr(cleanup, "CLEANUP_MAX_BATCHES", 2)
+
+    assert await cleanup.run_demo_cleanup() == 20
+    assert len(await _agency_names()) == 7
+    assert await cleanup.run_demo_cleanup() == 5
+    assert await _agency_names() == ["Live demo", "Real Co"]

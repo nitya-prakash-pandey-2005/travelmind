@@ -1,16 +1,8 @@
 import { useElementSize } from "../../lib/useElementSize";
 import { areaPath, linearScale, pathFromPoints, type Point } from "./scale";
-import { ChartDataTable, SURFACE, useChartAnimation } from "./shared";
+import { ChartDataTable, useChartAnimation, useChartColors, type ChartTone } from "./shared";
 
-export type SparklineTone = "primary" | "ok" | "warn" | "danger" | "ai";
-
-const TONE: Record<SparklineTone, string> = {
-  primary: "var(--color-primary)",
-  ok: "var(--color-ok)",
-  warn: "var(--color-warn)",
-  danger: "var(--color-danger)",
-  ai: "var(--color-ai)",
-};
+export type SparklineTone = ChartTone;
 
 // Room for the last-point dot (r 2.5) and its 1.5px surface ring.
 const PAD = 4;
@@ -30,11 +22,12 @@ export function Sparkline({
 }) {
   const [ref, size] = useElementSize<HTMLDivElement>();
   const animate = useChartAnimation();
+  const colors = useChartColors();
   const finite = values.filter(Number.isFinite);
   if (finite.length === 0) return null;
 
   const width = size.width || FALLBACK;
-  const color = TONE[tone];
+  const color = colors.tone[tone];
   const x = linearScale([0, finite.length - 1], [PAD, width - PAD]);
   const y = linearScale([Math.min(...finite), Math.max(...finite)], [height - PAD, PAD]);
   const points: Point[] = finite.map((v, i) => [x(i), y(v)]);
@@ -58,7 +51,7 @@ export function Sparkline({
             data-animate={animate ? "" : undefined}
             className={animate ? "tm-draw" : undefined}
           />
-          <circle data-last-dot="" cx={x(finite.length - 1)} cy={y(last)} r={2.5} fill={color} stroke={SURFACE} strokeWidth={1.5} />
+          <circle data-last-dot="" cx={x(finite.length - 1)} cy={y(last)} r={2.5} fill={color} stroke={colors.surface} strokeWidth={1.5} />
         </svg>
       </div>
       <ChartDataTable

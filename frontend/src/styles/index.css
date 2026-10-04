@@ -3,19 +3,33 @@
 
 @layer base {
   html {
-    color-scheme: dark;
+    /* color-scheme comes with each theme block (themes.generated.css). */
     /* Reserve the scrollbar's space so locking scroll under an open dialog doesn't shift the layout. */
     scrollbar-gutter: stable;
-  }
-  html[data-theme="daylight"] {
-    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
   body {
-    @apply bg-void font-sans text-ink antialiased;
+    @apply bg-bg font-sans text-ink antialiased;
     min-height: 100dvh;
+    /* Body is 14/20; cv11 = single-storey a, ss01 = open digits. */
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+  /* Titles use the theme's display face (Fraunces in Ember, the UI face elsewhere). */
+  h1 {
+    font-family: var(--tm-font-display);
   }
   :focus-visible {
-    outline: 2px solid var(--tm-primary);
+    outline: var(--tm-focus-width, 2px) solid var(--tm-primary);
     outline-offset: 2px;
   }
   /* In-page links on the landing page glide (reduced motion turns this off below). */
@@ -27,77 +41,82 @@
     overflow: hidden;
   }
   ::selection {
-    background: color-mix(in oklab, var(--tm-primary) 35%, transparent);
+    background: color-mix(in oklab, var(--tm-primary) 30%, transparent);
+  }
+  /* Inter's stylistic sets don't apply to the data face. */
+  code,
+  kbd,
+  samp,
+  pre,
+  .font-mono {
+    font-feature-settings: normal;
+  }
+  ::placeholder {
+    color: var(--tm-text-3);
+    opacity: 1;
+  }
+  /* Quiet, thin scrollbars that follow the theme. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--tm-border-strong) transparent;
   }
 }
 
-/* Blueprint grid behind the deck. */
+/* ---- Type roles (design direction v2 scale) ---------------------------------------------------- */
+
+/* 11/16 medium, uppercase, tracked: section labels in the sidebar, table headers, KPI labels. */
+@utility tm-micro {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tm-text-3);
+}
+
+/* 22/28 semibold page title. */
+@utility tm-page-title {
+  font-family: var(--tm-font-display);
+  font-size: 1.375rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Numbers that line up in columns. */
+@utility tm-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Surfaces --------------------------------------------------------------------------------- */
+
+/* Faint dot grid (1px dots, 24px pitch). Landing hero and the Command Center header only. */
+@utility tm-dot-grid {
+  background-image: radial-gradient(circle at 1px 1px, var(--tm-dot) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* v1 name for the backdrop texture; now the same quiet dot grid. */
 @utility tm-grid {
-  background-image:
-    linear-gradient(var(--tm-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--tm-grid-line) 1px, transparent 1px);
-  background-size: 40px 40px;
+  background-image: radial-gradient(circle at 1px 1px, var(--tm-dot) 1px, transparent 0);
+  background-size: 24px 24px;
 }
 
-/* Soft instrument glow for primary actions. */
-@utility tm-glow {
-  box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--tm-primary) 45%, transparent),
-    0 0 22px -6px color-mix(in oklab, var(--tm-primary) 60%, transparent);
-}
-
-/* CRT scanlines over the whole deck (dark theme only). */
-@utility tm-scanlines {
-  &::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 50;
-    background: repeating-linear-gradient(
-      to bottom,
-      rgb(255 255 255 / 0.022) 0 1px,
-      transparent 1px 3px
-    );
-  }
-}
-
-@utility tm-blink {
-  animation: tm-blink 1s steps(2, start) infinite;
-}
-
-@utility tm-spin-slow {
-  animation: tm-spin 24s linear infinite;
-}
-
-/* Layered glass surface: translucent panel, soft elevation, inner glow while something inside has keyboard focus. */
+/* v1 "glass": now a plain opaque surface (no blur, no glow). */
 @utility tm-glass {
-  background-color: var(--tm-glass);
-  backdrop-filter: blur(14px) saturate(140%);
-  box-shadow: var(--tm-shadow);
-  transition: box-shadow 200ms var(--ease-tm);
-  &:has(:focus-visible) {
-    box-shadow: var(--tm-shadow), var(--tm-glow);
-  }
+  background-color: var(--tm-surface);
 }
 
-/* 1px gradient hairline (primary -> line) drawn on a masked ::before; the element must be positioned. */
+/* v1 gradient hairline: now a plain 1px border drawn on ::before (the element must be positioned). */
 @utility tm-edge {
   &::before {
     content: "";
     position: absolute;
     inset: 0;
-    padding: 1px;
+    border: 1px solid var(--tm-border);
     border-radius: inherit;
-    background: var(--tm-edge);
     pointer-events: none;
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#000 0 0) content-box exclude,
-      linear-gradient(#000 0 0);
   }
 }
 
@@ -107,69 +126,75 @@
   border-color: color-mix(in oklab, currentColor var(--tm-tint-edge), transparent);
 }
 
-/* Agency brand mark: a tile tinted with the agency's brand colour. Text on it stays theme ink. */
+/* Agency workspace mark: a small tile in the agency's brand colour. Text on it stays theme ink. */
 @utility tm-brand-mark {
-  background-image: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--tm-brand) 32%, transparent),
-    color-mix(in oklab, var(--tm-brand) 10%, transparent)
-  );
-  border: 1px solid color-mix(in oklab, var(--tm-brand) 60%, transparent);
-  box-shadow: 0 0 18px -8px color-mix(in oklab, var(--tm-brand) 80%, transparent);
+  background-color: color-mix(in oklab, var(--tm-brand) 18%, var(--tm-surface));
+  border: 1px solid color-mix(in oklab, var(--tm-brand) 45%, transparent);
 }
 
-/* Loading placeholder with a slow light sweep. */
+/* Loading placeholder: a static block (no looping shimmer). */
 @utility tm-shimmer {
   background-color: var(--tm-skeleton);
-  background-image: linear-gradient(90deg, transparent 0%, var(--tm-shimmer) 50%, transparent 100%);
-  background-size: 200% 100%;
-  background-repeat: no-repeat;
-  animation: tm-shimmer 1.6s ease-in-out infinite;
 }
 
-/* Entrance: fade + rise. Stagger with style={{ "--tm-enter-index": n }}. */
+/* ---- Motion (120-180 ms ease-out; everything off under reduced motion) --------------------------- */
+
+/* Live indicator: the one looping animation, a slow 2 s pulse ring on status dots. */
+@utility tm-live {
+  position: relative;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: currentColor;
+    animation: tm-pulse 2s ease-out infinite;
+  }
+}
+
+/* Entrance: short fade + rise. Stagger with style={{ "--tm-enter-index": n }}. */
 @utility tm-enter {
-  animation: tm-enter 220ms var(--ease-tm) both;
-  animation-delay: calc(var(--tm-enter-index, 0) * 45ms);
+  animation: tm-enter 160ms var(--ease-tm) both;
+  animation-delay: calc(var(--tm-enter-index, 0) * 30ms);
 }
 
 /* Chart entrance. Lines draw in (the path needs pathLength="1"), areas fade, bars grow from their baseline. */
 @utility tm-draw {
   stroke-dasharray: 1;
-  animation: tm-draw 900ms var(--ease-tm) both;
+  animation: tm-draw 700ms var(--ease-tm) both;
 }
 @utility tm-fade-in {
-  animation: tm-fade 600ms var(--ease-tm) both;
+  animation: tm-fade 180ms var(--ease-tm) both;
 }
 @utility tm-grow-x {
   transform-box: fill-box;
   transform-origin: left center;
-  animation: tm-grow-x 600ms var(--ease-tm) both;
+  animation: tm-grow-x 480ms var(--ease-tm) both;
 }
 
-/* Landing hero entrance: a slower, taller rise for the one orchestrated moment on the page. */
+/* Landing hero entrance: the one orchestrated moment on the marketing page. */
 @utility tm-rise {
-  animation: tm-rise 700ms var(--ease-tm) both;
-  animation-delay: calc(var(--tm-enter-index, 0) * 90ms);
+  animation: tm-rise 480ms var(--ease-tm) both;
+  animation-delay: calc(var(--tm-enter-index, 0) * 70ms);
 }
 
-/* Blueprint grid that fades out towards the edges (the landing hero and closing band). */
+/* Texture that fades out towards the edges (the landing hero and closing band). */
 @utility tm-grid-fade {
-  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 100%);
 }
 
-/* Soft light behind the hero globe. */
-@utility tm-hero-glow {
-  background: radial-gradient(
-    closest-side,
-    color-mix(in oklab, var(--tm-primary) 22%, transparent),
-    color-mix(in oklab, var(--tm-ai) 8%, transparent) 60%,
-    transparent 100%
-  );
+/* Loading spinner (buttons, inline waits). Stops under reduced motion. */
+@utility tm-spin {
+  animation: tm-spin 800ms linear infinite;
 }
 
-/* Indeterminate progress: a light segment sweeping along the track; a steady partial fill under reduced motion. */
+/* Slow rotation for a loading illustration. */
+@utility tm-spin-slow {
+  animation: tm-spin 24s linear infinite;
+}
+
+/* Indeterminate progress: a segment sweeping along the track; a steady partial fill under reduced motion. */
 @utility tm-progress-sweep {
   width: 38%;
   animation: tm-sweep 1.4s var(--ease-tm) infinite;
@@ -178,37 +203,45 @@
 /* Modal surfaces (<dialog>): themed backdrop and a short pop-in. */
 @utility tm-modal {
   box-shadow: var(--tm-shadow-pop);
-  animation: tm-pop 200ms var(--ease-tm) both;
+  animation: tm-pop 160ms var(--ease-tm) both;
   &::backdrop {
     background: var(--tm-backdrop);
-    backdrop-filter: blur(3px);
-    animation: tm-fade 200ms var(--ease-tm) both;
+    animation: tm-fade 160ms var(--ease-tm) both;
   }
 }
 
 @utility tm-modal-side {
   box-shadow: var(--tm-shadow-pop);
-  animation: tm-slide 240ms var(--ease-tm) both;
+  animation: tm-slide 180ms var(--ease-tm) both;
   &::backdrop {
     background: var(--tm-backdrop);
-    backdrop-filter: blur(3px);
-    animation: tm-fade 200ms var(--ease-tm) both;
+    animation: tm-fade 160ms var(--ease-tm) both;
   }
 }
 
-@keyframes tm-shimmer {
-  from {
-    background-position: 150% 0;
+/* Popovers (menus, notifications, tooltips): opaque surface, hairline, the one elevation. */
+@utility tm-popover {
+  background-color: var(--tm-surface);
+  border: 1px solid var(--tm-border-strong);
+  box-shadow: var(--tm-shadow-pop);
+}
+
+@keyframes tm-pulse {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
   }
-  to {
-    background-position: -50% 0;
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
   }
 }
 
 @keyframes tm-rise {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(10px);
   }
 }
 
@@ -224,21 +257,21 @@
 @keyframes tm-enter {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
 }
 
 @keyframes tm-pop {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.985);
+    transform: translateY(4px) scale(0.99);
   }
 }
 
 @keyframes tm-slide {
   from {
-    opacity: 0.4;
-    transform: translateX(24px);
+    opacity: 0.6;
+    transform: translateX(16px);
   }
 }
 
@@ -260,23 +293,100 @@
   }
 }
 
-@keyframes tm-blink {
-  to {
-    visibility: hidden;
-  }
-}
-
 @keyframes tm-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
-[data-theme="daylight"] .tm-scanlines::after {
-  display: none;
+/* ---- Theme extras (v3 spec section 2). Unlayered on purpose: they restyle utilities per theme. ---------- */
+
+/* Orbital and Nebula: page titles carry a soft accent glow (--tm-glow is transparent in light and high contrast). */
+:root:is([data-theme="orbital"], [data-theme="nebula"]) :is(h1, .tm-page-title) {
+  text-shadow: 0 0 18px var(--tm-glow);
+}
+
+/* Ember: titles run saffron -> ink -> green, and the top bar picks up a faint warm tint. */
+:root[data-theme="ember"][data-contrast="normal"] :is(h1, .tm-page-title) {
+  /* Size the box to the text so the gradient spans the glyphs, not the empty width of the row. */
+  width: fit-content;
+  background-image: linear-gradient(90deg, var(--tm-primary), var(--tm-text) 55%, var(--tm-accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+:root[data-theme="ember"][data-contrast="normal"] .tm-topbar {
+  background-image: linear-gradient(90deg, color-mix(in oklab, var(--tm-primary) 7%, transparent), transparent 60%);
+}
+
+/*
+ * Terminal: static scanlines and a light vignette over everything, with a slow faint flicker. Their strengths are
+ * the --tm-scanline / --tm-vignette tokens; contrast.test.ts checks text darkened by both at the darkest corner.
+ */
+:root[data-theme="terminal"] body::before,
+:root[data-theme="terminal"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+}
+:root[data-theme="terminal"] body::before {
+  background: repeating-linear-gradient(to bottom, transparent 0 2px, var(--tm-scanline) 2px 3px);
+  animation: tm-flicker 5s steps(1, end) infinite;
+}
+:root[data-theme="terminal"] body::after {
+  background: radial-gradient(ellipse farthest-corner at 50% 50%, transparent 62%, var(--tm-vignette));
+}
+:root[data-theme="terminal"] :is(h1, .tm-page-title) {
+  text-shadow: 0 0 8px color-mix(in srgb, var(--tm-text) 35%, transparent);
+}
+
+/*
+ * Contrast theme and any high-contrast look: thicker focus ring, no decorative gradients, glow or blur.
+ * Decorative gradients opt in with .decor-gradient so they can be dropped here. Shadows are already zero through
+ * the tokens. Opacity-modifier fills (bg-danger/10, bg-surface-2/50 ...) stay: they are flat tints on opaque panels,
+ * nothing shows through them. See-through layers are handled: blurred sticky headers turn solid and the dialog
+ * backdrop token is near-opaque (88%).
+ */
+:root:is([data-theme="contrast"], [data-contrast="high"]) {
+  --tm-focus-width: 3px;
+}
+:root:is([data-theme="contrast"], [data-contrast="high"]) :is(h1, .tm-page-title) {
+  text-shadow: none;
+}
+:root:is([data-theme="contrast"], [data-contrast="high"]) .decor-gradient {
+  background: none !important;
+}
+:root:is([data-theme="contrast"], [data-contrast="high"]) [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: var(--tm-bg);
+}
+
+@keyframes tm-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  47% {
+    opacity: 0.85;
+  }
+  48% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.92;
+  }
+  51% {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  :root[data-theme="terminal"] body::before {
+    animation: none;
+  }
   *,
   *::before,
   *::after {
@@ -285,12 +395,8 @@
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  .tm-scanlines::after {
+  .tm-live::after {
     display: none;
-  }
-  .tm-shimmer {
-    animation: none !important;
-    background-image: none;
   }
   .tm-progress-sweep {
     animation: none !important;
@@ -302,6 +408,8 @@
   .tm-draw,
   .tm-fade-in,
   .tm-grow-x,
+  .tm-spin,
+  .tm-spin-slow,
   .tm-modal,
   .tm-modal-side,
   .tm-modal::backdrop,

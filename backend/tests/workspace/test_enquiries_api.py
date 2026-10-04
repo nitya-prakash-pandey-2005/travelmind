@@ -159,6 +159,44 @@ async def test_client_link_search_and_quote_count(client, app, airports):
         assert (await other.get(URL)).json()["total"] == 0
 
 
+def numbers(r) -> list[str]:
+    assert r.status_code == 200, r.text
+    return [x["number"] for x in r.json()["items"]]
+
+
+async def test_filter_by_client(client, app, airports):
+    await signup(client)
+    priya = (await client.post("/api/v1/clients", json={"name": "Priya Sharma"})).json()
+    ravi = (await client.post("/api/v1/clients", json={"name": "Ravi Kumar"})).json()
+    await new(client, client_id=priya["id"])  # E-0001
+    await new(client, client_id=ravi["id"])  # E-0002
+    e3 = (await new(client, client_id=priya["id"], destination="GOI")).json()  # E-0003
+    await new(client)  # E-0004, no client
+    r = await client.get(URL, params={"client_id": priya["id"]})
+    assert numbers(r) == ["E-0003", "E-0001"] and r.json()["total"] == 2
+    assert numbers(await client.get(URL, params={"client_id": ravi["id"]})) == ["E-0002"]
+    # Combined with the other filters.
+    await client.post(f"{URL}/{e3['id']}/status", json={"status": "quoting"})
+    both = {"client_id": priya["id"], "status": "quoting"}
+    r = await client.get(URL, params=both)
+    assert numbers(r) == ["E-0003"] and r.json()["total"] == 1
+    assert (
+        numbers(await client.get(URL, params={"client_id": ravi["id"], "status": "quoting"})) == []
+    )
+    assert numbers(await client.get(URL, params={"client_id": priya["id"], "q": "BOM"})) == [
+        "E-0001"
+    ]
+    unknown = "00000000-0000-0000-0000-000000000000"
+    assert numbers(await client.get(URL, params={"client_id": unknown})) == []
+    assert (await client.get(URL, params={"client_id": "not-a-uuid"})).status_code == 422
+    # Another agency's client id only ever finds that agency's own enquiries: none.
+    async with make_client(app) as other:
+        await signup(other, email="owner@betatrips.com", agency_name="Beta Trips")
+        await new(other)
+        r = await other.get(URL, params={"client_id": priya["id"]})
+        assert numbers(r) == [] and r.json()["total"] == 0
+
+
 async def test_service_helpers_back_date(client, airports):
     from travelmind.db import bind_tenant, get_sessionmaker
     from travelmind.workspace.enquiries import EnquiryCreate, create_enquiry, set_enquiry_status

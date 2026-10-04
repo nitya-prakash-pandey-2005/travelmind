@@ -89,6 +89,29 @@ async def clean_redis():
     yield
 
 
+@pytest.fixture(autouse=True)
+async def close_shared_clients():
+    """Each test runs on its own event loop; the process-wide Redis pool and httpx clients hold
+    sockets bound to the loop that opened them, so close them after every test. The read cache's
+    breaker and the supplier guards (breakers and concurrency limits) are process-wide too: they
+    start fresh in every test, whatever an earlier one did."""
+    from travelmind.readcache import reset_breaker
+    from travelmind.resilience import reset_guards
+
+    reset_breaker()
+    reset_guards()
+    yield
+    from travelmind.cache import close_redis
+    from travelmind.http import close_http_clients
+    from travelmind.jobs import close_job_queue
+
+    reset_breaker()
+    reset_guards()
+    await close_http_clients()
+    await close_job_queue()
+    await close_redis()
+
+
 @pytest.fixture
 async def airports():
     """Load the reference fixture airports (DEL, BOM, GOI, GOX, GOA, GRU, …) and a fresh index."""

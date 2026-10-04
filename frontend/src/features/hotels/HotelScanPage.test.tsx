@@ -5,6 +5,7 @@ import { isoDateFromNow } from "../../lib/dates";
 import { AIRPORTS, ME_OWNER } from "../../test/fixtures";
 import { mockApi, type MockHandler } from "../../test/mockApi";
 import { renderApp, withSession } from "../../test/renderApp";
+import { recordRecentRoute } from "../route/recentRoutes";
 import { routeStore } from "../route/routeStore";
 
 const SEARCH = "POST /api/v1/hotels/search";
@@ -230,4 +231,71 @@ test("the scan waits for a destination", async () => {
   routeStore.reset();
   open({});
   expect(await screen.findByRole("button", { name: "Scan hotels" })).toBeDisabled();
+});
+
+test("the results header summarises the stay and reports each supplier", async () => {
+  await scanAndList({ [SEARCH]: { status: 200, body: response({}) } });
+  const results = screen.getByRole("region", { name: /Results/ });
+  expect(results).toHaveTextContent("1 hotel");
+  expect(results).toHaveTextContent("Near BOM");
+  expect(results).toHaveTextContent("2 adults, 1 room");
+  expect(within(results).getByRole("list", { name: "Supplier status" })).toHaveTextContent("liteapi · OK");
+});
+
+test("before a search, destinations from recent fare searches come first, then labelled suggestions", async () => {
+  routeStore.reset();
+  recordRecentRoute(ME_OWNER.user.id, AIRPORTS.DEL, AIRPORTS.LHR);
+  recordRecentRoute(ME_OWNER.user.id, AIRPORTS.DEL, AIRPORTS.BOM);
+  const { user } = open({});
+  const recent = await screen.findByRole("list", { name: "From your recent fare searches" });
+  expect(within(recent).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+    "Near BOM, Mumbai",
+    "Near LHR, London",
+  ]);
+  const popular = screen.getByRole("list", { name: "Popular destinations" });
+  expect(screen.getByText("Suggested, not from your searches")).toBeInTheDocument();
+  expect(within(popular).getAllByRole("button")).toHaveLength(6);
+  expect(within(popular).queryByRole("button", { name: /^Near BOM/ })).not.toBeInTheDocument();
+
+  expect(screen.getByRole("button", { name: "Scan hotels" })).toBeDisabled();
+  await user.click(within(popular).getByRole("button", { name: "Near GOI, Goa" }));
+  expect(within(popular).getByRole("button", { name: "Near GOI, Goa" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Scan hotels" })).toBeEnabled();
+});
+
+test("check-out shows the number of nights", async () => {
+  open({});
+  const checkout = await screen.findByLabelText("Check-out");
+  expect(checkout).toHaveAccessibleDescription("2 nights");
+  fireEvent.change(checkout, { target: { value: isoDateFromNow(15) } });
+  expect(checkout).toHaveAccessibleDescription("1 night");
+});
+
+test("supplier status lists hotel suppliers and exchange rates only", async () => {
+  open({
+    "GET /api/v1/suppliers": {
+      status: 200,
+      body: [
+        { code: "sandbox", name: "Sandbox inventory", kind: "flights", connected: true, mode: "sandbox", detail: "Test flights." },
+        { code: "liteapi", name: "LiteAPI", kind: "hotels", connected: false, mode: null, detail: "Hotel rates worldwide. Set TM_LITEAPI_KEY." },
+        { code: "ecb", name: "ECB reference rates", kind: "exchange_rates", connected: true, mode: "live", detail: "Daily euro reference rates." },
+      ],
+    },
+    "GET /api/v1/dashboard/supplier-health": { status: 200, body: { suppliers: [] } },
+  });
+  const card = await screen.findByRole("region", { name: "Supplier status" });
+  const hotels = await within(card).findByRole("list", { name: "Hotel suppliers" });
+  expect(within(hotels).getAllByRole("listitem")).toHaveLength(1);
+  expect(hotels).toHaveTextContent("LiteAPI");
+  expect(hotels).toHaveTextContent("Not connected");
+  expect(within(card).getByRole("list", { name: "Data in results" })).toHaveTextContent("ECB reference rates");
+  expect(card).not.toHaveTextContent("Sandbox inventory");
+  expect(card).toHaveTextContent("No hotels supplier is connected, so a search returns no offers.");
+});
+
+test("the reading guide explains prices and cancellation terms", async () => {
+  open({});
+  const guide = await screen.findByRole("region", { name: "How to read results" });
+  expect(within(guide).getByRole("region", { name: "Prices" })).toHaveTextContent("The stay total divided by the number of nights.");
+  expect(within(guide).getByRole("region", { name: "Cancellation terms" })).toHaveTextContent("Cancellation terms on request");
 });

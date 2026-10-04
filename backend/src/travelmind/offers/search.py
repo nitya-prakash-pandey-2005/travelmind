@@ -6,10 +6,12 @@ from typing import Literal
 
 import structlog
 
+from travelmind.metrics import supplier_call
 from travelmind.offers.display import rank_by_display
 from travelmind.offers.models import FlightOffer, FlightSearchRequest
 from travelmind.offers.money import Money
 from travelmind.offers.suppliers.base import FlightSupplier, SupplierError
+from travelmind.resilience import CircuitOpen, guarded
 
 log = structlog.get_logger()
 
@@ -34,7 +36,11 @@ async def _run(
         return round((time.monotonic() - started) * 1000)
 
     try:
-        offers = await asyncio.wait_for(supplier.search(request), timeout=timeout_s)
+        async with guarded(supplier.code):  # outside the deadline: a timeout is a failure
+            with supplier_call(supplier.code):
+                offers = await asyncio.wait_for(supplier.search(request), timeout=timeout_s)
+    except CircuitOpen as exc:  # the supplier was skipped, not called
+        return [], SourceStatus(supplier.code, "error", 0, elapsed(), exc.message)
     except TimeoutError:
         return [], SourceStatus(
             supplier.code, "timeout", 0, elapsed(), f"No answer within {timeout_s:g}s."

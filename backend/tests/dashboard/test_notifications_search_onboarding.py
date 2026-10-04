@@ -7,12 +7,12 @@ from travelmind.config import Settings
 DAY = (datetime.now(UTC).date() + timedelta(days=30)).isoformat()
 # Agency details and sending quotes have no screen yet: listed as coming, without a link.
 ONBOARDING = [
-    ("profile", "Add your agency details", None, False),
+    ("profile", "Add your agency details", "/app/settings", True),
     ("supplier", "Connect a live supplier", "/app/suppliers", True),
     ("team", "Invite a teammate", "/app/team", True),
     ("fare_scan", "Run your first fare scan", "/app/fares", True),
     ("client", "Add a client", "/app", True),
-    ("quote", "Send your first quote", None, False),
+    ("quote", "Send your first quote", "/app/quotes", True),
 ]
 
 

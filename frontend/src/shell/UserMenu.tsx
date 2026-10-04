@@ -1,41 +1,66 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, LogOut, Moon, Palette, Sun } from "lucide-react";
+import { ChevronDown, LogOut, Palette, SwatchBook } from "lucide-react";
+import { useState } from "react";
 import type { Me } from "../api/types";
 import { useLogout } from "../auth/useLogout";
+import { themeMeta, useThemeChoice } from "../theme";
+import { ThemePanel } from "../theme/ThemeSwitcher";
 import { Avatar } from "../ui/Avatar";
+import { Button } from "../ui/Button";
+import { Dialog } from "../ui/Dialog";
 import { Menu, type MenuItem } from "../ui/Menu";
-import { useTheme } from "../ui/theme";
 
-/** Avatar button (named after the user) opening the account menu. Settings joins it with the settings pages. */
+/**
+ * Avatar button (named after the user) opening the account menu. Its theme entry opens the theme list in a dialog,
+ * which is how phones reach it (the top-bar switcher is hidden there).
+ */
 export function UserMenu({ me }: { me: Me }) {
   const navigate = useNavigate();
   const logout = useLogout();
-  const [theme, setTheme] = useTheme();
+  const [choice] = useThemeChoice();
+  const [themeOpen, setThemeOpen] = useState(false);
   const items: MenuItem[] = [
-    {
-      id: "theme",
-      label: theme === "dark" ? "Switch to daylight theme" : "Switch to dark theme",
-      icon: theme === "dark" ? Sun : Moon,
-      onSelect: () => setTheme(theme === "dark" ? "daylight" : "dark"),
-    },
+    { id: "theme", label: `Theme: ${themeMeta(choice.theme).name}`, icon: SwatchBook, onSelect: () => setThemeOpen(true) },
     { id: "design", label: "Design system", icon: Palette, onSelect: () => void navigate({ to: "/app/design" }) },
-    { id: "sign-out", label: "Sign out", icon: LogOut, onSelect: () => logout.mutate() },
+    { id: "sign-out", label: "Sign out", icon: LogOut, onSelect: () => logout.mutate(), separated: true },
   ];
   return (
-    <Menu
-      label={me.user.full_name}
-      items={items}
-      triggerClassName="h-9 gap-2 border-transparent pl-1 pr-1.5 hover:bg-hover md:pr-2"
-      trigger={
-        <>
-          <Avatar name={me.user.full_name} size="md" />
-          <span className="hidden min-w-0 flex-col items-start leading-tight md:flex">
-            <span className="max-w-36 truncate text-sm text-ink">{me.user.full_name}</span>
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-dim">{me.user.role}</span>
-          </span>
-          <ChevronDown size={14} aria-hidden="true" className="hidden text-dim md:block" />
-        </>
-      }
-    />
+    <>
+      <Menu
+        label={me.user.full_name}
+        items={items}
+        triggerVariant="ghost"
+        triggerClassName="pl-1 pr-1 lg:pr-1.5"
+        header={
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-[13px] font-medium text-ink">{me.user.full_name}</span>
+            <span className="truncate text-xs text-dim">{me.user.email}</span>
+          </div>
+        }
+        trigger={
+          <>
+            <Avatar name={me.user.full_name} size="sm" />
+            <span className="hidden min-w-0 flex-col items-start leading-none lg:flex">
+              <span className="max-w-36 truncate text-xs font-medium leading-4 text-ink">{me.user.full_name}</span>
+              <span className="text-[11px] capitalize leading-3.5 text-faint">{me.user.role}</span>
+            </span>
+            <ChevronDown size={14} aria-hidden="true" className="hidden text-faint lg:block" />
+          </>
+        }
+      />
+      <Dialog
+        open={themeOpen}
+        onClose={() => setThemeOpen(false)}
+        title="Theme"
+        description="Applies straight away and is remembered on this device."
+        footer={
+          <Button variant="secondary" size="sm" onClick={() => setThemeOpen(false)}>
+            Done
+          </Button>
+        }
+      >
+        <ThemePanel autoFocusList className="-mx-2 -my-2" />
+      </Dialog>
+    </>
   );
 }

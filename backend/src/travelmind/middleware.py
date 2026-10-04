@@ -3,9 +3,10 @@ import uuid
 
 import structlog
 from fastapi.exceptions import RequestValidationError
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -13,26 +14,58 @@ _VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 log = structlog.get_logger()
 
 
-def _request_id_from(request: Request) -> str:
-    supplied = request.headers.get(REQUEST_ID_HEADER, "")
+def _request_id_from(headers: Headers) -> str:
+    supplied = headers.get(REQUEST_ID_HEADER, "")
     return supplied if _VALID_REQUEST_ID.fullmatch(supplied) else uuid.uuid4().hex
 
 
-class RequestIdMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        request_id = _request_id_from(request)
-        request.state.request_id = request_id
+class RequestIdMiddleware:
+    """Tags each request with an id: `request.state.request_id`, the structlog context and the
+    `X-Request-ID` response header. A supplied id is kept when it is safe to echo.
+
+    Pure ASGI: `BaseHTTPMiddleware` would add a task and a body-stream copy to every request.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request_id = _request_id_from(Headers(scope=scope))
+        scope.setdefault("state", {})["request_id"] = request_id
+
+        async def send_with_request_id(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
+            await send(message)
+
         structlog.contextvars.bind_contextvars(request_id=request_id)
         try:
-            response = await call_next(request)
+            await self.app(scope, receive, send_with_request_id)
         finally:
             structlog.contextvars.clear_contextvars()
-        response.headers[REQUEST_ID_HEADER] = request_id
-        return response
+
+
+BUSY_MESSAGE = "The service is busy. Please try again in a moment."
+BUSY_RETRY_AFTER_SECONDS = 2
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     request_id = getattr(request.state, "request_id", None) or uuid.uuid4().hex
+    if isinstance(exc, PoolTimeoutError):
+        # Every pooled DB connection stayed busy for the whole pool timeout: overload, not a bug.
+        log.warning("db_pool_exhausted", request_id=request_id)
+        return JSONResponse(
+            {"detail": BUSY_MESSAGE, "trace_id": request_id},
+            status_code=503,
+            headers={
+                REQUEST_ID_HEADER: request_id,
+                "Retry-After": str(BUSY_RETRY_AFTER_SECONDS),
+            },
+        )
     log.error("unhandled_error", request_id=request_id, exc_info=exc)
     return JSONResponse(
         {
@@ -102,15 +135,21 @@ async def validation_exception_handler(request: Request, exc: Exception) -> JSON
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
-class OriginCheckMiddleware(BaseHTTPMiddleware):
-    """Blocks state-changing browser requests from origins we don't serve (CSRF defence)."""
+class OriginCheckMiddleware:
+    """Blocks state-changing browser requests from origins we don't serve (CSRF defence).
+
+    Pure ASGI, like RequestIdMiddleware: no per-request task or body-stream copy.
+    """
 
     def __init__(self, app: ASGIApp, allowed_origins: list[str]) -> None:
-        super().__init__(app)
+        self.app = app
         self._allowed = frozenset(allowed_origins)
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        origin = request.headers.get("origin")
-        if request.method in UNSAFE_METHODS and origin is not None and origin not in self._allowed:
-            return JSONResponse({"detail": "Cross-site request blocked."}, status_code=403)
-        return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["method"] in UNSAFE_METHODS:
+            origin = Headers(scope=scope).get("origin")
+            if origin is not None and origin not in self._allowed:
+                response = JSONResponse({"detail": "Cross-site request blocked."}, status_code=403)
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)

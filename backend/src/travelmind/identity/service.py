@@ -195,12 +195,19 @@ async def delete_demo_agency(db: AsyncSession, agency_id: UUID) -> None:
     await db.execute(delete(Agency).where(Agency.id == agency_id, Agency.is_demo.is_(True)))
 
 
-async def delete_expired_demo_agencies(db: AsyncSession, *, now: datetime) -> list[UUID]:
-    """Delete every demo agency that expired before `now`; foreign keys cascade to all its
-    tenant rows. Returns the deleted ids. The caller commits."""
+async def delete_expired_demo_agencies(
+    db: AsyncSession, *, now: datetime, limit: int
+) -> list[UUID]:
+    """Delete up to `limit` demo agencies that expired before `now` (oldest first); foreign keys
+    cascade to all their tenant rows. Returns the deleted ids. The caller commits."""
     result = await db.execute(
-        text("DELETE FROM agencies WHERE is_demo AND demo_expires_at < :now RETURNING id"),
-        {"now": now},
+        text(
+            "DELETE FROM agencies WHERE id IN ("
+            " SELECT id FROM agencies WHERE is_demo AND demo_expires_at < :now"
+            " ORDER BY demo_expires_at LIMIT :limit"
+            ") RETURNING id"
+        ),
+        {"now": now, "limit": limit},
     )
     return list(result.scalars().all())
 

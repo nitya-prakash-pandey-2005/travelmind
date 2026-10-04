@@ -1,153 +1,134 @@
-import { Component, Suspense, lazy, useId, useState, type CSSProperties, type ReactNode } from "react";
-import { hasWebGL } from "../globe/webgl";
+import { Check } from "lucide-react";
+import type { CSSProperties } from "react";
+import { cn } from "../../ui/cn";
+import {
+  FareInsightCard,
+  FareTable,
+  Illustration,
+  KpiStrip,
+  MiniPanel,
+  PipelineStages,
+  PreviewWindow,
+  ScreenHeader,
+  SupplierStatusCard,
+  TrendChart,
+} from "./ConsolePreview";
 import { CtaLink } from "./CtaLink";
-import { POPULAR_ROUTES } from "./popularRoutes";
-
-// three.js is large: the globe arrives in its own chunk after the words are on screen.
-const RouteGlobe = lazy(() => import("../globe/RouteGlobe"));
+import { CONTAINER } from "./layout";
 
 const enter = (index: number) => ({ "--tm-enter-index": index }) as CSSProperties;
 
-/** Drawn instead of the 3D globe while it loads, on devices without WebGL, and if the GPU gives up. */
-function OrbitalSketch() {
-  return (
-    <svg viewBox="0 0 200 200" aria-hidden="true" className="h-full w-full">
-      <circle cx="100" cy="100" r="62" fill="none" stroke="var(--tm-globe-land)" strokeWidth="1" />
-      <ellipse cx="100" cy="100" rx="62" ry="22" fill="none" stroke="var(--tm-line)" strokeWidth="0.8" />
-      <ellipse cx="100" cy="100" rx="24" ry="62" fill="none" stroke="var(--tm-line)" strokeWidth="0.8" />
-      <path d="M62 86 Q 96 40 138 78" fill="none" stroke="var(--tm-primary)" strokeWidth="1.4" strokeLinecap="round" />
-      <path d="M70 118 Q 110 84 146 112" fill="none" stroke="var(--tm-ai)" strokeWidth="1.2" strokeLinecap="round" />
-      <circle cx="62" cy="86" r="2.4" fill="var(--tm-primary)" />
-      <circle cx="138" cy="78" r="2.4" fill="var(--tm-primary)" />
-      <circle cx="70" cy="118" r="2.2" fill="var(--tm-ai)" />
-      <circle cx="146" cy="112" r="2.2" fill="var(--tm-ai)" />
-    </svg>
-  );
-}
+const HERO_TITLE = "Answer travel enquiries with fares you can explain";
+const HERO_LEAD =
+  "TravelMind searches your airline and hotel suppliers in one pass, shows whether each fare is good for its route, and turns each enquiry into a quote your client can open and accept. Every price says whether it is live, cached or sandbox.";
 
-/** A WebGL/GPU failure falls back to the sketch; the rest of the page never notices. */
-class GlobeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    return this.state.failed ? <OrbitalSketch /> : this.props.children;
-  }
-}
+const PROOF = ["Source label on every price", "Fare insight per traveller", "Each agency's data kept apart"];
 
-/** Instrument reticle drawn around the globe: range rings, bearing ticks and crosshair marks. */
-function Reticle() {
-  const ticks = Array.from({ length: 72 }, (_, index) => index * 5);
-  return (
-    <svg viewBox="0 0 400 400" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
-      <circle cx="200" cy="200" r="196" fill="none" stroke="var(--tm-line)" strokeWidth="1" />
-      <circle cx="200" cy="200" r="172" fill="none" stroke="var(--tm-line)" strokeWidth="1" strokeDasharray="2 7" />
-      <g>
-        {ticks.map((deg) => (
-          <line
-            key={deg}
-            x1="200"
-            y1={deg % 45 === 0 ? 4 : 10}
-            x2="200"
-            y2="18"
-            stroke={deg % 45 === 0 ? "var(--tm-primary)" : "var(--tm-line)"}
-            strokeWidth={deg % 45 === 0 ? 1.5 : 1}
-            transform={`rotate(${deg} 200 200)`}
-          />
-        ))}
-      </g>
-      {[0, 90, 180, 270].map((deg) => (
-        <path
-          key={deg}
-          d="M200 26 v14"
-          stroke="var(--tm-primary)"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          transform={`rotate(${deg} 200 200)`}
-        />
-      ))}
-    </svg>
-  );
-}
+/** Cyan light behind the product, fading to nothing well before the edges. */
+const GLOW: CSSProperties = {
+  background: "radial-gradient(closest-side, color-mix(in oklab, var(--tm-primary) 15%, transparent), transparent)",
+};
 
-function HeroGlobe() {
-  const [webgl] = useState(hasWebGL);
-  const captionId = useId();
+/** Floating cards sit above the window like popovers: the one elevation the design system allows. */
+const FLOAT = "absolute z-10 w-64 shadow-pop";
+
+/**
+ * The product as the hero's picture: a Command Center screen with the fare insight and supplier
+ * status cards lifted off it. Past 1240 px it grows into the right margin (capped), never off-screen.
+ */
+function HeroComposition() {
   return (
-    <figure className="tm-fade-in relative mx-auto flex w-full max-w-[34rem] flex-col items-center" style={{ animationDuration: "1200ms" }}>
-      <div className="relative aspect-square w-full">
-        <div aria-hidden="true" className="tm-hero-glow absolute inset-[4%] rounded-full" />
-        <Reticle />
-        {/* Decorative: the page scrolls (and swipes) straight past it. */}
-        <div className="pointer-events-none absolute inset-[7%]">
-          {webgl ? (
-            <GlobeBoundary>
-              <Suspense fallback={<OrbitalSketch />}>
-                <RouteGlobe arcs={POPULAR_ROUTES} showcase />
-              </Suspense>
-            </GlobeBoundary>
-          ) : (
-            <OrbitalSketch />
-          )}
+    <div className="tm-rise relative min-w-0 lg:mr-[calc(-1_*_clamp(0px,_(100vw_-_1240px)_/_2_-_24px,_280px))]" style={enter(2)}>
+      <div aria-hidden="true" className="decor-gradient pointer-events-none absolute -inset-x-16 -inset-y-20 -z-10" style={GLOW} />
+      <Illustration caption="Illustration with sample data: names, fares, latencies and figures are examples, not live results.">
+        <div className="relative sm:pb-8 sm:pl-6 xl:pr-8">
+          <PreviewWindow active="Command Center" sidebar="xl" className="shadow-frame">
+            <ScreenHeader
+              crumb="Operate / Command Center"
+              title="Command Center"
+              meta="Tuesday 30 Sep · last 30 days"
+              action="New enquiry"
+            />
+            <KpiStrip className="mt-3" />
+            <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+              <MiniPanel title="Pipeline" aside={<span className="font-mono text-[10px] text-faint">24 open</span>}>
+                <PipelineStages />
+              </MiniPanel>
+              <MiniPanel title="Enquiries" aside={<span className="font-mono text-[10px] text-ok">+18%</span>} className="max-sm:hidden">
+                <TrendChart className="h-[5.5rem]" />
+              </MiniPanel>
+            </div>
+            <div className="mt-3">
+              <MiniPanel
+                title="Fare search · DEL → DXB"
+                aside={<span className="font-mono text-[10px] text-faint">4 results from 3 sources</span>}
+              >
+                <FareTable variant="medium" rows={3} />
+              </MiniPanel>
+            </div>
+          </PreviewWindow>
+          <SupplierStatusCard className={cn(FLOAT, "right-0 top-[41%] max-xl:hidden")} />
+          <FareInsightCard className={cn(FLOAT, "bottom-0 left-0 max-sm:hidden")} />
         </div>
-      </div>
-      <figcaption className="mt-2 w-full text-center">
-        <p id={captionId} className="font-display text-sm tracking-wide text-ink">
-          Popular routes
-        </p>
-        <p className="mt-0.5 text-xs text-dim">For illustration. Your own enquiry routes appear in the Command Center.</p>
-        <ul aria-labelledby={captionId} className="mt-3 flex flex-wrap justify-center gap-1.5">
-          {POPULAR_ROUTES.map(({ from, to }) => (
-            <li
-              key={`${from.iata_code}-${to.iata_code}`}
-              className="rounded-sm border border-line bg-void/40 px-2 py-0.5 font-mono text-xs text-dim"
-            >
-              <span className="sr-only">
-                {from.city} to {to.city},{" "}
-              </span>
-              {from.iata_code} → {to.iata_code}
-            </li>
-          ))}
-        </ul>
-      </figcaption>
-    </figure>
+      </Illustration>
+    </div>
   );
 }
 
 export function Hero() {
   return (
-    <section aria-labelledby="landing-title" className="relative isolate overflow-hidden">
-      <div aria-hidden="true" className="tm-grid tm-grid-fade absolute inset-0 -z-10" />
-      <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-16 pt-12 sm:px-6 sm:pt-16 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:pb-24 lg:pt-20">
+    <section aria-labelledby="landing-title" className="relative isolate overflow-hidden border-b border-line">
+      <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-20" />
+      <div
+        className={cn(
+          CONTAINER,
+          "grid items-center gap-12 pb-16 pt-12 sm:pt-16 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)] lg:gap-12 lg:pb-20 lg:pt-16 xl:grid-cols-[minmax(0,29rem)_minmax(0,1fr)] xl:gap-14",
+        )}
+      >
         <div className="min-w-0">
-          <p className="tm-rise mb-6 inline-flex rounded-sm border border-line bg-void/40 px-2.5 py-1 text-xs text-dim" style={enter(0)}>
-            For travel agencies and corporate travel desks
+          <p
+            className="tm-rise mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-[13px] text-dim"
+            style={enter(0)}
+          >
+            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />
+            For travel management companies and agency teams
           </p>
           <h1
             id="landing-title"
-            className="tm-rise font-display text-[2.5rem] font-semibold leading-[1.02] tracking-[-0.01em] text-balance text-ink sm:text-6xl lg:text-[4.5rem]"
+            className="tm-rise max-w-[15ch] text-[2.5rem] font-semibold leading-[1.05] tracking-[-0.025em] text-ink sm:text-[3.25rem] xl:text-[3.5rem]"
             style={enter(1)}
           >
-            The mission control for modern travel agencies
+            {HERO_TITLE}
           </h1>
-          <p className="tm-rise mt-6 max-w-[34rem] text-lg leading-relaxed text-dim" style={enter(2)}>
-            Search live airline and hotel inventory, see what every fare really means, and track every enquiry from
-            first message to won trip — every price labelled with where it came from.
+          <p className="tm-rise mt-6 max-w-[34rem] text-base leading-7 text-dim sm:text-[17px]" style={enter(2)}>
+            {HERO_LEAD}
           </p>
-          <div className="tm-rise mt-9 flex flex-col gap-3 sm:flex-row sm:items-center" style={enter(3)}>
+          <div className="tm-rise mt-8 flex flex-col gap-3 sm:flex-row sm:items-center" style={enter(3)}>
             <CtaLink to="/demo" size="lg">
-              Explore live demo
+              Open demo workspace
             </CtaLink>
-            <CtaLink to="/signup" size="lg" variant="ghost">
-              Start free
+            <CtaLink to="/signup" size="lg" variant="secondary">
+              Create workspace
             </CtaLink>
           </div>
-          <p className="tm-rise mt-4 text-sm text-dim" style={enter(4)}>
-            The demo opens a private workspace with sample data. No sign-up needed.
+          <p className="tm-rise mt-4 text-[13px] text-faint" style={enter(4)}>
+            The demo is a private workspace with sample data. No sign-up; deleted after 7 days.
           </p>
+          <ul className="tm-rise mt-8 flex flex-col gap-2.5 border-t border-line pt-6" style={enter(5)}>
+            {PROOF.map((point) => (
+              <li key={point} className="flex items-center gap-2.5 text-sm text-dim">
+                <span
+                  aria-hidden="true"
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-line-strong text-primary"
+                >
+                  <Check size={12} strokeWidth={2.25} />
+                </span>
+                {point}
+              </li>
+            ))}
+          </ul>
         </div>
-        <HeroGlobe />
+        <HeroComposition />
       </div>
     </section>
   );

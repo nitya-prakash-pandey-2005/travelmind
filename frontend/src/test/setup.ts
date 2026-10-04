@@ -1,6 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import { initTheme } from "../theme";
+
+// The first render in a file pays for lazy imports; under a full parallel run that can pass the
+// 1 s default for findBy*/waitFor, so allow more time before an async lookup fails.
+configure({ asyncUtilTimeout: 4000 });
 
 // jsdom lacks these browser APIs; components use them for motion, layout and list scrolling.
 if (!window.matchMedia) {
@@ -60,5 +65,6 @@ afterEach(() => {
   } catch {
     // storage unavailable in this environment
   }
-  document.documentElement.removeAttribute("data-theme");
+  // Back to the default look (storage is empty now), so no test inherits another's theme.
+  initTheme();
 });

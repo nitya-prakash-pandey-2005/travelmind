@@ -5,12 +5,12 @@ import { formatNumber } from "../../lib/format";
 import { AreaTrend, type ChartColor, type TrendSeries } from "../../ui/charts";
 import { EmptyState } from "../../ui/EmptyState";
 import { Panel } from "../../ui/Panel";
-import { PanelSkeleton } from "../../ui/Skeleton";
 import { kpiSeries } from "./format";
 import { ErrorPanel } from "./PanelError";
+import { LoadingPanel } from "./panelParts";
 
 const TITLE = "Activity trend";
-const RANGE_LABEL: Record<DashboardRange, string> = { "7d": "Last 7 days", "30d": "Last 30 days", "90d": "Last 90 days" };
+const RANGE_LABEL: Record<DashboardRange, string> = { "7d": "last 7 days", "30d": "last 30 days", "90d": "last 90 days" };
 
 /** Daily counts on one axis: all three are counts of things the team did. Colours follow the series, fixed. */
 const SERIES: ReadonlyArray<{ key: KpiKey; label: string; color: ChartColor }> = [
@@ -21,14 +21,14 @@ const SERIES: ReadonlyArray<{ key: KpiKey; label: string; color: ChartColor }> =
 
 export function TrendPanel({ range, className }: { range: DashboardRange; className?: string }) {
   const summary = useQuery(summaryQueryOptions(range));
-  const eyebrow = `Daily · ${RANGE_LABEL[summary.data?.range ?? range] ?? RANGE_LABEL[range]}`;
+  const description = `Enquiries, quotes sent and fare searches per day, ${RANGE_LABEL[summary.data?.range ?? range] ?? RANGE_LABEL[range]}`;
 
-  if (summary.isPending) return <PanelSkeleton title={TITLE} eyebrow={eyebrow} className={className} />;
+  if (summary.isPending) return <LoadingPanel title={TITLE} description={description} rows={6} className={className} />;
   if (summary.isError && !summary.data) {
     return (
       <ErrorPanel
         title={TITLE}
-        eyebrow={eyebrow}
+        description={description}
         error={summary.error}
         onRetry={() => void summary.refetch()}
         retrying={summary.isFetching}
@@ -47,16 +47,16 @@ export function TrendPanel({ range, className }: { range: DashboardRange; classN
   const empty = series.every((s) => s.points.every((p) => !p.value));
 
   return (
-    <Panel variant="glass" title={TITLE} eyebrow={eyebrow} busy={summary.isPlaceholderData} className={className}>
+    <Panel title={TITLE} description={description} busy={summary.isPlaceholderData} className={className}>
       {empty ? (
         <EmptyState
           icon={ChartLine}
-          title="Nothing to chart yet"
-          description="Enquiries, quotes and fare searches show up here day by day."
-          action={{ label: "Run a fare scan", to: "/app/fares" }}
+          title="No activity in this range"
+          description="Enquiries, quotes and fare searches are counted here day by day."
+          action={{ label: "Scan fares", to: "/app/fares" }}
         />
       ) : (
-        <AreaTrend label="Enquiries, quotes sent and searches per day" series={series} valueFormat={formatNumber} height={200} />
+        <AreaTrend label="Enquiries, quotes sent and searches per day" series={series} valueFormat={formatNumber} height={208} />
       )}
     </Panel>
   );

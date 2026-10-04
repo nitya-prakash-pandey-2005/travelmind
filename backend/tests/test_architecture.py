@@ -94,13 +94,17 @@ def test_every_tenant_table_uses_the_rls_helper():
     offenders = []
     for path in versions.glob("*.py"):
         source = path.read_text(encoding="utf-8")
-        if '"agency_id"' in source and "tenant_rls_statements" not in source:
+        creates_table = "create_table" in source or "CREATE TABLE" in source
+        if creates_table and '"agency_id"' in source and "tenant_rls_statements" not in source:
             offenders.append(path.name)
     assert offenders == []
 
 
 # Identity table: RLS would block login lookups by email, so it is guarded by code instead.
-NON_RLS_TABLES_WITH_AGENCY_ID = {"users"}
+# quote_share_tokens maps a public link to its agency before any tenant is known, so it can't
+# use the tenant policy; the app role has no privileges on it at all and reaches it only through
+# two definer functions (see migration 0006 and test_app_role_cannot_read_token_table).
+NON_RLS_TABLES_WITH_AGENCY_ID = {"users", "quote_share_tokens"}
 
 
 async def test_every_tenant_table_has_forced_rls_in_the_migrated_schema():

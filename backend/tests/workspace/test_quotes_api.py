@@ -432,7 +432,7 @@ async def test_list_filters(client, airports):
     listed = (await client.get("/api/v1/quotes")).json()
     assert listed["total"] == 2 and [q["number"] for q in listed["items"]] == ["Q-0002", "Q-0001"]
     first = listed["items"][1]
-    assert first["client"] == {"id": c["id"], "name": "Priya"}
+    assert first["client"] == {"id": c["id"], "name": "Priya", "kind": "individual"}
     assert first["enquiry"] == {
         "id": e1["id"],
         "number": "E-0001",
@@ -507,3 +507,67 @@ async def test_service_helpers_back_date_and_log(client, airports):
         ("quote.sent", "Q-0002 sent"),
         ("quote.accepted", "Q-0002 accepted"),
     ]
+
+
+async def test_quotes_follow_their_enquirys_client(client, app, airports):
+    """Changing an enquiry's client moves its quotes with it: the client's quote count, quote
+    list, won value and the public greeting all follow, and the old client can be deleted."""
+    enquiry, offers, quote = await setup_quote(client, markup_kind="fixed", markup_value=0)
+    qid, eid = quote["id"], enquiry["id"]
+    await client.post(
+        f"/api/v1/quotes/{qid}/versions",
+        json={"offer_ids": [offers[0]["id"], offers[1]["id"]], "message": ""},
+    )
+    token = (await client.post(f"/api/v1/quotes/{qid}/send")).json()["token"]
+    accepted = await client.post(f"/api/v1/quotes/{qid}/status", json={"status": "accepted"})
+    assert accepted.json()["client"] is None
+    cheapest = min(offers[0]["total"]["amount_minor"], offers[1]["total"]["amount_minor"])
+
+    priya = (await client.post("/api/v1/clients", json={"name": "Priya Sharma"})).json()
+    ravi = (await client.post("/api/v1/clients", json={"name": "Ravi Kumar"})).json()
+    r = await client.patch(f"/api/v1/enquiries/{eid}", json={"client_id": priya["id"]})
+    assert r.status_code == 200, r.text
+
+    got = (await client.get(f"/api/v1/clients/{priya['id']}")).json()
+    assert (got["quote_count"], got["won_value_minor"]) == (1, cheapest)
+    listed = (await client.get("/api/v1/quotes", params={"client_id": priya["id"]})).json()
+    assert [q["id"] for q in listed["items"]] == [qid]
+    assert (await client.get(f"/api/v1/quotes/{qid}")).json()["client"]["name"] == "Priya Sharma"
+    async with make_client(app) as anon:
+        assert (await anon.get(f"/api/v1/public/quotes/{token}")).json()[
+            "client_first_name"
+        ] == "Priya"
+
+    # Moving the enquiry to another client moves its quotes; the old client can now go.
+    await client.patch(f"/api/v1/enquiries/{eid}", json={"client_id": ravi["id"]})
+    old = (await client.get(f"/api/v1/clients/{priya['id']}")).json()
+    new = (await client.get(f"/api/v1/clients/{ravi['id']}")).json()
+    assert (old["quote_count"], old["won_value_minor"]) == (0, 0)
+    assert (new["quote_count"], new["won_value_minor"]) == (1, cheapest)
+    assert (await client.get(f"/api/v1/quotes/{qid}")).json()["client"]["name"] == "Ravi Kumar"
+    assert (await client.delete(f"/api/v1/clients/{priya['id']}")).status_code == 204
+
+    # Clearing the client clears it on the quotes too.
+    await client.patch(f"/api/v1/enquiries/{eid}", json={"client_id": None})
+    assert (await client.get(f"/api/v1/quotes/{qid}")).json()["client"] is None
+    assert (await client.get(f"/api/v1/clients/{ravi['id']}")).json()["quote_count"] == 0
+
+
+async def test_a_client_keeps_quotes_of_its_other_enquiries(client, airports):
+    """Only the moved enquiry's quotes change hands; a client with other quotes still can't be
+    deleted."""
+    await signup(client)
+    priya = (await client.post("/api/v1/clients", json={"name": "Priya Sharma"})).json()
+    ravi = (await client.post("/api/v1/clients", json={"name": "Ravi Kumar"})).json()
+    trip = {"origin": "DEL", "destination": "BOM", "depart_date": DAY, "client_id": priya["id"]}
+    first = (await client.post("/api/v1/enquiries", json=trip)).json()
+    second = (await client.post("/api/v1/enquiries", json=trip)).json()
+    for e in (first, second):
+        await client.post("/api/v1/quotes", json={"enquiry_id": e["id"]})
+    await client.patch(f"/api/v1/enquiries/{first['id']}", json={"client_id": ravi["id"]})
+    counts = [
+        (await client.get(f"/api/v1/clients/{c['id']}")).json()["quote_count"]
+        for c in (priya, ravi)
+    ]
+    assert counts == [1, 1]
+    assert (await client.delete(f"/api/v1/clients/{priya['id']}")).status_code == 409

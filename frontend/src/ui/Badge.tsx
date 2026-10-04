@@ -1,23 +1,31 @@
 import type { ReactNode } from "react";
 import { cn } from "./cn";
 
-type Tone = "neutral" | "primary" | "ok" | "warn" | "danger" | "ai";
+export type BadgeTone = "neutral" | "primary" | "ok" | "warn" | "danger" | "info" | "ai";
 
-const TONES: Record<Tone, string> = {
-  neutral: "border-line text-dim",
-  primary: "border-primary/50 text-primary",
-  ok: "border-ok/50 text-ok",
-  warn: "border-warn/50 text-warn",
-  danger: "border-danger/50 text-danger",
-  ai: "border-ai/50 text-ai",
+const TONES: Record<BadgeTone, string> = {
+  neutral: "text-dim",
+  primary: "text-primary",
+  ok: "text-ok",
+  warn: "text-warn",
+  danger: "text-danger",
+  info: "text-info",
+  ai: "text-ai",
 };
 
-export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
+/**
+ * Small tinted label for a fact about a thing (a role, a policy flag, a provenance). Mono micro type,
+ * uppercase like status pills. For lifecycle states use StatusPill.
+ */
+export function Badge({ tone = "neutral", children, className }: { tone?: BadgeTone; children: ReactNode; className?: string }) {
   return (
     <span
+      data-tone={tone}
       className={cn(
-        "inline-flex items-center rounded-sm border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em]",
+        "tm-tint inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] border px-1.5",
+        "font-mono text-[10px] font-medium uppercase leading-none tracking-[0.06em]",
         TONES[tone],
+        className,
       )}
     >
       {children}

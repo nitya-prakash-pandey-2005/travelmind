@@ -1,13 +1,14 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { DASHBOARD_RANGES, DEFAULT_RANGE, isDashboardRange, type DashboardRange } from "../../api/dashboard";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { useClock, zoneAbbreviation } from "../../shell/useClock";
 import { Button } from "../../ui/Button";
+import { PageHeader } from "../../ui/PageHeader";
 import { SegmentedControl } from "../../ui/SegmentedControl";
 import { cn } from "../../ui/cn";
-import { RecentRoutesPanel } from "../dashboard/RecentRoutesPanel";
+import { RecentRoutes } from "../dashboard/RecentRoutes";
 import { RouteScanner } from "../route/RouteScanner";
 import { useRecentRoutes } from "../route/recentRoutes";
 import { routeStore } from "../route/routeStore";
@@ -34,18 +35,17 @@ function safeFormat(date: Date, timeZone: string, options: Intl.DateTimeFormatOp
   }
 }
 
-/**
- * One cell of the dashboard grid: 1 column on phones, 2 from 768 px, 12 from 1280 px. Panels rise in
- * with a short stagger on first paint (off under reduced motion) and stretch to their row's height.
- */
-function Cell({ span, index, children }: { span: string; index: number; children: ReactNode }) {
-  return (
-    <div className={cn("tm-enter grid min-w-0", span)} style={{ "--tm-enter-index": index } as CSSProperties}>
-      {children}
-    </div>
-  );
+/** One card slot of the 12-column grid (one column below 1280 px). Cards stretch to their row's height. */
+function Cell({ span, children }: { span: string; children: ReactNode }) {
+  return <div className={cn("grid min-w-0", span)}>{children}</div>;
 }
 
+/**
+ * The Command Center: page header, setup checklist (until done or dismissed), the key-figure strip, then
+ * cards on a 12-column grid, from the day's numbers down to the detail:
+ *   trend 8 · pipeline 4 / route map 8 · route planner 4 / market pulse 7 + supplier health 7 · live activity 5
+ *   (two rows tall) / departures 7 · team 5.
+ */
 export function CommandCenterPage() {
   const me = useCurrentUser();
   const navigate = useNavigate();
@@ -66,80 +66,77 @@ export function CommandCenterPage() {
   const time = safeFormat(now, agency.timezone, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
   return (
-    <div className="mx-auto flex w-full max-w-[112rem] flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
-          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary">Command Center</p>
-          <h1 className="font-display text-2xl tracking-wide text-ink sm:text-3xl">
+    <div className="mx-auto flex w-full max-w-[112rem] flex-col">
+      <PageHeader
+        dotGrid
+        breadcrumb={[{ label: "Workspace" }, { label: "Command Center" }]}
+        title="Command Center"
+        description={
+          <>
             {greetingFor(now, agency.timezone)}, {firstName}
-          </h1>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 font-mono text-xs text-dim">
-            <span>{date}</span>
-            <span aria-hidden="true">·</span>
-            <span className="tabular-nums">
-              {time} {zoneAbbreviation(now, agency.timezone, agency.country_code)}
-            </span>
-            <span aria-hidden="true">·</span>
-            <span className="truncate">{agency.name}</span>
-          </p>
+            {" · "}
+            <time dateTime={now.toISOString()} className="font-mono text-xs tabular-nums">
+              {date}, {time} {zoneAbbreviation(now, agency.timezone, agency.country_code)}
+            </time>
+            {" · "}
+            {agency.name}
+          </>
+        }
+        actions={
+          <>
+            <SegmentedControl label="Range" options={RANGE_OPTIONS} value={range} onChange={setRange} />
+            <Button onClick={openEnquiry}>
+              <Plus size={16} aria-hidden="true" />
+              New enquiry
+            </Button>
+          </>
+        }
+      />
+
+      <div className="flex flex-col gap-4">
+        <OnboardingChecklist key={agency.id} agencyId={agency.id} onNewEnquiry={openEnquiry} />
+
+        <KpiRow range={range} />
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <Cell span="xl:col-span-8">
+            <TrendPanel range={range} />
+          </Cell>
+          <Cell span="xl:col-span-4">
+            <PipelinePanel onNewEnquiry={openEnquiry} />
+          </Cell>
+
+          <Cell span="xl:col-span-8">
+            <RouteMapPanel onNewEnquiry={openEnquiry} />
+          </Cell>
+          <Cell span="xl:col-span-4">
+            <RouteScanner onRouteReady={record} onScanFares={() => void navigate({ to: "/app/fares" })}>
+              <RecentRoutes
+                routes={routes}
+                onSelect={(route) => routeStore.set({ origin: route.origin, destination: route.destination })}
+              />
+            </RouteScanner>
+          </Cell>
+
+          <Cell span="xl:col-span-7">
+            <MarketPulsePanel />
+          </Cell>
+          {/* Two rows tall beside market pulse and supplier health. Size containment lets those two set the
+              height, and the feed scrolls inside it rather than stretching the rows. */}
+          <Cell span="xl:col-span-5 xl:row-span-2 xl:[contain:size] xl:min-h-[30rem]">
+            <ActivityFeedPanel className="h-full" />
+          </Cell>
+          <Cell span="xl:col-span-7">
+            <SupplierHealthPanel />
+          </Cell>
+
+          <Cell span="xl:col-span-7">
+            <DeparturesPanel onNewEnquiry={openEnquiry} />
+          </Cell>
+          <Cell span="xl:col-span-5">
+            <TeamPanel range={range} />
+          </Cell>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SegmentedControl label="Range" options={RANGE_OPTIONS} value={range} onChange={setRange} />
-          <Button onClick={openEnquiry}>
-            <Plus size={16} aria-hidden="true" />
-            New enquiry
-          </Button>
-        </div>
-      </div>
-
-      <OnboardingChecklist key={agency.id} agencyId={agency.id} onNewEnquiry={openEnquiry} />
-
-      <KpiRow range={range} />
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12">
-        <Cell index={0} span="xl:col-span-4">
-          <PipelinePanel onNewEnquiry={openEnquiry} className="h-full" />
-        </Cell>
-        <Cell index={1} span="xl:col-span-5">
-          <TrendPanel range={range} className="h-full" />
-        </Cell>
-        <Cell index={2} span="md:col-span-2 xl:col-span-3">
-          <TeamPanel range={range} className="h-full" />
-        </Cell>
-
-        <Cell index={3} span="md:col-span-2 xl:col-span-7">
-          <RouteMapPanel onNewEnquiry={openEnquiry} className="h-full" />
-        </Cell>
-        <Cell index={4} span="md:col-span-2 xl:col-span-5">
-          <ActivityFeedPanel className="h-full" />
-        </Cell>
-
-        <Cell index={5} span="md:col-span-2 xl:col-span-4">
-          <MarketPulsePanel className="h-full" />
-        </Cell>
-        <Cell index={6} span="xl:col-span-4">
-          <SupplierHealthPanel className="h-full" />
-        </Cell>
-        <Cell index={7} span="xl:col-span-4">
-          <RouteScanner
-            variant="glass"
-            className="h-full"
-            onRouteReady={record}
-            onScanFares={() => void navigate({ to: "/app/fares" })}
-          />
-        </Cell>
-
-        <Cell index={8} span="md:col-span-2 xl:col-span-8">
-          <DeparturesPanel onNewEnquiry={openEnquiry} className="h-full" />
-        </Cell>
-        <Cell index={9} span="md:col-span-2 xl:col-span-4">
-          <RecentRoutesPanel
-            variant="glass"
-            className="h-full"
-            routes={routes}
-            onSelect={(route) => routeStore.set({ origin: route.origin, destination: route.destination })}
-          />
-        </Cell>
       </div>
 
       <NewEnquiryDialog open={enquiryOpen} onClose={() => setEnquiryOpen(false)} />

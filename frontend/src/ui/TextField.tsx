@@ -1,3 +1,4 @@
+import { CircleAlert } from "lucide-react";
 import { useId, type ComponentProps } from "react";
 import { cn } from "./cn";
 
@@ -7,6 +8,29 @@ type TextFieldProps = Omit<ComponentProps<"input">, "id"> & {
   hint?: string;
 };
 
+/** Label above (13px medium), 36px input, helper text 12px, error 12px with an icon. */
+export const FIELD_LABEL = "text-[13px] font-medium leading-5 text-ink";
+
+export const FIELD_CONTROL = cn(
+  "h-9 w-full min-w-0 rounded-md border bg-surface-2 px-3 text-sm text-ink",
+  "transition-colors duration-150 ease-tm placeholder:text-faint",
+  "hover:border-faint focus:border-primary",
+  "disabled:cursor-not-allowed disabled:opacity-60",
+);
+
+export function FieldMessage({ id, error, children }: { id: string; error?: boolean; children: string }) {
+  return error ? (
+    <p id={id} className="flex items-start gap-1.5 text-xs leading-4 text-danger">
+      <CircleAlert size={13} aria-hidden="true" className="mt-px shrink-0" />
+      <span>{children}</span>
+    </p>
+  ) : (
+    <p id={id} className="text-xs leading-4 text-dim">
+      {children}
+    </p>
+  );
+}
+
 export function TextField({ label, error, hint, className, ...input }: TextFieldProps) {
   const id = useId();
   const hintId = `${id}-hint`;
@@ -14,30 +38,22 @@ export function TextField({ label, error, hint, className, ...input }: TextField
   const showHint = Boolean(hint) && !error;
   const describedBy = error ? errorId : showHint ? hintId : undefined;
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={id} className="font-mono text-[11px] uppercase tracking-[0.22em] text-dim">
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+      <label htmlFor={id} className={FIELD_LABEL}>
         {label}
       </label>
       <input
         id={id}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
-        className={cn(
-          "h-10 rounded-sm border bg-void/60 px-3 text-ink outline-none transition placeholder:text-dim/60",
-          "focus:border-primary",
-          error ? "border-danger" : "border-line",
-        )}
+        className={cn(FIELD_CONTROL, error ? "border-danger hover:border-danger" : "border-line-strong")}
         {...input}
       />
-      {showHint && (
-        <p id={hintId} className="text-xs text-dim">
-          {hint}
-        </p>
-      )}
+      {showHint && hint && <FieldMessage id={hintId}>{hint}</FieldMessage>}
       {error && (
-        <p id={errorId} className="text-xs text-danger">
+        <FieldMessage id={errorId} error>
           {error}
-        </p>
+        </FieldMessage>
       )}
     </div>
   );

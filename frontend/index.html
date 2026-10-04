@@ -1,15 +1,15 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="orbital" data-mode="dark" data-contrast="normal">
   <head>
     <meta charset="UTF-8" />
+    <!-- Theme before first paint: generated from src/theme/css.ts (PREPAINT_SCRIPT); a test keeps the two identical. -->
+    <script>(function(){var d=document.documentElement,t=["orbital","nebula","ember","clearsky","terminal","contrast"],f={"clearsky":"light","terminal":"dark","contrast":"dark"},c={"theme":"orbital","mode":"dark","contrast":false};try{var s=window.localStorage;if(s.getItem("tm-theme")==="daylight")c.mode="light";var v=JSON.parse(s.getItem("tm.theme")||"null");if(v&&t.indexOf(v.theme)>=0)c={theme:v.theme,mode:v.mode==="light"?"light":"dark",contrast:v.contrast===true}}catch(e){}if(f[c.theme]){c.mode=f[c.theme];c.contrast=false}d.setAttribute("data-theme",c.theme);d.setAttribute("data-mode",c.mode);d.setAttribute("data-contrast",c.contrast?"high":"normal");d.style.colorScheme=c.mode})()</script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
-    <meta
-      name="description"
-      content="TravelMind is the mission control for travel agencies: search live airline and hotel inventory, see what every fare really means, and keep every price labelled with where it came from."
-    />
-    <title>TravelMind — Mission Control</title>
+    <!-- Neutral on purpose: link previews of a client's quote (/q/...) read this static page. The landing page sets its own. -->
+    <meta name="description" content="Travel quotes and trip planning by TravelMind." />
+    <title>TravelMind</title>
   </head>
   <body>
     <div id="root"></div>

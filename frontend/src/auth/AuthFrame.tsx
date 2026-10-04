@@ -1,38 +1,113 @@
-import type { ReactNode } from "react";
-import { Panel } from "../ui/Panel";
+import { Link } from "@tanstack/react-router";
+import { Gauge, ScrollText, Tags } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { FareInsightCard, FareRowsCard, Illustration, SupplierStatusCard } from "../features/landing/ConsolePreview";
+import { DATA_SOURCES, SourceMark } from "../features/landing/IntegrationsStrip";
+import { Wordmark } from "../features/landing/Wordmark";
+import { ThemeSwitcher } from "../theme/ThemeSwitcher";
 
-/** The "airlock": brand column plus a single form panel. */
-export function AuthFrame({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+const POINTS = [
+  { icon: Tags, text: "Every price labelled Live, Cached or Sandbox" },
+  { icon: Gauge, text: "Fare insight against the route's recorded fares" },
+  { icon: ScrollText, text: "Roles, tenant isolation and an audit log" },
+];
+
+const GLOW: CSSProperties = {
+  background: "radial-gradient(closest-side, color-mix(in oklab, var(--tm-primary) 13%, transparent), transparent)",
+};
+
+/** The product side of the sign-in screens: the pitch, a slice of the product with sample data, and its sources. */
+function ProductPanel() {
   return (
-    <main className="tm-grid tm-scanlines grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
-      <div className="relative hidden flex-col justify-between overflow-hidden border-r border-line p-10 lg:flex">
-        <p className="font-display text-xl tracking-[0.4em] text-primary">TRAVELMIND</p>
-        <svg viewBox="0 0 200 200" aria-hidden="true" className="tm-spin-slow mx-auto w-3/4 max-w-md opacity-80">
-          <circle cx="100" cy="100" r="58" fill="none" stroke="var(--tm-primary)" strokeWidth="1.2" />
-          <circle cx="100" cy="100" r="80" fill="none" stroke="var(--tm-line)" strokeDasharray="2 6" />
-          <ellipse
-            cx="100"
-            cy="100"
-            rx="92"
-            ry="30"
-            fill="none"
-            stroke="var(--tm-ai)"
-            strokeWidth="1"
-            transform="rotate(-24 100 100)"
-          />
-          <circle cx="178" cy="68" r="4" fill="var(--tm-primary)" />
-        </svg>
-        <p className="max-w-sm font-display text-2xl leading-snug text-ink">
-          Quote faster. Verify every fare. Keep your agency in orbit.
-        </p>
+    <aside
+      aria-label="About TravelMind"
+      className="relative isolate hidden flex-col justify-center overflow-hidden border-l border-line bg-surface px-10 py-12 lg:flex xl:px-16"
+    >
+      <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-20" />
+      <div
+        aria-hidden="true"
+        className="decor-gradient pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[40rem] w-[40rem] -translate-x-1/2 -translate-y-1/2"
+        style={GLOW}
+      />
+      <div className="mx-auto flex w-full max-w-[36rem] flex-col gap-9">
+        <div>
+          <p className="text-2xl font-semibold leading-8 tracking-[-0.015em] text-ink">
+            Answer travel enquiries with fares you can explain.
+          </p>
+          <ul className="mt-5 grid gap-2.5">
+            {POINTS.map(({ icon: Icon, text }) => (
+              <li key={text} className="flex items-center gap-3 text-sm text-dim">
+                <span
+                  aria-hidden="true"
+                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-line-strong bg-bg text-primary"
+                >
+                  <Icon size={13} strokeWidth={1.75} />
+                </span>
+                {text}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <Illustration caption="Illustration with sample data, not live fares.">
+          <div className="relative pb-28 pl-8">
+            <FareRowsCard rows={3} className="shadow-frame" />
+            <FareInsightCard className="absolute bottom-0 left-0 z-10 w-60 shadow-pop" />
+            <SupplierStatusCard className="absolute bottom-3 right-6 z-10 w-60 shadow-pop max-xl:hidden" />
+          </div>
+        </Illustration>
+        <div className="border-t border-line pt-6">
+          <p className="text-[13px] font-medium text-ink">Connects to</p>
+          <ul className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 xl:grid-cols-3">
+            {DATA_SOURCES.map((source) => (
+              <li key={source.name} className="min-w-0">
+                <SourceMark source={source} size="sm" />
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
-      <div className="flex items-center justify-center p-6">
-        <Panel className="w-full max-w-md" eyebrow="Secure channel">
-          <h1 className="font-display text-2xl tracking-wide text-ink">{title}</h1>
-          <p className="mb-6 mt-1 text-sm text-dim">{subtitle}</p>
-          {children}
-        </Panel>
-      </div>
-    </main>
+    </aside>
   );
 }
+
+/**
+ * Split layout for sign-in, sign-up and invitations: the form on the left, the product on the right
+ * (from 1024 px). `footer` holds the link to the other flow ("New to TravelMind? Create a workspace").
+ */
+export function AuthFrame({
+  title,
+  subtitle,
+  footer,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  footer?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid min-h-dvh bg-bg lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <div className="flex min-w-0 flex-col px-4 py-6 sm:px-10">
+        <header className="flex items-center justify-between gap-3">
+          <Link to="/" className="rounded-sm">
+            <Wordmark />
+          </Link>
+          <ThemeSwitcher hideNameBelow="sm" />
+        </header>
+        <main className="flex flex-1 items-center justify-center py-10">
+          <div className="w-full max-w-sm">
+            <h1 className="text-[22px] font-semibold leading-7 tracking-[-0.01em] text-ink">{title}</h1>
+            <p className="mb-7 mt-1.5 text-sm leading-5 text-dim">{subtitle}</p>
+            {children}
+            {footer && <div className="mt-6 border-t border-line pt-5 text-[13px] text-dim">{footer}</div>}
+          </div>
+        </main>
+        <p className="text-xs text-faint">© 2026 TravelMind</p>
+      </div>
+      <ProductPanel />
+    </div>
+  );
+}
+
+/** The footer link style shared by the three auth pages. */
+export const AUTH_LINK = "rounded-sm font-medium text-primary hover:underline";

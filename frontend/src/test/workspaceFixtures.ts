@@ -186,6 +186,10 @@ export function clientOut(id: string, name: string, extra: Record<string, unknow
     updated_at: created,
     enquiry_count: 0,
     quote_count: 0,
+    won_value_minor: 0,
+    currency: "INR",
+    last_trip: null,
+    next_trip: null,
     ...extra,
   };
 }

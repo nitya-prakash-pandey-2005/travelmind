@@ -22,70 +22,69 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { activityQueryOptions, type ActivityItem } from "../../api/dashboard";
-import { formatRelativeTime } from "../../lib/format";
+import { formatNumber, formatRelativeTime } from "../../lib/format";
 import { Avatar } from "../../ui/Avatar";
 import { Button } from "../../ui/Button";
 import { EmptyState } from "../../ui/EmptyState";
 import { Panel } from "../../ui/Panel";
-import { PanelSkeleton } from "../../ui/Skeleton";
 import { cn } from "../../ui/cn";
 import { useClock } from "../../shell/useClock";
 import { ErrorPanel, PanelError } from "./PanelError";
+import { LiveIndicator, LoadingPanel } from "./panelParts";
 
 const TITLE = "Live activity";
-const EYEBROW = "Team feed";
+const DESCRIPTION = "What your team did, newest first";
 
-type KindStyle = { icon: LucideIcon; tone: string };
+/** Kind icons are neutral; only outcomes a person should notice carry a status colour. */
+export type KindStyle = { icon: LucideIcon; tone?: string };
 
 const KINDS: Record<string, KindStyle> = {
-  "search.flights": { icon: Plane, tone: "text-primary" },
-  "search.hotels": { icon: BedDouble, tone: "text-primary" },
-  "supplier.price_checked": { icon: RefreshCw, tone: "text-primary" },
-  "client.created": { icon: UserPlus, tone: "text-ai" },
-  "client.updated": { icon: UserPen, tone: "text-ai" },
-  "client.deleted": { icon: UserMinus, tone: "text-dim" },
-  "enquiry.created": { icon: Inbox, tone: "text-ai" },
-  "enquiry.status_changed": { icon: ArrowRightLeft, tone: "text-ai" },
-  "enquiry.assigned": { icon: UserCheck, tone: "text-ai" },
-  "quote.created": { icon: FilePlus2, tone: "text-warn" },
-  "quote.version_added": { icon: FileStack, tone: "text-warn" },
-  "quote.sent": { icon: Send, tone: "text-warn" },
-  "quote.viewed": { icon: Eye, tone: "text-warn" },
+  "search.flights": { icon: Plane },
+  "search.hotels": { icon: BedDouble },
+  "supplier.price_checked": { icon: RefreshCw },
+  "client.created": { icon: UserPlus },
+  "client.updated": { icon: UserPen },
+  "client.deleted": { icon: UserMinus },
+  "enquiry.created": { icon: Inbox },
+  "enquiry.status_changed": { icon: ArrowRightLeft },
+  "enquiry.assigned": { icon: UserCheck },
+  "quote.created": { icon: FilePlus2 },
+  "quote.version_added": { icon: FileStack },
+  "quote.sent": { icon: Send },
+  "quote.viewed": { icon: Eye },
   "quote.accepted": { icon: CircleCheck, tone: "text-ok" },
   "quote.declined": { icon: CircleX, tone: "text-danger" },
-  "quote.expired": { icon: Clock3, tone: "text-dim" },
-  "team.joined": { icon: Users, tone: "text-ok" },
-  "agency.updated": { icon: Building2, tone: "text-dim" },
+  "quote.expired": { icon: Clock3 },
+  "team.joined": { icon: Users },
+  "agency.updated": { icon: Building2 },
 };
-const GENERIC: KindStyle = { icon: Activity, tone: "text-dim" };
+const GENERIC: KindStyle = { icon: Activity };
+
+/** The icon (and outcome colour, if any) for an activity kind; unknown kinds get a generic icon. */
+export function activityKindStyle(kind: string): KindStyle {
+  return KINDS[kind] ?? GENERIC;
+}
+
+const ROW = "grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-start gap-x-3";
 
 function FeedItem({ item, now }: { item: ActivityItem; now: Date }) {
   const { icon: Icon, tone } = KINDS[item.kind] ?? GENERIC;
   return (
-    <li className="relative flex gap-3 pb-4 last:pb-0">
-      {/* The rail joining this event to the next. */}
-      <span aria-hidden="true" className="absolute bottom-0 left-[15px] top-8 w-px bg-line [li:last-child>&]:hidden" />
-      <span
-        aria-hidden="true"
-        className={cn("tm-tint relative grid h-8 w-8 shrink-0 place-items-center rounded-full border", tone)}
-      >
-        <Icon size={15} strokeWidth={1.75} />
-      </span>
-      <div className="min-w-0 flex-1 pt-0.5">
-        <p className="break-words text-sm text-ink">{item.summary}</p>
-        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-dim">
-          {item.actor && (
-            <span className="inline-flex min-w-0 items-center gap-1.5">
-              <Avatar name={item.actor.full_name} size="sm" />
-              <span className="truncate">{item.actor.full_name}</span>
-            </span>
-          )}
-          {item.actor && <span aria-hidden="true">·</span>}
-          <time dateTime={item.occurred_at} className="font-mono">
-            {formatRelativeTime(item.occurred_at, now)}
-          </time>
-        </p>
-      </div>
+    <li className={cn(ROW, "border-b border-line px-4 py-2 transition-colors duration-100 ease-tm last:border-b-0 hover:bg-hover")}>
+      {item.actor ? (
+        <Avatar name={item.actor.full_name} size="sm" />
+      ) : (
+        <span aria-hidden="true" className="grid h-6 w-6 place-items-center rounded-full border border-line bg-surface-2 text-faint">
+          <Activity size={12} strokeWidth={1.75} />
+        </span>
+      )}
+      <p className="flex min-w-0 items-start gap-2 pt-0.5 text-[13px] leading-5 text-ink">
+        <Icon size={14} strokeWidth={1.75} aria-hidden="true" className={cn("mt-[3px] shrink-0", tone ?? "text-faint")} />
+        <span className="min-w-0 break-words">{item.summary}</span>
+      </p>
+      <time dateTime={item.occurred_at} className="whitespace-nowrap pt-0.5 font-mono text-[11px] leading-5 tabular-nums text-dim">
+        {formatRelativeTime(item.occurred_at, now)}
+      </time>
     </li>
   );
 }
@@ -94,68 +93,78 @@ export function ActivityFeedPanel({ className }: { className?: string }) {
   const feed = useInfiniteQuery(activityQueryOptions);
   // Re-reads "5 min ago" between polls.
   const now = useClock(30_000);
+  const live = <LiveIndicator every="20 seconds" />;
 
-  if (feed.isPending) return <PanelSkeleton title={TITLE} eyebrow={EYEBROW} className={className} />;
+  if (feed.isPending) return <LoadingPanel title={TITLE} description={DESCRIPTION} actions={live} rows={8} className={className} />;
   if (feed.isError && !feed.data) {
     return (
       <ErrorPanel
         title={TITLE}
-        eyebrow={EYEBROW}
+        description={DESCRIPTION}
         error={feed.error}
         onRetry={() => void feed.refetch()}
         retrying={feed.isFetching}
         className={className}
+        actions={live}
       />
     );
   }
 
   const items = feed.data.pages.flatMap((page) => page.items);
+  const more = feed.hasNextPage && !feed.isFetchNextPageError;
 
   return (
     <Panel
-      variant="glass"
       title={TITLE}
-      eyebrow={EYEBROW}
+      description={DESCRIPTION}
+      flush
       className={cn("flex flex-col", className)}
-      actions={
-        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ok">
-          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-ok tm-blink" />
-          Live
-          <span className="sr-only">, updates every 20 seconds</span>
-        </span>
+      actions={live}
+      footer={
+        items.length > 0 && (
+          <div className="flex w-full items-center justify-between gap-3">
+            <span className="font-mono text-[11px] tabular-nums text-faint">
+              {formatNumber(items.length)} {items.length === 1 ? "event" : "events"}
+            </span>
+            {more && (
+              <Button variant="secondary" size="sm" loading={feed.isFetchingNextPage} onClick={() => void feed.fetchNextPage()}>
+                Load more
+              </Button>
+            )}
+          </div>
+        )
       }
     >
       {items.length === 0 ? (
         <EmptyState
           icon={Activity}
           title="No activity yet"
-          description="Searches, enquiries and quotes from your team stream in here as they happen."
-          action={{ label: "Run a fare scan", to: "/app/fares" }}
+          description="Searches, enquiries and quotes from your team appear here as they happen."
+          action={{ label: "Scan fares", to: "/app/fares" }}
         />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <div className="flex min-h-0 flex-1 flex-col border-t border-line">
+          <div aria-hidden="true" className={cn(ROW, "border-b border-line px-4 py-1.5")}>
+            <span className="tm-micro">Who</span>
+            <span className="tm-micro">Event</span>
+            <span className="tm-micro text-right">When</span>
+          </div>
           <ol
             aria-label="Recent activity"
             tabIndex={0}
-            className="max-h-[27rem] min-h-0 flex-1 overflow-y-auto rounded-sm pr-1 focus-visible:outline-offset-2"
+            className="max-h-[26rem] min-h-0 flex-1 overflow-y-auto focus-visible:-outline-offset-2 xl:max-h-none"
           >
             {items.map((item) => (
               <FeedItem key={item.id} item={item} now={now} />
             ))}
           </ol>
           {feed.isFetchNextPageError && (
-            <PanelError error={feed.error} onRetry={() => void feed.fetchNextPage()} retrying={feed.isFetchingNextPage} />
-          )}
-          {feed.hasNextPage && !feed.isFetchNextPageError && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="self-center"
-              loading={feed.isFetchingNextPage}
-              onClick={() => void feed.fetchNextPage()}
-            >
-              Load more
-            </Button>
+            <PanelError
+              className="mx-4 my-3"
+              error={feed.error}
+              onRetry={() => void feed.fetchNextPage()}
+              retrying={feed.isFetchingNextPage}
+            />
           )}
         </div>
       )}

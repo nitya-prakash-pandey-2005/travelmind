@@ -24,10 +24,11 @@ test("renders the globe with the route arcs", async () => {
   expect(await screen.findByTestId("globe")).toHaveTextContent("DEL-BOM*");
 });
 
-test("shows a fallback when WebGL is unavailable", () => {
+test("falls back to a flat map of the same routes when WebGL is unavailable", async () => {
   webgl.available = false;
   render(<GlobePanel arcs={ARCS} />);
   expect(screen.getByText(/3D globe isn't available on this device/)).toBeInTheDocument();
+  expect(await screen.findByRole("img", { name: "Map of 1 route: DEL to BOM (highlighted)" })).toBeInTheDocument();
   expect(screen.queryByTestId("globe")).not.toBeInTheDocument();
 });
 
@@ -36,5 +37,19 @@ test("contains a globe crash", async () => {
   globeBehaviour.crash = true;
   vi.spyOn(console, "error").mockImplementation(() => {});
   render(<GlobePanel arcs={ARCS} />);
-  expect(await screen.findByText(/orbital view went offline/i)).toBeInTheDocument();
+  expect(await screen.findByText(/3D globe stopped working/)).toBeInTheDocument();
+  expect(await screen.findByRole("img", { name: /^Map of 1 route/ })).toBeInTheDocument();
+});
+
+test("names the card and shows what goes under the map", async () => {
+  webgl.available = true;
+  globeBehaviour.crash = false;
+  render(
+    <GlobePanel arcs={ARCS} title="Route map" description="Enquiry routes">
+      <p>Busiest routes</p>
+    </GlobePanel>,
+  );
+  expect(screen.getByRole("region", { name: "Route map" })).toHaveTextContent("Enquiry routes");
+  expect(screen.getByText("Busiest routes")).toBeInTheDocument();
+  expect(await screen.findByTestId("globe")).toBeInTheDocument();
 });

@@ -115,14 +115,14 @@ test("every supplier's outcome is reported", async () => {
       }),
     },
   });
-  const sweep = screen.getByRole("list", { name: "Supplier sweep" });
-  expect(sweep).toHaveTextContent("sandbox · OK");
-  expect(sweep).toHaveTextContent("1 offer · 12 ms");
-  expect(sweep).toHaveTextContent("duffel · Timeout");
-  expect(sweep).toHaveTextContent("No answer within 25s.");
+  const status = screen.getByRole("list", { name: "Supplier status" });
+  expect(status).toHaveTextContent("sandbox · OK");
+  expect(status).toHaveTextContent("1 offer · 12 ms");
+  expect(status).toHaveTextContent("duffel · Timeout");
+  expect(status).toHaveTextContent("No answer within 25s.");
 });
 
-test("the price check compares the cheapest fare with the route's history", async () => {
+test("fare insight compares the cheapest fare with the route's history", async () => {
   const good = { ...indigo, insight: { signal: "good" as const, delta_pct: -19.2, message: "19% under the median of 24 per-traveller fares seen for this route. Good time to book." } };
   await scanAndList({
     [SEARCH]: {
@@ -133,7 +133,7 @@ test("the price check compares the cheapest fare with the route's history", asyn
       }),
     },
   });
-  const check = screen.getByRole("region", { name: "Price check" });
+  const check = screen.getByRole("region", { name: "Fare insight" });
   expect(within(check).getByText("₹5,200")).toBeInTheDocument();
   expect(within(check).getByText(/Good time to book/)).toBeInTheDocument();
   expect(
@@ -145,7 +145,7 @@ test("the price check compares the cheapest fare with the route's history", asyn
   expect(screen.getAllByRole("article")[0]).toHaveTextContent("Good price");
 });
 
-test("the gauge plots the first comparable fare per traveller, not a sandbox fare ranked above it", async () => {
+test("fare insight plots the first comparable fare per traveller, not a sandbox fare ranked above it", async () => {
   const sandbox = makeOffer({ id: "sandbox~cheap", total: inr(300000), display_total: inr(300000), per_traveller: null, insight: null });
   const live = makeOffer({
     id: "duffel~pair",
@@ -168,7 +168,7 @@ test("the gauge plots the first comparable fare per traveller, not a sandbox far
       }),
     },
   });
-  const check = screen.getByRole("region", { name: "Price check" });
+  const check = screen.getByRole("region", { name: "Fare insight" });
   expect(
     within(check).getByRole("img", {
       name: "Cheapest comparable fare (per traveller) ₹5,000 against a typical range of ₹4,500 to ₹6,000 per traveller",
@@ -179,7 +179,7 @@ test("the gauge plots the first comparable fare per traveller, not a sandbox far
   expect(check).not.toHaveTextContent("₹10,000");
 });
 
-test("without a comparable fare the gauge shows the range and no marker", async () => {
+test("without a comparable fare, fare insight shows the range and no marker", async () => {
   await scanAndList({
     [SEARCH]: {
       status: 200,
@@ -189,14 +189,14 @@ test("without a comparable fare the gauge shows the range and no marker", async 
       }),
     },
   });
-  const check = screen.getByRole("region", { name: "Price check" });
+  const check = screen.getByRole("region", { name: "Fare insight" });
   expect(
     within(check).getByRole("img", { name: "Fares on this route usually fall in a typical range of ₹4,500 to ₹6,000 per traveller" }),
   ).toBeInTheDocument();
   expect(check).not.toHaveTextContent("Cheapest comparable fare");
 });
 
-test("a fare in another currency is never placed on the gauge", async () => {
+test("a fare in another currency is never placed on the fare insight bar", async () => {
   const unconverted = {
     ...indigo,
     total: { amount_minor: 10000, currency: "USD" },
@@ -212,7 +212,7 @@ test("a fare in another currency is never placed on the gauge", async () => {
       }),
     },
   });
-  const check = screen.getByRole("region", { name: "Price check" });
+  const check = screen.getByRole("region", { name: "Fare insight" });
   expect(
     within(check).getByRole("img", { name: "Fares on this route usually fall in a typical range of ₹4,500 to ₹6,000 per traveller" }),
   ).toBeInTheDocument();
@@ -227,10 +227,10 @@ test("sandbox history is labelled as such", async () => {
       }),
     },
   });
-  expect(screen.getByRole("region", { name: "Price check" })).toHaveTextContent("Built from sandbox searches");
+  expect(screen.getByRole("region", { name: "Fare insight" })).toHaveTextContent("Built from sandbox searches");
 });
 
-test("fastest re-sorts the board", async () => {
+test("fastest re-sorts the results", async () => {
   const { list, user } = await scanAndList({ [SEARCH]: { status: 200, body: searchResponse({ offers: [indigo, airIndia] }) } });
   expect(screen.getByRole("group", { name: "Sort offers" })).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Fastest" }));
@@ -270,11 +270,11 @@ test("an expired offer says so", async () => {
   expect(await within(list).findByRole("alert")).toHaveTextContent("This offer has expired. Search again for a fresh price.");
 });
 
-test("an empty board is explained", async () => {
+test("empty results are explained", async () => {
   const { user } = scan({ [SEARCH]: { status: 200, body: searchResponse({ offers: [] }) } });
   await user.click(await screen.findByRole("button", { name: "Scan fares" }));
   expect(await screen.findByText("No offers for this route and date.")).toBeInTheDocument();
-  expect(screen.getByRole("list", { name: "Supplier sweep" })).toBeInTheDocument();
+  expect(screen.getByRole("list", { name: "Supplier status" })).toBeInTheDocument();
   expect(screen.queryByRole("list", { name: "Flight offers" })).not.toBeInTheDocument();
 });
 
@@ -331,7 +331,7 @@ test("scanning the same trip again asks the suppliers again", async () => {
   expect(calls.filter((c) => c.path === "/api/v1/flights/search")).toHaveLength(2);
 });
 
-test("a failed re-scan hides the earlier price check", async () => {
+test("a failed re-scan hides the earlier fare insight", async () => {
   let attempt = 0;
   const { user } = await scanAndList({
     [SEARCH]: () =>
@@ -344,10 +344,10 @@ test("a failed re-scan hides the earlier price check", async () => {
           }
         : { status: 429, body: { detail: "Too many searches. Try again in a minute." } },
   });
-  expect(screen.getByRole("region", { name: "Price check" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Fare insight" })).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Scan fares" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Too many searches.");
-  expect(screen.queryByRole("region", { name: "Price check" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Fare insight" })).not.toBeInTheDocument();
 });
 
 test("adults can be cleared and retyped, and are clamped when the field is left", async () => {
@@ -386,4 +386,117 @@ test("a departure in the past can't be scanned", async () => {
   fireEvent.change(depart, { target: { value: isoDateFromNow(-1) } });
   expect(depart).toHaveAccessibleDescription("Departure can't be in the past.");
   expect(screen.getByRole("button", { name: "Scan fares" })).toBeDisabled();
+});
+
+test("the results header summarises the trip and each sort names its best value", async () => {
+  await scanAndList({ [SEARCH]: { status: 200, body: searchResponse({ offers: [indigo, airIndia] }) } });
+  const results = screen.getByRole("region", { name: /Results/ });
+  expect(results).toHaveTextContent("2 offers");
+  expect(results).toHaveTextContent("DEL → BOM");
+  expect(results).toHaveTextContent("1 adult · Economy");
+  expect(screen.getByRole("button", { name: "Cheapest" })).toHaveAccessibleDescription("₹4,200");
+  expect(screen.getByRole("button", { name: "Fastest" })).toHaveAccessibleDescription("2h 10m");
+  expect(screen.getByRole("button", { name: "Greenest" })).toHaveAccessibleDescription("98 kg");
+});
+
+test("flight details open every flight, the connection and the fare conditions", async () => {
+  const connecting = makeOffer({
+    id: "duffel~conn",
+    supplier: "duffel",
+    supplier_ref: "off_77",
+    provenance: "LIVE",
+    owner_carrier: "EK",
+    owner_name: "Emirates",
+    conditions: { refundable: true, refund_penalty: inr(150000), changeable: false, change_penalty: null },
+    slices: [
+      {
+        origin: "DEL",
+        destination: "BOM",
+        duration_minutes: 610,
+        fare_brand: "Flex",
+        segments: [
+          segment("DEL", "DXB", "2026-11-20T22:00:00", "2026-11-21T00:30:00", "EK", "511", 240),
+          segment("DXB", "BOM", "2026-11-21T03:00:00", "2026-11-21T07:40:00", "EK", "500", 190),
+        ],
+        stops: 1,
+      },
+    ],
+  });
+  const { list, user } = await scanAndList({ [SEARCH]: { status: 200, body: searchResponse({ offers: [connecting] }) } });
+  const card = within(list).getByRole("article");
+  const toggle = within(card).getByRole("button", { name: "Flight details" });
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(card).not.toHaveTextContent("Connection at");
+  await user.click(toggle);
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(card).toHaveTextContent("EK 511");
+  expect(card).toHaveTextContent("EK 500");
+  expect(card).toHaveTextContent("Connection at DXB · 2h 30m");
+  expect(card).toHaveTextContent("Changes: not allowed");
+  expect(card).toHaveTextContent("Refunds: allowed, fee ₹1,500");
+  expect(card).toHaveTextContent("off_77");
+});
+
+test("an enquiry's trip in the address fills the search form", async () => {
+  routeStore.reset();
+  const depart = isoDateFromNow(30);
+  const { calls } = mockApi(
+    withSession(ME_OWNER, {
+      "GET /api/v1/reference/airports": (call) => {
+        const code = (call.search.get("q") ?? "").toUpperCase();
+        const match = Object.values(AIRPORTS).filter((a) => a.iata_code === code);
+        return { status: 200, body: match };
+      },
+      [SEARCH]: { status: 200, body: searchResponse({ offers: [indigo] }) },
+    }),
+  );
+  const returning = isoDateFromNow(37);
+  const { user } = renderApp(
+    `/app/fares?origin=DEL&destination=BOM&depart=${depart}&return=${returning}&adults=2&children=${encodeURIComponent("[4,11]")}&cabin=business`,
+  );
+  expect(await screen.findByRole("button", { name: "Change From" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Change To" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Adults")).toHaveValue(2);
+  expect(screen.getByLabelText("Cabin")).toHaveValue("business");
+  expect(screen.getByLabelText("Depart")).toHaveValue(depart);
+  expect(screen.getByLabelText("Return (optional)")).toHaveValue(returning);
+  expect(screen.getByText("2 (ages 4, 11)")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Scan fares" }));
+  await screen.findByRole("list", { name: "Flight offers" });
+  expect(calls.find((c) => c.path === "/api/v1/flights/search")?.body).toMatchObject({
+    origin: "DEL",
+    destination: "BOM",
+    departure_date: depart,
+    return_date: returning,
+    adults: 2,
+    children_ages: [4, 11],
+    cabin: "business",
+  });
+  expect(screen.getByText(/· 2 adults · 2 children · Business$/)).toBeInTheDocument();
+});
+
+test("children from the address can be taken off the search", async () => {
+  routeStore.set({ origin: AIRPORTS.DEL, destination: AIRPORTS.BOM });
+  const { calls } = mockApi(withSession(ME_OWNER, { [SEARCH]: { status: 200, body: searchResponse({ offers: [indigo] }) } }));
+  const { user } = renderApp(`/app/fares?adults=7&children=${encodeURIComponent("[5,9]")}`);
+  expect(await screen.findByText("2 (ages 5, 9)")).toBeInTheDocument();
+  // Seven adults and two children fill the nine seats a search allows.
+  expect(screen.getByLabelText("Adults")).toHaveAttribute("max", "7");
+  await user.click(screen.getByRole("button", { name: "Remove children" }));
+  expect(screen.queryByText("2 (ages 5, 9)")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Adults")).toHaveAttribute("max", "9");
+  await user.click(screen.getByRole("button", { name: "Scan fares" }));
+  await screen.findByRole("list", { name: "Flight offers" });
+  expect(calls.find((c) => c.path === "/api/v1/flights/search")?.body).toMatchObject({ adults: 7, children_ages: [] });
+});
+
+test("a malformed trip in the address is ignored", async () => {
+  routeStore.reset();
+  mockApi(withSession(ME_OWNER, { "GET /api/v1/reference/airports": { status: 200, body: [] } }));
+  renderApp("/app/fares?origin=../x&adults=99&cabin=luxury&depart=soon&return=later&children=lots");
+  expect(await screen.findByLabelText("Adults")).toHaveValue(1);
+  expect(screen.getByLabelText("Cabin")).toHaveValue("economy");
+  expect(screen.getByLabelText("Depart")).toHaveValue(isoDateFromNow(14));
+  expect(screen.getByLabelText("Return (optional)")).toHaveValue("");
+  expect(screen.queryByText("Children")).not.toBeInTheDocument();
 });

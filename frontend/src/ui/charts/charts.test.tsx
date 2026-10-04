@@ -1,7 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
+import { resolvePalette, setThemeChoice } from "../../theme";
 import { AreaTrend, BarList, Donut, Funnel, KpiTile, LatencyBand, Sparkline } from "./index";
+
+const ORBITAL_DARK = resolvePalette({ theme: "orbital", mode: "dark", contrast: false });
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -87,9 +90,9 @@ test("area trend draws gridlines, capped date ticks, a legend and one area plus 
   expect(container.querySelectorAll("[data-gridline]").length).toBeGreaterThan(1);
   const areas = container.querySelectorAll("[data-area]");
   expect(areas).toHaveLength(2);
-  expect(areas[0]).toHaveAttribute("fill", "var(--color-chart-1)");
+  expect(areas[0]).toHaveAttribute("fill", ORBITAL_DARK.chart1);
   expect(areas[0]).toHaveAttribute("fill-opacity", "0.15");
-  expect(container.querySelectorAll("[data-line]")[1]).toHaveAttribute("stroke", "var(--color-chart-3)");
+  expect(container.querySelectorAll("[data-line]")[1]).toHaveAttribute("stroke", ORBITAL_DARK.chart3);
   expect(screen.getByRole("list", { name: "Month legend" })).toHaveTextContent(/A.*B/);
 });
 
@@ -123,7 +126,7 @@ test("area trend with no points shows an empty message instead of axes", () => {
 test("sparkline summarises first and last values, draws a last-point dot and renders nothing when empty", () => {
   const { container, rerender } = render(<Sparkline label="Quotes" values={[4, 9, 6]} tone="ok" />);
   expect(screen.getByRole("img", { name: "Quotes: from 4 to 6" })).toBeInTheDocument();
-  expect(container.querySelector("[data-line]")).toHaveAttribute("stroke", "var(--color-ok)");
+  expect(container.querySelector("[data-line]")).toHaveAttribute("stroke", ORBITAL_DARK.ok);
   expect(container.querySelector("[data-last-dot]")).toBeInTheDocument();
   expect(within(screen.getByRole("table", { name: "Quotes data" })).getAllByRole("row")).toHaveLength(4);
   rerender(<Sparkline label="Quotes" values={[]} />);
@@ -284,4 +287,25 @@ test("a tiny bar is clipped to its own width, with no square cap overstating it"
   expect(tiny).toHaveAttribute("width", "0.1%");
   expect(tiny).toHaveAttribute("overflow", "hidden");
   expect(tiny?.parentElement?.querySelectorAll("rect")).toHaveLength(1);
+});
+
+test("charts take the live palette: a theme switch recolours their marks", () => {
+  const { container } = render(
+    <>
+      <AreaTrend label="Trend" valueFormat={String} series={[ENQUIRIES]} />
+      <Sparkline label="Spark" values={[1, 3, 2]} tone="ok" />
+      <BarList label="Bars" valueFormat={String} items={[{ label: "x", value: 3 }]} />
+    </>,
+  );
+  const area = () => container.querySelector("[data-area]");
+  const spark = () => container.querySelectorAll("[data-line]")[1];
+  const bar = () => container.querySelector("[data-bar] rect");
+  expect(area()).toHaveAttribute("fill", ORBITAL_DARK.chart1);
+  act(() => setThemeChoice({ theme: "ember", mode: "light" }));
+  const ember = resolvePalette({ theme: "ember", mode: "light", contrast: false });
+  expect(area()).toHaveAttribute("fill", ember.chart1);
+  expect(spark()).toHaveAttribute("stroke", ember.ok);
+  expect(bar()).toHaveAttribute("fill", ember.chart1);
+  act(() => setThemeChoice({ theme: "terminal" }));
+  expect(area()).toHaveAttribute("fill", resolvePalette({ theme: "terminal", mode: "dark", contrast: false }).chart1);
 });

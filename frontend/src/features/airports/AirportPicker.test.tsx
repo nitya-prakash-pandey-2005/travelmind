@@ -139,3 +139,38 @@ test("an airport set by someone else does not steal focus", async () => {
   expect(outside).toHaveFocus();
   outside.remove();
 });
+
+test("a field message passed in describes the search box and the picked airport", async () => {
+  mockApi({ "GET /api/v1/reference/airports": goaResults });
+  const message = (
+    <p id="from-error" key="msg">
+      Unknown airport code XYZ.
+    </p>
+  );
+  const { user, rerender } = renderWithClient(
+    <>
+      <AirportPicker label="From" value={null} onChange={() => {}} describedBy="from-error" invalid />
+      {message}
+    </>,
+  );
+  const input = screen.getByRole("combobox", { name: "From" });
+  expect(input).toHaveAccessibleDescription("Unknown airport code XYZ.");
+  expect(input).toHaveAttribute("aria-invalid", "true");
+  await user.type(input, "g");
+  expect(input).toHaveAccessibleDescription("Type at least 2 letters Unknown airport code XYZ.");
+
+  rerender(
+    <>
+      <AirportPicker label="From" value={AIRPORTS.DEL} onChange={() => {}} describedBy="from-error" invalid />
+      {message}
+    </>,
+  );
+  expect(screen.getByRole("button", { name: "Change From" })).toHaveAccessibleDescription("Unknown airport code XYZ.");
+});
+
+test("without a field message the picker carries no description or invalid state", () => {
+  renderWithClient(<AirportPicker label="From" value={null} onChange={() => {}} />);
+  const input = screen.getByRole("combobox", { name: "From" });
+  expect(input).not.toHaveAttribute("aria-describedby");
+  expect(input).not.toHaveAttribute("aria-invalid");
+});

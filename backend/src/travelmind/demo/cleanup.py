@@ -11,13 +11,30 @@ from travelmind.identity import service as identity_service
 
 log = structlog.get_logger()
 
+# Each demo's delete cascades through all its data, so a run deletes a few demos per transaction
+# (keeping every statement well inside the statement timeout) and stops after a bounded number of
+# batches; a bigger backlog drains over the next runs.
+CLEANUP_BATCH_SIZE = 20
+CLEANUP_MAX_BATCHES = 50
+
 
 async def delete_expired_demos(db: AsyncSession, *, now: datetime) -> int:
     """Delete demo agencies that expired before `now`, with all their data (foreign keys
-    cascade). Returns how many were deleted. The caller commits."""
-    deleted = await identity_service.delete_expired_demo_agencies(db, now=now)
-    log.info("expired_demos_deleted", count=len(deleted))
-    return len(deleted)
+    cascade), in batches of CLEANUP_BATCH_SIZE, committing after each batch, for at most
+    CLEANUP_MAX_BATCHES batches. Returns how many were deleted."""
+    total = 0
+    for _ in range(CLEANUP_MAX_BATCHES):
+        deleted = await identity_service.delete_expired_demo_agencies(
+            db, now=now, limit=CLEANUP_BATCH_SIZE
+        )
+        if not deleted:
+            break
+        await db.commit()
+        total += len(deleted)
+        if len(deleted) < CLEANUP_BATCH_SIZE:
+            break
+    log.info("expired_demos_deleted", count=total)
+    return total
 
 
 async def run_demo_cleanup() -> int:
@@ -25,9 +42,7 @@ async def run_demo_cleanup() -> int:
     pass is logged and the next one tries again. Returns how many demos were deleted."""
     try:
         async with get_sessionmaker()() as db:
-            count = await delete_expired_demos(db, now=utcnow())
-            await db.commit()
-            return count
+            return await delete_expired_demos(db, now=utcnow())
     except Exception as exc:
         log.exception("demo_cleanup_failed", error_type=type(exc).__name__)
         return 0

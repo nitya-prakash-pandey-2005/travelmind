@@ -1,6 +1,7 @@
 import { ArrowDownRight, ArrowRight, ArrowUpRight } from "lucide-react";
 import { cn } from "../cn";
 import { Skeleton } from "../Skeleton";
+import { useInKpiStrip } from "./KpiStrip";
 import { Sparkline } from "./Sparkline";
 
 /**
@@ -43,19 +44,20 @@ function DeltaChip({ delta: raw }: { delta: KpiDelta }) {
     <span
       data-delta=""
       className={cn(
-        "tm-tint inline-flex items-center gap-0.5 rounded-sm border px-1.5 py-0.5 font-mono text-xs tabular-nums",
+        "tm-tint inline-flex h-5 items-center gap-0.5 rounded-[4px] border px-1.5 font-mono text-[11px] font-medium tabular-nums",
         deltaTone(delta),
       )}
     >
-      {delta.pct !== null && <Arrow size={12} aria-hidden="true" />}
+      {delta.pct !== null && <Arrow size={12} strokeWidth={2} aria-hidden="true" />}
       {delta.pct === null ? "—" : deltaAmount({ ...delta, pct: delta.pct })}
     </span>
   );
 }
 
 /**
- * Headline metric: label, value (mono), optional unit, change chip coloured by whether the move
- * is good, optional trend sparkline. `loading` shows skeletons and marks the tile busy.
+ * Headline metric: micro-label, value (28px mono), optional unit, change chip coloured by whether the move
+ * is good, a caption (`hint`, e.g. "vs previous 30 days"), optional 32px sparkline. `loading` shows skeletons
+ * sized like the content and marks the tile busy. Inside a KpiStrip it drops its own frame.
  */
 export function KpiTile({
   label,
@@ -77,6 +79,7 @@ export function KpiTile({
   loading?: boolean;
   hint?: string;
 }) {
+  const inStrip = useInKpiStrip();
   const summary =
     loading || !value ? label : `${label}: ${value}${unit ? ` ${unit}` : ""}${delta ? `, ${deltaPhrase(normalise(delta))}` : ""}`;
   return (
@@ -84,32 +87,36 @@ export function KpiTile({
       role="group"
       aria-label={summary}
       aria-busy={loading || undefined}
-      className="tm-glass tm-edge relative flex min-w-0 flex-col gap-2 rounded-md p-4"
+      className={cn(
+        "relative flex min-w-0 flex-col gap-1.5 p-4",
+        inStrip ? "border-b border-r border-line" : "rounded-lg border border-line bg-surface",
+      )}
     >
-      <p className="truncate font-mono text-[11px] uppercase tracking-[0.22em] text-dim">{label}</p>
+      <p className="tm-micro truncate">{label}</p>
       {loading ? (
         <>
-          <Skeleton className="h-8 w-24" />
+          <Skeleton className="my-[3px] h-7 w-24" />
+          <Skeleton className="h-4 w-32" />
           <Skeleton className="h-8 w-full" />
         </>
       ) : (
         <>
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="font-mono text-2xl tabular-nums text-ink">{value}</span>
-            {unit && <span className="text-sm text-dim">{unit}</span>}
-            {delta && (
-              <span className="ml-auto self-center">
-                <DeltaChip delta={delta} />
-              </span>
-            )}
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+            <span className="font-mono text-[28px] font-medium leading-[34px] tracking-tight tabular-nums text-ink">{value}</span>
+            {unit && <span className="text-[13px] text-dim">{unit}</span>}
           </div>
-          {series && series.length > 0 && (
-            <>
-              <Sparkline label={trendLabel ?? `${label} trend`} values={series} />
-              {trendLabel && <p className="-mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-dim">{trendLabel}</p>}
-            </>
+          {(delta || hint) && (
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              {delta && <DeltaChip delta={delta} />}
+              {hint && <p className="min-w-0 truncate text-xs text-dim">{hint}</p>}
+            </div>
           )}
-          {hint && <p className="text-xs text-dim">{hint}</p>}
+          {series && series.length > 0 && (
+            <div className="mt-1.5">
+              <Sparkline label={trendLabel ?? `${label} trend`} values={series} />
+              {trendLabel && <p className="mt-1 truncate text-[11px] leading-4 text-faint">{trendLabel}</p>}
+            </div>
+          )}
         </>
       )}
     </div>

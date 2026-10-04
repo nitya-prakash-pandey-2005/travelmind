@@ -18,7 +18,7 @@ import { Dialog } from "../../ui/Dialog";
 import { FormError } from "../../ui/FormError";
 import { SegmentedControl } from "../../ui/SegmentedControl";
 import { SelectField } from "../../ui/SelectField";
-import { TextField } from "../../ui/TextField";
+import { FIELD_CONTROL, FIELD_LABEL, FieldMessage, TextField } from "../../ui/TextField";
 import { cn } from "../../ui/cn";
 import { useToast } from "../../ui/toast/useToast";
 import { AirportPicker } from "../airports/AirportPicker";
@@ -40,20 +40,28 @@ const CLIENT_MODES = [
 const RENDERED_FIELDS = ["origin", "destination", "depart_date", "return_date", "adults", "cabin", "notes", "name"];
 const NAME_REQUIRED = "Enter the client's name, or pick an existing client.";
 
-const LABEL = "font-mono text-[11px] uppercase tracking-[0.22em] text-dim";
-const INPUT = "rounded-sm border bg-void/60 px-3 text-ink outline-none transition placeholder:text-dim/60 focus:border-primary";
-
-function FieldError({ id, message }: { id?: string; message?: string }) {
+function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
   return (
-    <p id={id} className="text-xs text-danger">
+    <FieldMessage id={id} error>
       {message}
-    </p>
+    </FieldMessage>
   );
 }
 
+/** A picked client: a suggestion, or the client an existing record already links to. */
+export type ClientChoice = Pick<Client, "id" | "name"> & Partial<Pick<Client, "email" | "company_name">>;
+
 /** Search-as-you-type picker over the agency's clients (GET /api/v1/clients?q=). */
-function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (client: Client | null) => void }) {
+export function ClientCombobox({
+  value,
+  onChange,
+  label = "Client",
+}: {
+  value: ClientChoice | null;
+  onChange: (client: ClientChoice | null) => void;
+  label?: string;
+}) {
   const id = useId();
   const listId = `${id}-list`;
   const [term, setTerm] = useState("");
@@ -69,7 +77,7 @@ function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (
 
   if (value) {
     return (
-      <div className="flex items-center justify-between gap-3 rounded-sm border border-line bg-void/50 px-3 py-2">
+      <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-surface-2 px-3 py-2">
         <div className="min-w-0">
           <p className="truncate text-sm text-ink">{value.name}</p>
           {(value.email || value.company_name) && (
@@ -78,7 +86,7 @@ function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (
         </div>
         <Button
           ref={changeRef}
-          variant="ghost"
+          variant="secondary"
           size="sm"
           aria-label="Change client"
           onClick={() => {
@@ -102,8 +110,8 @@ function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (
 
   return (
     <div className="relative flex flex-col gap-1.5">
-      <label htmlFor={id} className={LABEL}>
-        Client
+      <label htmlFor={id} className={FIELD_LABEL}>
+        {label}
       </label>
       <input
         ref={inputRef}
@@ -116,7 +124,7 @@ function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (
         autoComplete="off"
         placeholder="Search clients by name or email (optional)"
         value={term}
-        className={cn(INPUT, "h-10 border-line")}
+        className={cn(FIELD_CONTROL, "border-line-strong")}
         onChange={(event) => {
           setTerm(event.target.value);
           setOpen(true);
@@ -148,7 +156,7 @@ function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (
           id={listId}
           role="listbox"
           aria-label="Client suggestions"
-          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-auto rounded-sm border border-line bg-raised shadow-xl"
+          className="tm-popover absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-auto rounded-md py-1"
         >
           {results.map((client, index) => (
             <li
@@ -156,7 +164,7 @@ function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (
               id={`${id}-opt-${index}`}
               role="option"
               aria-selected={index === active}
-              className={cn("flex cursor-pointer flex-col px-3 py-2 text-sm", index === active && "bg-primary/15")}
+              className={cn("flex cursor-pointer flex-col px-3 py-2 text-[13px]", index === active && "bg-selected")}
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => setActive(index)}
               onClick={() => choose(client)}
@@ -170,17 +178,17 @@ function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (
             </li>
           ))}
           {(stale || suggestions.isFetching) && results.length === 0 && (
-            <li role="presentation" className="px-3 py-2 font-mono text-xs uppercase tracking-[0.2em] text-dim">
+            <li role="presentation" className="px-3 py-2 text-xs text-dim">
               Searching…
             </li>
           )}
           {suggestions.isError && (
-            <li role="presentation" className="px-3 py-2 text-sm text-danger">
+            <li role="presentation" className="px-3 py-2 text-[13px] text-danger">
               {asApiError(suggestions.error).message}
             </li>
           )}
           {!stale && !suggestions.isFetching && !suggestions.isError && suggestions.isSuccess && results.length === 0 && (
-            <li role="presentation" className="px-3 py-2 text-sm text-dim">
+            <li role="presentation" className="px-3 py-2 text-[13px] text-dim">
               {term.trim() ? `No clients match “${term.trim()}”. Choose New client to add one.` : "No clients yet. Choose New client to add one."}
             </li>
           )}
@@ -191,7 +199,7 @@ function ClientCombobox({ value, onChange }: { value: Client | null; onChange: (
 }
 
 /** The form, mounted only while the dialog is open so every opening starts fresh. */
-function NewEnquiryForm({ onClose }: { onClose: () => void }) {
+function NewEnquiryForm({ onClose, client: preset }: { onClose: () => void; client?: ClientChoice }) {
   const formId = useId();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -202,7 +210,7 @@ function NewEnquiryForm({ onClose }: { onClose: () => void }) {
   const [adults, setAdults] = useState("1");
   const [cabin, setCabin] = useState<Cabin>("economy");
   const [clientMode, setClientMode] = useState<ClientMode>("existing");
-  const [client, setClient] = useState<Client | null>(null);
+  const [client, setClient] = useState<ClientChoice | null>(preset ?? null);
   const [clientName, setClientName] = useState("");
   const [notes, setNotes] = useState("");
   const [nameError, setNameError] = useState<string | undefined>();
@@ -263,10 +271,12 @@ function NewEnquiryForm({ onClose }: { onClose: () => void }) {
       open
       onClose={onClose}
       title="New enquiry"
-      description="Capture a trip request now; quote it when you're ready."
+      description={
+        preset ? `Capture a trip request for ${preset.name}; quote it when you're ready.` : "Capture a trip request now; quote it when you're ready."
+      }
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
           <Button type="submit" form={formId} loading={create.isPending} disabled={sameAirport}>
@@ -280,14 +290,14 @@ function NewEnquiryForm({ onClose }: { onClose: () => void }) {
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
             <AirportPicker label="From" value={origin} onChange={setOrigin} />
-            <FieldError message={fieldError("origin")} />
+            <FieldError id={`${formId}-origin-error`} message={fieldError("origin")} />
           </div>
           <div className="flex flex-col gap-1">
             <AirportPicker label="To" value={destination} onChange={setDestination} />
-            <FieldError message={fieldError("destination")} />
+            <FieldError id={`${formId}-destination-error`} message={fieldError("destination")} />
           </div>
         </div>
-        {sameAirport && <p className="-mt-2 text-sm text-warn">Pick two different airports.</p>}
+        {sameAirport && <p className="-mt-2 text-[13px] text-warn">Pick two different airports.</p>}
         <div className="grid gap-3 sm:grid-cols-2">
           <TextField
             label="Depart"
@@ -351,7 +361,7 @@ function NewEnquiryForm({ onClose }: { onClose: () => void }) {
           )}
         </fieldset>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor={`${formId}-notes`} className={LABEL}>
+          <label htmlFor={`${formId}-notes`} className={FIELD_LABEL}>
             Notes
           </label>
           <textarea
@@ -363,7 +373,7 @@ function NewEnquiryForm({ onClose }: { onClose: () => void }) {
             aria-invalid={fieldError("notes") ? true : undefined}
             aria-describedby={fieldError("notes") ? notesErrorId : undefined}
             placeholder="Preferences, budget, anything the client mentioned"
-            className={cn(INPUT, "resize-y py-2", fieldError("notes") ? "border-danger" : "border-line")}
+            className={cn(FIELD_CONTROL, "h-auto resize-y py-2", fieldError("notes") ? "border-danger" : "border-line-strong")}
           />
           <FieldError id={notesErrorId} message={fieldError("notes")} />
         </div>
@@ -372,7 +382,10 @@ function NewEnquiryForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Compact create-enquiry dialog: route, dates, travellers, cabin, client (existing or new) and notes. */
-export function NewEnquiryDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return open ? <NewEnquiryForm onClose={onClose} /> : null;
+/**
+ * Compact create-enquiry dialog: route, dates, travellers, cabin, client (existing or new) and notes.
+ * `client` opens it with that client already picked (e.g. from the client's page).
+ */
+export function NewEnquiryDialog({ open, onClose, client }: { open: boolean; onClose: () => void; client?: ClientChoice }) {
+  return open ? <NewEnquiryForm onClose={onClose} client={client} /> : null;
 }

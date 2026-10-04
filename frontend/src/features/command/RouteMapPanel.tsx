@@ -6,19 +6,35 @@ import { airportSearchQueryOptions } from "../../api/queries";
 import type { Airport } from "../../api/types";
 import { formatNumber } from "../../lib/format";
 import { EmptyState } from "../../ui/EmptyState";
-import { PanelSkeleton } from "../../ui/Skeleton";
 import { cn } from "../../ui/cn";
 import { GlobePanel } from "../globe/GlobePanel";
 import { routeArcs, summariseRoutes } from "../globe/routeArcs";
 import { useRouteSelection } from "../route/routeStore";
 import { routeLabel } from "./format";
 import { ErrorPanel } from "./PanelError";
+import { LoadingPanel } from "./panelParts";
 
-const TITLE = "Route globe";
-const EYEBROW = "Enquiry routes";
+const TITLE = "Route map";
+const DESCRIPTION = "Routes from your enquiries; won and plotted routes highlighted";
 const LISTED_ROUTES = 6;
 /** Arcs drawn at most: the busiest routes (each needs its airports looked up). */
 const GLOBE_ROUTES = 12;
+
+/** Line-swatch legend for the map: identity is never colour alone, the words say what each line means. */
+function Legend() {
+  return (
+    <ul aria-label="Map legend" className="flex items-center gap-3 text-[11px] text-dim">
+      <li className="inline-flex items-center gap-1.5">
+        <span aria-hidden="true" className="h-px w-4 bg-primary" />
+        Won or plotted
+      </li>
+      <li className="inline-flex items-center gap-1.5">
+        <span aria-hidden="true" className="h-px w-4 bg-faint" />
+        Other
+      </li>
+    </ul>
+  );
+}
 
 /** Airports by code, looked up through the (cached) airport search: an exact code match only. */
 function useAirports(codes: readonly string[]): Map<string, Airport> {
@@ -40,12 +56,12 @@ export function RouteMapPanel({ onNewEnquiry, className }: { onNewEnquiry: () =>
   const airports = useAirports(codes);
   const arcs = useMemo(() => routeArcs(drawn, airports, selection), [drawn, airports, selection]);
 
-  if (enquiries.isPending) return <PanelSkeleton title={TITLE} eyebrow={EYEBROW} className={className} />;
+  if (enquiries.isPending) return <LoadingPanel title={TITLE} description={DESCRIPTION} rows={8} className={className} />;
   if (enquiries.isError) {
     return (
       <ErrorPanel
         title={TITLE}
-        eyebrow={EYEBROW}
+        description={DESCRIPTION}
         error={enquiries.error}
         onRetry={() => void enquiries.refetch()}
         retrying={enquiries.isFetching}
@@ -60,48 +76,50 @@ export function RouteMapPanel({ onNewEnquiry, className }: { onNewEnquiry: () =>
     <GlobePanel
       arcs={arcs}
       title={TITLE}
-      eyebrow={EYEBROW}
-      variant="glass"
-      className={cn("h-full", className)}
-      actions={
-        routes.length > 0 && (
-          <p className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.16em] text-dim">
-            <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className="h-1.5 w-3 rounded-full bg-primary" />
-              {formatNumber(won)} won
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className="h-1.5 w-3 rounded-full bg-dim" />
-              {formatNumber(routes.length)} {routes.length === 1 ? "route" : "routes"}
-            </span>
-          </p>
-        )
-      }
+      description={DESCRIPTION}
+      className={className}
+      actions={routes.length > 0 && <Legend />}
     >
       {routes.length === 0 ? (
         <EmptyState
           icon={Route}
           className="py-4"
           title="No enquiry routes yet"
-          description="Routes from your enquiries arc across the globe; won trips glow."
-          action={{ label: "Create an enquiry", onClick: onNewEnquiry }}
+          description="Each enquiry's route is drawn on the map; won trips are highlighted."
+          action={{ label: "Create enquiry", onClick: onNewEnquiry }}
         />
       ) : (
-        <ul aria-label="Busiest routes" className="mt-3 flex flex-wrap gap-1.5">
-          {routes.slice(0, LISTED_ROUTES).map((route) => (
-            <li
-              key={`${route.origin}-${route.destination}`}
-              className={cn(
-                "tm-tint inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5 font-mono text-xs",
-                route.won ? "text-primary" : "text-dim",
-              )}
-            >
-              <span className="text-ink">{routeLabel(route.origin, route.destination)}</span>
-              <span>×{formatNumber(route.count)}</span>
-              {route.won && <span className="sr-only">(won)</span>}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-3 border-t border-line pt-3">
+          <p className="mb-2 flex items-baseline justify-between gap-3">
+            <span aria-hidden="true" className="tm-micro">
+              Busiest routes
+            </span>
+            <span className="font-mono text-[11px] tabular-nums text-faint">
+              {formatNumber(routes.length)} {routes.length === 1 ? "route" : "routes"}, {formatNumber(won)} won
+            </span>
+          </p>
+          <ul aria-label="Busiest routes" className="grid grid-cols-2 gap-x-6 sm:grid-cols-3">
+            {routes.slice(0, LISTED_ROUTES).map((route) => (
+              <li
+                key={`${route.origin}-${route.destination}`}
+                className="flex items-center justify-between gap-2 border-b border-line/60 py-1.5 font-mono text-xs"
+              >
+                <span className="flex min-w-0 items-center gap-1.5 text-ink">
+                  <span aria-hidden="true" className={cn("h-px w-2.5 shrink-0", route.won ? "bg-primary" : "bg-faint")} />
+                  <span className="truncate">{routeLabel(route.origin, route.destination)}</span>
+                </span>
+                <span className="tabular-nums text-dim">
+                  {formatNumber(route.count)}
+                  <span className="sr-only">
+                    {" "}
+                    {route.count === 1 ? "enquiry" : "enquiries"}
+                    {route.won ? ", won" : ""}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </GlobePanel>
   );

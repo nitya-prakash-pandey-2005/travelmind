@@ -9,5 +9,7 @@ export default defineConfig({
     include: ["src/**/*.test.{ts,tsx}"],
     css: false,
     restoreMocks: true,
+    // Whole-page tests render the full app; on a busy machine the first one in a file can pass 5 s.
+    testTimeout: 15000,
   },
 });

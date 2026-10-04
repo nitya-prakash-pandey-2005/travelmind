@@ -42,14 +42,14 @@ test("status pill labels", () => {
 
 test("status pill maps every enquiry and quote status to its label and tone", () => {
   const expected: Array<[PillStatus, string, string]> = [
-    ["new", "New", "primary"],
-    ["quoting", "Quoting", "ai"],
-    ["quoted", "Quoted", "warn"],
+    ["new", "New", "info"],
+    ["quoting", "Quoting", "warn"],
+    ["quoted", "Quoted", "primary"],
     ["won", "Won", "ok"],
     ["lost", "Lost", "neutral"],
     ["draft", "Draft", "neutral"],
-    ["sent", "Sent", "primary"],
-    ["viewed", "Viewed", "ai"],
+    ["sent", "Sent", "info"],
+    ["viewed", "Viewed", "primary"],
     ["accepted", "Accepted", "ok"],
     ["declined", "Declined", "danger"],
     ["expired", "Expired", "neutral"],

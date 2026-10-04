@@ -85,11 +85,10 @@ export function daysUntil(date: string, today: string): number {
   return Number.isFinite(days) ? days : 0;
 }
 
-/** "▲ 8.2%", "▼ 10.9%", "0%". */
+/** Size of a change for a chip whose arrow shows the direction: "8.2%", "10.9%", "0%"; "—" when unknown. */
 export function formatChange(pct: number): string {
   if (!finite(pct)) return DASH;
-  if (pct === 0) return "0%";
-  return `${pct > 0 ? "▲" : "▼"} ${PERCENT.format(Math.abs(pct))}%`;
+  return `${PERCENT.format(Math.abs(pct))}%`;
 }
 
 /** "DEL → BOM"; a missing end reads "—". */

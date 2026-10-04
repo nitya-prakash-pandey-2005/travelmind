@@ -1,6 +1,7 @@
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { apiFetch } from "./client";
-import type { Money } from "./offers";
+import type { ClientCreate, ClientList, ClientOut as Client } from "./clients";
+import type { EnquiryCreate, EnquiryList, EnquiryOut as Enquiry } from "./enquiries";
 
 /** Command Center responses, field for field with the backend's dashboard, enquiry and client schemas. */
 
@@ -104,61 +105,10 @@ export type Departure = {
 };
 export type DeparturesResponse = { items: Departure[] };
 
-export type Cabin = "economy" | "premium_economy" | "business" | "first";
-
-export type Enquiry = {
-  id: string;
-  number: string;
-  client: { id: string; name: string } | null;
-  source: string;
-  raw_text: string | null;
-  origin: string | null;
-  destination: string | null;
-  depart_date: string | null;
-  return_date: string | null;
-  adults: number;
-  children_ages: number[];
-  cabin: string;
-  budget: Money | null;
-  notes: string | null;
-  status: PipelineStatus;
-  lost_reason: string | null;
-  assignee: { id: string; full_name: string } | null;
-  created_at: string;
-  updated_at: string;
-  closed_at: string | null;
-  quote_count: number;
-};
-export type EnquiryList = { items: Enquiry[]; total: number };
-/** POST /api/v1/enquiries: omitted fields take the server's defaults. */
-export type EnquiryCreate = {
-  client_id?: string;
-  origin?: string;
-  destination?: string;
-  depart_date?: string;
-  return_date?: string;
-  adults?: number;
-  cabin?: Cabin;
-  notes?: string;
-};
-
-export type Client = {
-  id: string;
-  kind: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  company_name: string | null;
-  home_airport: string | null;
-  notes: string | null;
-  tags: string[];
-  created_at: string;
-  updated_at: string;
-  enquiry_count: number;
-  quote_count: number;
-};
-export type ClientList = { items: Client[]; total: number };
-export type ClientCreate = { name: string };
+export type { Cabin } from "./offers";
+/** The Command Center reads the same enquiry and client records as their own pages. */
+export type { EnquiryOut as Enquiry, EnquiryList, EnquiryCreate } from "./enquiries";
+export type { ClientOut as Client, ClientList, ClientCreate } from "./clients";
 
 export const ACTIVITY_PAGE_SIZE = 20;
 export const ROUTE_ENQUIRY_LIMIT = 50;
@@ -209,7 +159,7 @@ export const dashboardKeys = {
   departures: ["dashboard", "departures"] as const,
   routeEnquiries: ["dashboard", "route-enquiries"] as const,
   enquiries: ["enquiries"] as const,
-  clients: (term: string) => ["clients", term.trim().toLowerCase()] as const,
+  clients: (term: string) => ["clients", "suggest", term.trim().toLowerCase()] as const,
 };
 
 /**

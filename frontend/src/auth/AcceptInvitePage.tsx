@@ -8,7 +8,8 @@ import { APP_HOME } from "../app/paths";
 import { Button } from "../ui/Button";
 import { FormError } from "../ui/FormError";
 import { TextField } from "../ui/TextField";
-import { AuthFrame } from "./AuthFrame";
+import { AUTH_LINK, AuthFrame } from "./AuthFrame";
+import { PASSWORD_RULE } from "./passwordRule";
 import { resetSessionState } from "./resetSessionState";
 
 /** Fields whose server errors show inline next to their input; the token comes from the link. */
@@ -35,7 +36,18 @@ export function AcceptInvitePage() {
   const showGeneralError = error ? needsGeneralError(error, INLINE_FIELDS) : false;
 
   return (
-    <AuthFrame title="Join your crew" subtitle="Set your name and password to board your agency's deck.">
+    <AuthFrame
+      title="Join workspace"
+      subtitle="You've been invited to your agency's TravelMind workspace. Add your name and choose a password to join."
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link to="/login" className={AUTH_LINK}>
+            Sign in
+          </Link>
+        </>
+      }
+    >
       <form
         noValidate
         className="flex flex-col gap-4"
@@ -50,22 +62,16 @@ export function AcceptInvitePage() {
           type="password"
           autoComplete="new-password"
           required
-          hint="At least 10 characters"
+          hint={PASSWORD_RULE}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           error={fieldErrors.password}
         />
         {error && showGeneralError && <FormError error={error} />}
-        <Button type="submit" loading={accept.isPending}>
-          Join the crew
+        <Button type="submit" loading={accept.isPending} className="mt-1 w-full">
+          Join workspace
         </Button>
       </form>
-      <p className="mt-6 text-sm text-dim">
-        Already have an account?{" "}
-        <Link to="/login" className="text-primary hover:underline">
-          Sign in
-        </Link>
-      </p>
     </AuthFrame>
   );
 }

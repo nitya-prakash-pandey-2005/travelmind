@@ -1,5 +1,16 @@
 import type { Money } from "../api/offers";
 
+/*
+ * Which format where:
+ * - formatMoneyCompact ("₹31.1L"): KPI tiles and Command Center dashboard figures that add up money
+ *   (pipeline, won and accepted values).
+ * - formatWholeMoney ("₹2,16,804"): tables, cards, facts and budgets, and fare levels anywhere, KPI tiles
+ *   included (route intel's median and range read "₹4,750", not "₹4.8K": a fare is compared to the rupee).
+ * - formatMoney (exact minor units, "₹2,16,804.38"): only where the client is quoted a price: the quote's
+ *   price breakdowns (and the supplier fares they are built from), the send dialog and WhatsApp text, and
+ *   the public quote page.
+ */
+
 /**
  * ISO 4217 currencies whose minor unit isn't 1/100: the same table the backend uses to define
  * `amount_minor` (backend/src/travelmind/offers/money.py). Intl's own digits differ for some
@@ -40,11 +51,22 @@ function exponent(currency: string): number {
   return EXPONENTS[currency.toUpperCase()] ?? 2;
 }
 
+/** Digits after the decimal point in `currency`'s minor unit (2 for INR, 0 for JPY, 3 for KWD). */
+export function currencyExponent(currency: string): number {
+  return exponent(currency);
+}
+
 /** Integer minor units → "₹5,234", "£45.50". Whole amounts drop the decimals. */
 export function formatMoney(money: Money): string {
   const digits = exponent(money.currency);
   const scale = 10 ** digits;
   return formatter(money.currency, digits, money.amount_minor % scale === 0).format(money.amount_minor / scale);
+}
+
+/** Whole units, rounded half-up from minor units: "₹2,16,804" rather than "₹2,16,804.38". */
+export function formatWholeMoney(minor: number, currency: string): string {
+  const scale = 10 ** exponent(currency);
+  return formatMoney({ amount_minor: Math.round(minor / scale) * scale, currency });
 }
 
 const compactCache = new Map<string, Intl.NumberFormat>();

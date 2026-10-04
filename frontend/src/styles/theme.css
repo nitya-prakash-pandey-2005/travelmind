@@ -1,119 +1,59 @@
-/* Design tokens. The only place colour values live; everything else uses these variables. */
-:root,
-[data-theme="dark"] {
-  --tm-void: #05070d;
-  --tm-deck: #0a0f1c;
-  --tm-raised: #0f1729;
-  --tm-line: #1c2a44;
-  --tm-grid-line: rgb(56 189 248 / 0.07);
-  --tm-text: #e6f1ff;
-  --tm-text-dim: #8aa0bf;
-  --tm-primary: #22d3ee;
-  --tm-primary-ink: #03141a;
-  --tm-warn: #fbbf24;
-  --tm-ai: #e879f9;
-  --tm-ok: #34d399;
-  --tm-danger: #fb7185;
-  --tm-globe-land: #1f6f8b;
-  --tm-globe-ocean: #07101f;
-  /* The agency's brand colour (set on the app shell from its settings); tints accents, never text. */
-  --tm-brand: var(--tm-primary);
-  /* Layered glass surfaces (checked: text 16.6:1, dim 7.1:1 on glass over void). */
-  --tm-glass: rgb(12 19 36 / 0.72);
-  --tm-glass-strong: rgb(13 20 38 / 0.95);
-  --tm-edge: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--tm-primary) 35%, transparent) 0%,
-    var(--tm-line) 42%,
-    var(--tm-line) 100%
-  );
-  --tm-glow:
-    inset 0 0 0 1px color-mix(in oklab, var(--tm-primary) 30%, transparent),
-    inset 0 0 28px -14px color-mix(in oklab, var(--tm-primary) 55%, transparent);
-  --tm-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.04), 0 18px 40px -24px rgb(0 0 0 / 0.75);
-  --tm-shadow-pop: 0 0 0 1px rgb(255 255 255 / 0.02), 0 28px 64px -20px rgb(0 0 0 / 0.85);
-  --tm-backdrop: rgb(2 4 10 / 0.72);
-  /* Row hover and tinted fills (pills, avatars): tone text stays >= 5.2:1 on every surface. */
-  --tm-hover: rgb(34 211 238 / 0.05);
-  --tm-tint-fill: 14%;
-  --tm-tint-edge: 45%;
-  --tm-skeleton: rgb(138 160 191 / 0.1);
-  --tm-shimmer: rgb(138 160 191 / 0.16);
-  /* Categorical chart palette: every hue >= 7:1 on deck. */
-  --tm-chart-1: #22d3ee;
-  --tm-chart-2: #a78bfa;
-  --tm-chart-3: #fbbf24;
-  --tm-chart-4: #34d399;
-  --tm-chart-5: #fb7185;
-  --tm-chart-6: #60a5fa;
-  --tm-chart-grid: rgb(138 160 191 / 0.12);
-  --tm-chart-axis: #8aa0bf;
-}
+/*
+ * Theme tokens (v3 theme system). Colour values live in src/theme/palettes.ts; themes.generated.css is built
+ * from it and holds one block of --tm-* properties per look, keyed off <html data-theme data-mode data-contrast>
+ * (set before first paint by the inline script in index.html). Its bare :root block, Orbital dark, is the
+ * fallback when scripts are off. This file only maps those properties onto the Tailwind names components use.
+ *
+ * Contrast: every look is checked by src/theme/__tests__/contrast.test.ts (text >= 4.5:1 on bg, surface and
+ * surface-2 and on hover/selected fills over them, chart hues and line-strong control borders >= 3:1, status
+ * text >= 4.5:1 on its own tint, primary-ink on primary and its hover/pressed fills >= 4.5:1).
+ */
+@import "./themes.generated.css";
 
-[data-theme="daylight"] {
-  --tm-void: #f3f6fb;
-  --tm-deck: #ffffff;
-  --tm-raised: #eef3fa;
-  --tm-line: #cfd9e8;
-  --tm-grid-line: rgb(14 116 144 / 0.06);
-  --tm-text: #0b1526;
-  --tm-text-dim: #4a5b75;
-  --tm-primary: #0e7490;
-  --tm-primary-ink: #ffffff;
-  --tm-warn: #b45309;
-  --tm-ai: #a21caf;
-  --tm-ok: #047857;
-  --tm-danger: #be123c;
-  --tm-globe-land: #6aa8c2;
-  --tm-globe-ocean: #e3edf7;
-  /* Layered glass surfaces (checked: text 18.0:1, dim 6.8:1 on glass over void). */
-  --tm-glass: rgb(255 255 255 / 0.82);
-  --tm-glass-strong: rgb(255 255 255 / 0.97);
-  --tm-edge: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--tm-primary) 35%, transparent) 0%,
-    var(--tm-line) 42%,
-    var(--tm-line) 100%
-  );
-  --tm-glow:
-    inset 0 0 0 1px color-mix(in oklab, var(--tm-primary) 28%, transparent),
-    inset 0 0 24px -16px color-mix(in oklab, var(--tm-primary) 40%, transparent);
-  --tm-shadow: 0 1px 2px rgb(11 21 38 / 0.05), 0 12px 32px -18px rgb(11 21 38 / 0.22);
-  --tm-shadow-pop: 0 2px 6px rgb(11 21 38 / 0.06), 0 28px 56px -20px rgb(11 21 38 / 0.3);
-  --tm-backdrop: rgb(11 21 38 / 0.4);
-  /* Row hover and tinted fills (pills, avatars): tone text stays >= 4.5:1 (warn is the floor, 4.53:1). */
-  --tm-hover: rgb(14 116 144 / 0.025);
-  --tm-tint-fill: 4%;
-  --tm-tint-edge: 35%;
-  --tm-skeleton: rgb(74 91 117 / 0.09);
-  --tm-shimmer: rgb(255 255 255 / 0.75);
-  /* Categorical chart palette: every hue >= 4.9:1 on deck and glass. */
-  --tm-chart-1: #0e7490;
-  --tm-chart-2: #6d28d9;
-  --tm-chart-3: #b45309;
-  --tm-chart-4: #047857;
-  --tm-chart-5: #be123c;
-  --tm-chart-6: #1d4ed8;
-  --tm-chart-grid: rgb(74 91 117 / 0.14);
-  --tm-chart-axis: #4a5b75;
+:root {
+  /* The agency's brand colour (set on the app shell from its settings); tints the workspace mark only. */
+  --tm-brand: var(--tm-primary);
+
+  /* v1 names, kept as aliases so existing pages keep compiling while they move to the names above. */
+  --tm-void: var(--tm-bg);
+  --tm-deck: var(--tm-surface);
+  --tm-raised: var(--tm-surface-2);
+  --tm-line: var(--tm-border);
+  --tm-text-dim: var(--tm-text-2);
+  --tm-glass: var(--tm-surface);
+  --tm-glass-strong: var(--tm-surface);
+  --tm-grid-line: var(--tm-dot);
 }
 
 @theme inline {
-  --color-void: var(--tm-void);
-  --color-deck: var(--tm-deck);
-  --color-raised: var(--tm-raised);
-  --color-line: var(--tm-line);
+  /* v2 names */
+  --color-bg: var(--tm-bg);
+  --color-surface: var(--tm-surface);
+  --color-surface-2: var(--tm-surface-2);
+  --color-line: var(--tm-border);
+  --color-line-strong: var(--tm-border-strong);
   --color-ink: var(--tm-text);
-  --color-dim: var(--tm-text-dim);
+  --color-dim: var(--tm-text-2);
+  --color-faint: var(--tm-text-3);
   --color-primary: var(--tm-primary);
   --color-primary-ink: var(--tm-primary-ink);
-  --color-warn: var(--tm-warn);
-  --color-ai: var(--tm-ai);
+  --color-primary-hover: var(--tm-primary-hover);
+  --color-primary-active: var(--tm-primary-active);
+  --color-accent-2: var(--tm-accent-2);
   --color-ok: var(--tm-ok);
+  --color-warn: var(--tm-warn);
   --color-danger: var(--tm-danger);
-  --color-glass: var(--tm-glass);
-  --color-glass-strong: var(--tm-glass-strong);
+  --color-info: var(--tm-info);
+  --color-ai: var(--tm-ai);
   --color-hover: var(--tm-hover);
+  --color-selected: var(--tm-selected);
+  /* v1 names (aliases of the above) */
+  --color-void: var(--tm-bg);
+  --color-deck: var(--tm-surface);
+  --color-raised: var(--tm-surface-2);
+  --color-glass: var(--tm-surface);
+  --color-glass-strong: var(--tm-surface);
+  /* charts */
   --color-chart-1: var(--tm-chart-1);
   --color-chart-2: var(--tm-chart-2);
   --color-chart-3: var(--tm-chart-3);
@@ -122,8 +62,23 @@
   --color-chart-6: var(--tm-chart-6);
   --color-chart-grid: var(--tm-chart-grid);
   --color-chart-axis: var(--tm-chart-axis);
-  --ease-tm: cubic-bezier(0.22, 1, 0.36, 1);
-  --font-display: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Corners follow the theme: controls (rounded-md), panels (rounded-lg) and the small/large steps around them. */
+  --radius-xs: calc(var(--tm-radius-control) / 3);
+  --radius-sm: calc(var(--tm-radius-control) * 2 / 3);
+  --radius: calc(var(--tm-radius-control) * 2 / 3);
+  --radius-md: var(--tm-radius-control);
+  --radius-lg: var(--tm-radius-panel);
+  --radius-xl: calc(var(--tm-radius-panel) * 1.5);
+
+  /* Elevation: none in Contrast and high-contrast looks (the tokens become a zero shadow there). */
+  --shadow-pop: var(--tm-shadow-pop);
+  --shadow-frame: var(--tm-shadow-frame);
+  --shadow-raise: var(--tm-shadow-raise);
+
+  --ease-tm: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --font-sans: var(--tm-font-sans);
+  /* Titles: the theme's display face (Fraunces in Ember, the UI face elsewhere). */
+  --font-display: var(--tm-font-display);
+  --font-mono: var(--tm-font-mono);
 }

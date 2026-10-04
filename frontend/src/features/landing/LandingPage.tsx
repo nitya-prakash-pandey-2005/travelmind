@@ -1,85 +1,92 @@
 import { Link } from "@tanstack/react-router";
 import { useDocumentTitle } from "../../lib/useDocumentTitle";
-import { ThemeToggle } from "../../ui/ThemeToggle";
+import { cn } from "../../ui/cn";
+import { ThemeSwitcher } from "../../theme/ThemeSwitcher";
+import { ClosingCall } from "./ClosingCall";
 import { CtaLink } from "./CtaLink";
+import { Faq } from "./Faq";
 import { FeatureGrid } from "./FeatureGrid";
 import { Hero } from "./Hero";
 import { HowItWorks } from "./HowItWorks";
+import { IntegrationsStrip } from "./IntegrationsStrip";
+import { CONTAINER } from "./layout";
 import { LandingFooter } from "./LandingFooter";
 import { PlatformFacts } from "./PlatformFacts";
+import { ProductTour } from "./ProductTour";
+import { TrustSection } from "./TrustSection";
+import { usePageDescription } from "./usePageDescription";
+import { Wordmark } from "./Wordmark";
 
-const START_FREE_CONTEXT = ": create an agency account";
+const NAV_LINK = "hidden rounded-sm text-[13px] text-dim transition-colors duration-150 ease-tm hover:text-ink lg:inline";
 
+const DESCRIPTION =
+  "TravelMind is the operations console for travel agencies: search airline and hotel suppliers in one pass, see whether each fare is good for its route, and run every enquiry through one pipeline. Every price is labelled live, cached or sandbox.";
+
+const SECTIONS = [
+  { href: "#product", label: "Product" },
+  { href: "#features", label: "Features" },
+  { href: "#how-it-works", label: "How it works" },
+  { href: "#security", label: "Security" },
+  { href: "#faq", label: "FAQ" },
+];
+
+/**
+ * Fits from 320 px: below 440 px the gaps tighten and the call to action reads "Create" (its name stays "Create
+ * workspace for your agency"); below 360 px it leaves the bar to the hero's, so the theme switcher stays on screen.
+ */
 function TopNav() {
   return (
-    <header className="sticky top-0 z-40 border-b border-line/70 bg-void/75 backdrop-blur-md">
-      <nav aria-label="Main" className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:gap-6 sm:px-6">
-        <Link to="/" className="mr-auto font-display text-sm tracking-[0.3em] text-primary sm:text-base sm:tracking-[0.4em]">
-          TRAVELMIND
+    <header className="tm-topbar sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
+      <nav aria-label="Main" className={cn(CONTAINER, "flex h-14 items-center gap-2 min-[440px]:gap-3 sm:gap-6")}>
+        <Link to="/" className="mr-auto rounded-sm">
+          <Wordmark />
         </Link>
-        <a href="#features" className="hidden text-sm text-dim transition-colors hover:text-ink md:inline">
-          Features
-        </a>
-        <a href="#how-it-works" className="hidden text-sm text-dim transition-colors hover:text-ink md:inline">
-          How it works
-        </a>
-        <Link to="/login" className="text-sm text-dim transition-colors hover:text-ink">
+        {SECTIONS.map((section) => (
+          <a key={section.href} href={section.href} className={NAV_LINK}>
+            {section.label}
+          </a>
+        ))}
+        <span aria-hidden="true" className="hidden h-4 w-px bg-line lg:block" />
+        <Link
+          to="/login"
+          className="shrink-0 whitespace-nowrap rounded-sm text-[13px] text-dim transition-colors duration-150 ease-tm hover:text-ink"
+        >
           Sign in
         </Link>
-        <CtaLink to="/signup" size="sm" context={START_FREE_CONTEXT}>
-          Start free
+        <CtaLink to="/signup" size="sm" context=" for your agency" className="max-[360px]:hidden">
+          {/* One inline run, so the space survives in the label and in the accessible name. */}
+          <span>
+            Create <span className="max-[440px]:sr-only">workspace</span>
+          </span>
         </CtaLink>
-        <span className="hidden sm:inline-flex">
-          <ThemeToggle />
-        </span>
+        <ThemeSwitcher hideNameBelow="lg" />
       </nav>
     </header>
   );
 }
 
-function ClosingCall() {
-  return (
-    <section aria-labelledby="closing-title" className="px-4 py-20 sm:px-6 lg:py-28">
-      <div className="tm-glass tm-edge relative isolate mx-auto max-w-5xl overflow-hidden rounded-lg px-6 py-14 text-center sm:px-12 sm:py-20">
-        <div aria-hidden="true" className="tm-grid tm-grid-fade absolute inset-0 -z-10" />
-        <div aria-hidden="true" className="tm-hero-glow absolute -top-1/2 left-1/2 -z-10 h-full w-3/4 -translate-x-1/2" />
-        <h2 id="closing-title" className="mx-auto max-w-2xl font-display text-3xl font-semibold leading-tight tracking-wide text-balance text-ink sm:text-4xl">
-          See your agency's day on one screen
-        </h2>
-        <p className="mx-auto mt-4 max-w-xl text-lg leading-relaxed text-dim">
-          Open a demo workspace with sample clients and enquiries, priced by real sandbox searches and clearly labelled
-          as demo data. Or start free with your own agency.
-        </p>
-        <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <CtaLink to="/demo" size="lg" context=": no sign-up needed">
-            Explore live demo
-          </CtaLink>
-          <CtaLink to="/signup" size="lg" variant="ghost" context={START_FREE_CONTEXT}>
-            Start free
-          </CtaLink>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/** The public front door: the pitch, live platform facts and two ways in (demo or sign-up). */
+/** The public front door: the pitch with the product beside it, what it connects to, a tour, and two ways in. */
 export function LandingPage() {
-  useDocumentTitle("TravelMind — Mission control for travel agencies");
+  useDocumentTitle("TravelMind — Operations console for travel agencies");
+  usePageDescription(DESCRIPTION);
   return (
-    <div className="tm-landing tm-scanlines min-h-dvh overflow-x-clip">
+    <div className="tm-landing min-h-dvh overflow-x-clip bg-bg">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-50 focus:rounded-sm focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-ink"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-ink"
       >
         Skip to content
       </a>
       <TopNav />
       <main id="main" tabIndex={-1} className="outline-none">
         <Hero />
+        <IntegrationsStrip />
+        <ProductTour />
         <PlatformFacts />
         <FeatureGrid />
         <HowItWorks />
+        <TrustSection />
+        <Faq />
         <ClosingCall />
       </main>
       <LandingFooter />
