@@ -147,23 +147,40 @@ per IP per hour, so about five runs an hour fit.
 
 ## Load tests
 
-All virtual users come from one source IP, so the per-IP limits must be raised for a load test,
-and only then. Keep the overrides in a separate, git-ignored env file and pass it after the
-main one:
+All virtual users come from one source IP, so the per-IP limits (and the per-agency search and
+price-check budgets) must be raised for a load test, and only then. The overrides live in a
+separate env file passed after the main one. `deploy/.env.loadtest.example` is the committed
+template; the copy you run with, `deploy/.env.loadtest`, is git-ignored. Test only: never use it
+in a real deployment.
 
 ```bash
-# deploy/.env.loadtest (test only, never in a real deployment)
-TM_LOGIN_IP_MAX_ATTEMPTS=100000
-TM_LOGIN_MAX_ATTEMPTS=100000
-TM_SIGNUP_MAX_PER_IP=100000
-TM_DEMO_MAX_PER_IP=100000
-TM_PUBLIC_QUOTE_MAX_PER_MINUTE=100000
-TM_SEARCH_MAX_PER_MINUTE=100000
-
+cp deploy/.env.loadtest.example deploy/.env.loadtest
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env --env-file deploy/.env.loadtest up -d
 ```
 
 The compose file passes these `TM_*` overrides (and `TM_DB_POOL_SIZE` / `TM_DB_MAX_OVERFLOW`)
-through to the api and worker only when they are set. Load-test users are seeded into this stack
-with `loadtest/seed.py`, and k6 runs on the `travelmind-prod_default` network (see `loadtest/`,
-added with the load test).
+through to the api and worker only when they are set.
+
+Seed the load-test accounts (50 agencies × 4 users, each agency with a month of clients,
+enquiries, quotes and activity, plus one client share link). The database is only reachable on
+the compose network, so the script runs in a worker container. It refuses to run against
+`TM_ENVIRONMENT=production` without `--i-know`:
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env --env-file deploy/.env.loadtest   run --rm --no-deps -v "$PWD/loadtest:/loadtest" worker   python /loadtest/seed.py --i-know --agencies 50 --users-per-agency 4 --out /loadtest/users.json
+```
+
+The password is `LOADTEST_PASSWORD` (default `loadtest-pass-2026`, test only). The script writes
+`loadtest/users.json` (git-ignored): emails and share tokens, never the password. Run it again
+to reuse the same agencies and mint fresh share links.
+
+Then run k6 (in a `grafana/k6` container on the `travelmind-prod_default` network):
+
+```bash
+K6_STAGES=smoke bash loadtest/run.sh     # 50 VUs, about 2 minutes
+K6_STAGES=full bash loadtest/run.sh      # the 1000-VU ramp
+K6_STAGES=200:1m,200:3m,0:30s bash loadtest/run.sh   # any "target:duration" list
+```
+
+Results go to `loadtest/results/` (only `*-summary.json` is committed). Reports live in
+`docs/perf/`.
