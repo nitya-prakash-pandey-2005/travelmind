@@ -16,6 +16,8 @@ export function useFlyToActiveRoute(
   active: { from: Airport; to: Airport } | undefined,
   ready: boolean,
   reducedMotion: boolean,
+  /** How far above the route the camera stops (globe radii); closer for a small map. */
+  altitude: number = ROUTE_ALTITUDE,
 ) {
   const mid = active ? midpoint(active.from, active.to) : null;
   const routeKey = active ? `${active.from.iata_code}-${active.to.iata_code}` : null;
@@ -25,6 +27,6 @@ export function useFlyToActiveRoute(
   useEffect(() => {
     const globe = globeRef.current;
     if (!ready || !globe || routeKey === null || lat === undefined || lng === undefined) return;
-    globe.pointOfView({ lat, lng, altitude: ROUTE_ALTITUDE }, reducedMotion ? 0 : FLIGHT_MS);
-  }, [globeRef, ready, routeKey, lat, lng, reducedMotion]);
+    globe.pointOfView({ lat, lng, altitude }, reducedMotion ? 0 : FLIGHT_MS);
+  }, [globeRef, ready, routeKey, lat, lng, reducedMotion, altitude]);
 }

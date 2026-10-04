@@ -68,6 +68,8 @@ const MAX_ALTITUDE = 4;
 
 /** Where a showcase globe first looks: over the Gulf, with India, Europe and Singapore in view. */
 const SHOWCASE_VIEW = { lat: 24, lng: 52, altitude: 2.15 };
+/** A compact map frames its route closer, so a short route still reads. */
+const COMPACT_ROUTE_ALTITUDE = 0.95;
 /** The working map's home view: India and the Gulf, close enough to read borders. */
 const HOME_VIEW = { lat: 22, lng: 66, altitude: 1.9 };
 
@@ -82,6 +84,8 @@ type RouteGlobeProps = {
    * and it never captures the scroll wheel, so the page scrolls past it.
    */
   showcase?: boolean;
+  /** A shorter working map for a side column (the Agent's plan board); the hint line is left out. */
+  compact?: boolean;
 };
 
 const TOOL =
@@ -92,7 +96,7 @@ const TOOL =
  * in), a latitude/longitude grid, and great-circle route arcs. Drag to rotate, scroll or use the buttons to
  * zoom. The landing page's showcase keeps the quieter hex-dot look. Lazy-loaded (three.js is large).
  */
-export default function RouteGlobe({ arcs, showcase = false }: RouteGlobeProps) {
+export default function RouteGlobe({ arcs, showcase = false, compact = false }: RouteGlobeProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   // WebGL can't read CSS variables: colours come from the live palette and follow theme switches.
@@ -124,7 +128,7 @@ export default function RouteGlobe({ arcs, showcase = false }: RouteGlobeProps) 
     if (ready) globeRef.current?.pointOfView(showcase ? SHOWCASE_VIEW : HOME_VIEW, 0);
   }, [showcase, ready]);
 
-  useFlyToActiveRoute(globeRef, active, ready, reducedMotion);
+  useFlyToActiveRoute(globeRef, active, ready, reducedMotion, compact ? COMPACT_ROUTE_ALTITUDE : undefined);
 
   const zoomBy = useCallback(
     (factor: number) => {
@@ -146,7 +150,13 @@ export default function RouteGlobe({ arcs, showcase = false }: RouteGlobeProps) 
   return (
     <div
       ref={containerRef}
-      className={showcase ? "h-full w-full" : "relative h-[440px] w-full cursor-grab active:cursor-grabbing lg:h-[520px]"}
+      className={
+        showcase
+          ? "h-full w-full"
+          : compact
+            ? "relative h-[300px] w-full cursor-grab active:cursor-grabbing"
+            : "relative h-[440px] w-full cursor-grab active:cursor-grabbing lg:h-[520px]"
+      }
     >
       {ready &&
         (showcase ? (
@@ -262,7 +272,7 @@ export default function RouteGlobe({ arcs, showcase = false }: RouteGlobeProps) 
           )}
         </div>
       )}
-      {ready && !showcase && (
+      {ready && !showcase && !compact && (
         <p className="pointer-events-none absolute bottom-4 left-3 text-[11px] text-faint max-sm:hidden">
           {hovered?.properties?.name ?? "Drag to rotate · scroll to zoom · hover a country for its name"}
         </p>

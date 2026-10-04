@@ -15,6 +15,7 @@ const ALL_PAGES = [
   "Pipeline",
   "Quotes",
   "Clients",
+  "Agent",
   "Fare search",
   "Hotel search",
   "Route intel",
@@ -78,7 +79,7 @@ test("navigation is grouped under Operate, Market and Admin, and the collapse is
   ]);
   const groups = within(nav).getAllByRole("list");
   expect(groups.map((list) => within(list).getAllByRole("link").map((link) => link.textContent))).toEqual([
-    ["Command Center", "Pipeline", "Quotes", "Clients"],
+    ["Command Center", "Pipeline", "Quotes", "Clients", "Agent"],
     ["Fare search", "Hotel search", "Route intel"],
     ["Team", "Suppliers", "Settings", "Design system"],
   ]);
@@ -88,6 +89,7 @@ test("navigation is grouped under Operate, Market and Admin, and the collapse is
     ["Quotes", "/app/quotes"],
     ["Clients", "/app/clients"],
     ["Route intel", "/app/routes"],
+    ["Agent", "/app/agent"],
     ["Team", "/app/team"],
     ["Settings", "/app/settings"],
   ]) {

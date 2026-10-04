@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { FilePlus2, FileText, Pencil, Plane, SearchX } from "lucide-react";
+import { FilePlus2, FileText, Pencil, Plane, SearchX, Waypoints } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 import { asApiError } from "../../api/client";
 import { enquiryQueryOptions, type EnquiryOut } from "../../api/enquiries";
@@ -18,6 +18,7 @@ import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { Skeleton } from "../../ui/Skeleton";
 import { StatusPill } from "../../ui/StatusPill";
+import { enquiryPrompt } from "../agent/agentText";
 import { PanelError } from "../command/PanelError";
 import { validateFareSearch, type FareSearchParams } from "../fares/fareSearchParams";
 import {
@@ -377,6 +378,10 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
             <Link to="/app/fares" search={fareSearch(enquiry)} className={buttonClasses({ variant: "secondary", size: "sm" })}>
               <Plane size={14} aria-hidden="true" />
               Scan fares
+            </Link>
+            <Link to="/app/agent" search={{ prompt: enquiryPrompt(enquiry) }} className={buttonClasses({ variant: "secondary", size: "sm" })}>
+              <Waypoints size={14} aria-hidden="true" />
+              Plan with agent
             </Link>
             {blocked && (
               <p id={hintId} className="max-w-60 text-xs leading-4 text-dim">

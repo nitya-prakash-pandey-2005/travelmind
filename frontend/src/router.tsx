@@ -18,6 +18,8 @@ import { AcceptInvitePage } from "./auth/AcceptInvitePage";
 import { LoginPage } from "./auth/LoginPage";
 import { resetSessionState } from "./auth/resetSessionState";
 import { SignupPage } from "./auth/SignupPage";
+import { AgentPage } from "./features/agent/AgentPage";
+import { validateAgentSearch } from "./features/agent/agentText";
 import { ClientPage } from "./features/clients/ClientPage";
 import { ClientsPage } from "./features/clients/ClientsPage";
 import { CommandCenterPage } from "./features/command/CommandCenterPage";
@@ -183,6 +185,14 @@ const routeIntelRoute = createRoute({
   validateSearch: validateRouteIntelSearch,
   component: RouteIntelPage,
 });
+const agentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/agent",
+  // ?prompt= prefills the request box (e.g. "Plan with agent" on an enquiry); it is never sent by itself.
+  validateSearch: validateAgentSearch,
+  component: AgentPage,
+});
+const agentRunRoute = createRoute({ getParentRoute: () => appRoute, path: "/agent/$runId", component: AgentPage });
 const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: "/settings", component: SettingsPage });
 
 /** Pre-/app addresses (bookmarks, old links) move to their new home with their query and hash intact. */
@@ -212,6 +222,8 @@ export const routeTree = rootRoute.addChildren([
     quoteRoute,
     clientsRoute,
     clientRoute,
+    agentRoute,
+    agentRunRoute,
     faresRoute,
     hotelsRoute,
     routeIntelRoute,

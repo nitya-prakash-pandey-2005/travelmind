@@ -13,6 +13,7 @@ import {
   SquareKanban,
   UserRound,
   Users,
+  Waypoints,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -24,6 +25,7 @@ export type NavPath =
   | "/app/pipeline"
   | "/app/quotes"
   | "/app/clients"
+  | "/app/agent"
   | "/app/fares"
   | "/app/hotels"
   | "/app/routes"
@@ -49,6 +51,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/app/pipeline", label: "Pipeline", icon: SquareKanban, also: ["/app/enquiries/"] },
       { to: "/app/quotes", label: "Quotes", icon: FileText },
       { to: "/app/clients", label: "Clients", icon: UserRound },
+      { to: "/app/agent", label: "Agent", icon: Waypoints },
     ],
   },
   {
