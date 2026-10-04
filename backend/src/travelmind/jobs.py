@@ -9,6 +9,9 @@ queue.
 A request must never hang on the queue: `enqueue` and `job_status` each give up after
 `job_queue_timeout_s` (2 s) with TimeoutError, and opening the pool retries a failed connection
 only once (arq's default is 5 retries a second apart).
+
+Callers must map that TimeoutError to 503 Service Unavailable (the queue is unavailable), never
+let it surface as a 500. No HTTP endpoint calls these yet; the first one owns that mapping.
 """
 
 import asyncio
@@ -69,7 +72,8 @@ async def close_job_queue() -> None:
 async def enqueue(name: str, *args: Any, job_id: str | None = None) -> str:
     """Queue the worker function `name` with `args`; returns the job id. With `job_id`, a job
     that already exists under that id (queued, running or with a kept result) is not queued
-    again, and its id is returned. Raises TimeoutError after `job_queue_timeout_s`."""
+    again, and its id is returned. Raises TimeoutError after `job_queue_timeout_s`: callers must
+    map it to 503."""
     async with asyncio.timeout(get_settings().job_queue_timeout_s):
         job = await (await queue()).enqueue_job(name, *args, _job_id=job_id)
     if job is None:  # arq refuses a duplicate id
@@ -80,7 +84,8 @@ async def enqueue(name: str, *args: Any, job_id: str | None = None) -> str:
 
 async def job_status(job_id: str) -> JobState:
     """`queued`, `running`, `done` or `failed` (the job raised), or `unknown` (no such job, or
-    its result has expired). Raises TimeoutError after `job_queue_timeout_s`."""
+    its result has expired). Raises TimeoutError after `job_queue_timeout_s`: callers must map it
+    to 503."""
     async with asyncio.timeout(get_settings().job_queue_timeout_s):
         job = Job(job_id, await queue())
         status = await job.status()

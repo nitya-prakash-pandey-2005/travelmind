@@ -526,3 +526,86 @@ async def test_a_cancelled_half_open_trial_lets_the_next_call_try(clock):
     with pytest.raises(asyncio.CancelledError):
         await trial
     assert breaker.allow()  # the next call becomes the trial
+
+
+async def _trip_read_cache() -> None:
+    down = DownRedis()
+    for _ in range(3):
+        with pytest.raises(readcache._Unavailable):
+            await readcache._call("airports", down.get)
+    assert readcache._breaker.state == "open"
+
+
+async def test_a_command_in_flight_when_the_breaker_opens_does_not_close_it(clock):
+    """A slow GET admitted while closed that succeeds after the breaker opened says nothing about
+    Redis now: Redis stays skipped until the cool-down's trial."""
+    go = asyncio.Event()
+
+    async def slow_ok() -> str:
+        await go.wait()
+        return "ok"
+
+    straggler = asyncio.create_task(readcache._call("airports", slow_ok))
+    await asyncio.sleep(0)
+    await _trip_read_cache()
+    go.set()
+    assert await straggler == "ok"
+    assert readcache._breaker.state == "open"
+    loader, calls = counting_loader()
+    await cached_json(DownRedis(), CACHE_PREFIX + "test:skipped", 30, loader, **JSON)
+    assert calls["n"] == 1  # still skipping Redis
+
+
+async def test_a_straggler_failure_does_not_reopen_the_breaker_under_its_trial(clock):
+    breaker = readcache._breaker
+    fail_now, trial_done = asyncio.Event(), asyncio.Event()
+
+    async def slow_fail() -> None:
+        await fail_now.wait()
+        raise RedisConnectionError("late")
+
+    async def slow_ok() -> str:
+        await trial_done.wait()
+        return "ok"
+
+    straggler = asyncio.create_task(readcache._call("airports", slow_fail))
+    await asyncio.sleep(0)
+    await _trip_read_cache()
+    clock.now += 10.0
+    trial = asyncio.create_task(readcache._call("airports", slow_ok))
+    await asyncio.sleep(0)
+    assert breaker.state == "half_open"
+    fail_now.set()
+    with pytest.raises(readcache._Unavailable):
+        await straggler
+    assert breaker.state == "half_open"  # not reopened by a command from before
+    assert not breaker.allow()  # and the trial is still the trial
+    trial_done.set()
+    assert await trial == "ok"
+    assert breaker.state == "closed"
+
+
+async def test_a_cancelled_straggler_does_not_free_the_trial(clock):
+    breaker = readcache._breaker
+    trial_done = asyncio.Event()
+
+    async def hang() -> None:
+        await asyncio.Event().wait()
+
+    async def slow_ok() -> str:
+        await trial_done.wait()
+        return "ok"
+
+    straggler = asyncio.create_task(readcache._call("airports", hang))
+    await asyncio.sleep(0)
+    await _trip_read_cache()
+    clock.now += 10.0
+    trial = asyncio.create_task(readcache._call("airports", slow_ok))
+    await asyncio.sleep(0)
+    straggler.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await straggler
+    assert not breaker.allow()  # one trial at a time, still
+    trial_done.set()
+    assert await trial == "ok"
+    assert breaker.state == "closed"

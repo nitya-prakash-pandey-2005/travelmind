@@ -11,10 +11,16 @@ failure:
   (`reason="open"`) and the supplier is not contacted. Then one trial call goes through
   (half-open) while the others are still refused; its success closes the breaker and its failure
   opens it for another 30 s.
-- A failure is any exception from the call except a SupplierError that is about the request
-  itself (`invalid_request`, `offer_expired`, `offer_unavailable`): the supplier answered, so it
-  is healthy. Timeouts are failures. A cancelled call has no outcome; if it was the half-open
-  trial, the next call becomes the trial.
+- A failure is any exception from the call except an answer about the request itself: a
+  SupplierError coded `invalid_request`, `offer_expired` or `offer_unavailable`, or an
+  `httpx.HTTPStatusError` with a 4xx status other than 401, 403 and 429 (the feeds that call
+  `raise_for_status()`: ECB, Google TIM, Travelpayouts). The supplier answered and our request
+  was wrong, so it is healthy; the caller still logs it and returns its usual degraded result.
+  401/403 (our credentials) and 429 (slow down) are failures, as are 5xx and timeouts. A
+  cancelled call has no outcome; if it was the half-open trial, the next call becomes the trial.
+- Each admitted call carries the breaker's epoch, which moves on every open and close. An
+  outcome from an older epoch is ignored: a slow call admitted before the breaker opened can't
+  close it without a trial, nor reopen it (or free the trial) while a trial is in flight.
 
 Every caller turns CircuitOpen into its usual "unavailable" result, never a 500: flight and hotel
 search mark the source `error` with the refusal's message, a price check fails as "couldn't
@@ -35,6 +41,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Literal
 
+import httpx
 import structlog
 
 from travelmind.config import get_settings
@@ -62,6 +69,8 @@ GUARDED_SUPPLIERS = frozenset({"duffel", "liteapi", "google_tim", "travelpayouts
 
 # The supplier answered about this request: not a sign that it is unwell.
 _REQUEST_ERRORS = frozenset({"invalid_request", "offer_expired", "offer_unavailable"})
+# 4xx statuses that are about us rather than the request: bad credentials, or slow down.
+_UNWELL_4XX = frozenset({401, 403, 429})
 
 _MESSAGES = {
     "open": "Paused after repeated failures. Trying again shortly.",
@@ -73,7 +82,11 @@ class CircuitBreaker:
     """Consecutive-failure breaker. Closed: every call goes through. After `failures`
     consecutive failures it opens and refuses calls for `cooldown_s`; then one trial call goes
     through (half-open) while the others keep being refused, and its outcome closes or reopens
-    it. Single event loop, so no locking."""
+    it. Single event loop, so no locking.
+
+    `admit()` stamps each admitted call with the current epoch, which moves on every open and
+    close; `record_success`, `record_failure` and `abandon` ignore a call from an older epoch.
+    Called without an epoch, they apply to the current one."""
 
     def __init__(
         self, *, failures: int, cooldown_s: float, clock: Callable[[], float] = time.monotonic
@@ -84,6 +97,7 @@ class CircuitBreaker:
         self._failures = 0
         self._open_until: float | None = None
         self._trial = False
+        self._epoch = 0
 
     @property
     def state(self) -> BreakerState:
@@ -93,31 +107,49 @@ class CircuitBreaker:
             return "half_open"
         return "open"
 
-    def allow(self) -> bool:
+    def admit(self) -> int | None:
+        """Admit a call: its epoch, to pass back with its outcome; None when refused."""
         if self._open_until is None:
-            return True
+            return self._epoch
         if self._trial or self._clock() < self._open_until:
-            return False
+            return None
         self._trial = True
-        return True
+        return self._epoch
 
-    def record_success(self) -> None:
+    def allow(self) -> bool:
+        return self.admit() is not None
+
+    def _stale(self, epoch: int | None) -> bool:
+        return epoch is not None and epoch != self._epoch
+
+    def record_success(self, epoch: int | None = None) -> bool:
+        """Count a success; True when it closed the breaker (half-open to closed)."""
+        if self._stale(epoch):
+            return False
+        closed = self._open_until is not None
+        if closed:
+            self._epoch += 1
         self._failures = 0
         self._open_until = None
         self._trial = False
+        return closed
 
-    def record_failure(self) -> bool:
+    def record_failure(self, epoch: int | None = None) -> bool:
         """Count a failure; True when it opened the breaker (closed or half-open to open)."""
+        if self._stale(epoch):
+            return False
         self._failures += 1
         if self._trial or (self._open_until is None and self._failures >= self._threshold):
             self._trial = False
             self._open_until = self._clock() + self._cooldown_s
+            self._epoch += 1
             return True
         return False
 
-    def abandon(self) -> None:
+    def abandon(self, epoch: int | None = None) -> None:
         """A call ended without an outcome (cancelled, say): let another trial through."""
-        self._trial = False
+        if not self._stale(epoch):
+            self._trial = False
 
 
 class CircuitOpen(Exception):
@@ -132,7 +164,12 @@ class CircuitOpen(Exception):
 
 
 def _is_failure(exc: BaseException) -> bool:
-    return not (isinstance(exc, SupplierError) and exc.code in _REQUEST_ERRORS)
+    if isinstance(exc, SupplierError):
+        return exc.code not in _REQUEST_ERRORS
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return not (400 <= status < 500 and status not in _UNWELL_4XX)
+    return True
 
 
 class SupplierGuard:
@@ -168,34 +205,31 @@ class SupplierGuard:
     async def call(self) -> AsyncIterator[None]:
         """Raises CircuitOpen when open (or when no slot frees within acquire_timeout_s);
         records success/failure from the body's outcome (exceptions = failure)."""
-        trial = self._breaker.state != "closed"
-        if not self._breaker.allow():
+        epoch = self._breaker.admit()
+        if epoch is None:
             self._refuse("open", 0.0)
         started = time.perf_counter()
         try:
             await self._acquire_slot()
         except TimeoutError:
-            if trial:
-                self._breaker.abandon()
+            self._breaker.abandon(epoch)  # frees the trial, if this call was it
             self._refuse("busy", time.perf_counter() - started)
         except BaseException:
-            if trial:
-                self._breaker.abandon()
+            self._breaker.abandon(epoch)
             raise
         try:
             yield
         except (asyncio.CancelledError, GeneratorExit):
-            if trial:
-                self._breaker.abandon()
+            self._breaker.abandon(epoch)
             raise
         except BaseException as exc:
             if _is_failure(exc):
-                self._failed(exc)
+                self._failed(exc, epoch)
             else:
-                self._succeeded()
+                self._succeeded(epoch)
             raise
         else:
-            self._succeeded()
+            self._succeeded(epoch)
         finally:
             self._slots.release()
 
@@ -212,14 +246,12 @@ class SupplierGuard:
         observe_supplier(self.name, "circuit_open", waited_s)
         raise CircuitOpen(self.name, reason)
 
-    def _succeeded(self) -> None:
-        recovering = self._breaker.state != "closed"
-        self._breaker.record_success()
-        if recovering:
+    def _succeeded(self, epoch: int | None) -> None:
+        if self._breaker.record_success(epoch):
             log.info("supplier_circuit_closed", supplier=self.name)
 
-    def _failed(self, exc: BaseException) -> None:
-        if self._breaker.record_failure():
+    def _failed(self, exc: BaseException, epoch: int | None) -> None:
+        if self._breaker.record_failure(epoch):
             log.warning(
                 "supplier_circuit_open",
                 supplier=self.name,

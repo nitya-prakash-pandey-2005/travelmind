@@ -5,12 +5,14 @@ Breaker timing runs on a fake clock; nothing here sleeps."""
 
 import asyncio
 import os
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 from prometheus_client import REGISTRY
 from redis.asyncio import Redis
+from structlog.testing import capture_logs
 
 from tests.helpers import signup
 from tests.offers.offer_factory import make_offer
@@ -384,3 +386,238 @@ async def test_travelpayouts_with_an_open_breaker_adds_nothing(respx_mock):
     finally:
         await redis.aclose()
     assert route.call_count == 0
+
+
+# --- slots are never leaked or handed back twice -----------------------------------------------
+
+
+async def hold(guard: SupplierGuard) -> tuple[asyncio.Task, asyncio.Event]:
+    """A call holding a slot until the returned event is set."""
+    release, entered = asyncio.Event(), asyncio.Event()
+
+    async def body() -> None:
+        async with guard.call():
+            entered.set()
+            await release.wait()
+
+    task = asyncio.create_task(body())
+    await entered.wait()
+    return task, release
+
+
+async def assert_one_free_slot(guard: SupplierGuard) -> None:
+    """With max_concurrent=1: a call gets the slot (none leaked) and a second one meanwhile is
+    busy (none handed back twice)."""
+    holder, release = await hold(guard)
+    with pytest.raises(CircuitOpen) as refused:
+        async with guard.call():
+            pytest.fail("two calls in one slot")
+    assert refused.value.reason == "busy"
+    release.set()
+    await holder
+
+
+async def test_the_slot_is_handed_back_when_the_body_raises(clock):
+    guard = make_guard(clock, max_concurrent=1)
+    await fail(guard, RuntimeError("boom"))
+    await fail(guard)
+    await assert_one_free_slot(guard)
+
+
+async def test_the_slot_is_handed_back_when_the_holder_is_cancelled(clock):
+    guard = make_guard(clock, max_concurrent=1)
+    holder, _ = await hold(guard)
+    holder.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await holder
+    await assert_one_free_slot(guard)
+    assert guard.state == "closed"  # a cancelled call has no outcome
+
+
+@pytest.mark.parametrize("half_open", [False, True])
+async def test_cancelling_a_call_waiting_for_a_slot_leaks_nothing(clock, half_open):
+    guard = make_guard(clock, max_concurrent=1, acquire_timeout_s=5.0)
+    holder, release = await hold(guard)
+    if half_open:  # the waiter is the half-open trial
+        for _ in range(3):
+            guard._breaker.record_failure()
+        clock.now += 30.0
+    waiter = asyncio.create_task(succeed(guard))
+    await asyncio.sleep(0)
+    assert not waiter.done()  # waiting for the one slot
+    waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    release.set()
+    await holder
+    if half_open:
+        assert guard.state == "half_open"  # the trial is free again
+        await succeed(guard)  # the next call is the trial
+    assert guard.state == "closed"
+    await assert_one_free_slot(guard)
+
+
+async def test_a_trial_refused_as_busy_frees_the_trial(clock):
+    guard = make_guard(clock, max_concurrent=1)
+    holder, release = await hold(guard)  # admitted while closed
+    for _ in range(3):
+        guard._breaker.record_failure()
+    clock.now += 30.0
+    with pytest.raises(CircuitOpen) as refused:  # the trial gets no slot
+        async with guard.call():
+            pytest.fail("no free slot")
+    assert refused.value.reason == "busy"
+    assert guard.state == "half_open"
+    release.set()
+    await holder
+    await succeed(guard)  # the next call is the trial, not refused as "open"
+    assert guard.state == "closed"
+    await assert_one_free_slot(guard)
+
+
+# --- stale outcomes: a call admitted before an open/close can't move the breaker ---------------
+
+
+def test_a_straggler_cannot_close_or_reopen_the_breaker(clock):
+    breaker = resilience.CircuitBreaker(failures=3, cooldown_s=30.0, clock=clock)
+    straggler = breaker.admit()
+    assert straggler is not None
+    for _ in range(3):
+        breaker.record_failure(breaker.admit())
+    assert breaker.state == "open"
+    assert breaker.record_success(straggler) is False  # admitted before it opened: ignored
+    assert breaker.state == "open"
+    clock.now += 30.0
+    trial = breaker.admit()
+    assert trial is not None and trial != straggler
+    assert breaker.record_failure(straggler) is False  # doesn't reopen it under the trial
+    breaker.abandon(straggler)  # nor frees the trial
+    assert breaker.state == "half_open" and breaker.admit() is None
+    assert breaker.record_success(trial) is True
+    assert breaker.state == "closed"
+    for _ in range(3):
+        breaker.record_failure(trial)  # admitted before the close: no longer counts
+    assert breaker.state == "closed"
+
+
+def test_outcomes_without_an_epoch_still_count(clock):
+    breaker = resilience.CircuitBreaker(failures=2, cooldown_s=30.0, clock=clock)
+    assert breaker.allow()
+    breaker.record_failure()
+    assert breaker.record_failure() is True
+    assert breaker.state == "open"
+
+
+async def test_a_call_in_flight_when_the_breaker_opens_does_not_close_it(clock):
+    guard = make_guard(clock, max_concurrent=2)
+    holder, release = await hold(guard)
+    for _ in range(3):
+        await fail(guard)
+    assert guard.state == "open"
+    release.set()
+    await holder  # succeeds, but was admitted before the breaker opened
+    assert guard.state == "open"
+    with pytest.raises(CircuitOpen):
+        async with guard.call():
+            pytest.fail("still open")
+
+
+async def test_a_straggler_failure_does_not_reopen_a_half_open_breaker(clock):
+    guard = make_guard(clock, max_concurrent=2)
+    straggler_go, straggler_in = asyncio.Event(), asyncio.Event()
+
+    async def straggle() -> None:
+        async with guard.call():
+            straggler_in.set()
+            await straggler_go.wait()
+            raise SupplierError("unavailable", "late failure")
+
+    straggler = asyncio.create_task(straggle())
+    await straggler_in.wait()
+    for _ in range(3):
+        await fail(guard)
+    clock.now += 30.0
+    trial, release = await hold(guard)  # the half-open trial
+    straggler_go.set()
+    with pytest.raises(SupplierError):
+        await straggler
+    assert guard.state == "half_open"  # not reopened by a call from before
+    release.set()
+    await trial
+    assert guard.state == "closed"
+
+
+# --- a supplier rejecting our request (4xx) is not unwell --------------------------------------
+
+
+async def _fx(redis: Redis) -> object:
+    from travelmind.offers.fx import get_fx_rates
+
+    return await get_fx_rates(redis)
+
+
+async def _tim(redis: Redis) -> object:
+    from travelmind.offers.carbon import TimClient
+
+    offer = make_offer([("DEL", "BOM", "6E", "2045", "2026-11-20T06:10")], offer_ref="x")
+    [enriched] = await TimClient("key", redis).enrich([offer], "economy")
+    assert enriched.co2_kg_per_passenger == offer.co2_kg_per_passenger  # left as it was
+    return None
+
+
+async def _travelpayouts(redis: Redis) -> object:
+    from tests.fareintel.test_travelpayouts import seed
+
+    return await seed(redis)
+
+
+def _feeds(respx_mock, status: int) -> list[tuple[str, Callable, str]]:
+    from travelmind.fareintel.travelpayouts import TP_PRICES_URL
+    from travelmind.offers.carbon import TIM_BASE_URL
+    from travelmind.offers.fx import ECB_DAILY_URL
+
+    answer = httpx.Response(status, json={"error": "nope"})
+    respx_mock.get(ECB_DAILY_URL).mock(return_value=answer)
+    respx_mock.post(url__startswith=TIM_BASE_URL).mock(return_value=answer)
+    respx_mock.get(url__startswith=TP_PRICES_URL).mock(return_value=answer)
+    return [
+        ("ecb", _fx, "fx_rates_unavailable"),
+        ("google_tim", _tim, "tim_unavailable"),
+        ("travelpayouts", _travelpayouts, "travelpayouts_unavailable"),
+    ]
+
+
+async def _call_feed(feed: Callable, redis: Redis) -> tuple[object, list[dict]]:
+    await redis.flushdb()  # no failure marker, back-off or claim left from the last call
+    with capture_logs() as logs:
+        result = await feed(redis)
+    return result, logs
+
+
+@pytest.mark.parametrize("status", [400, 404, 422])
+async def test_feeds_rejecting_our_request_keep_the_breaker_closed(respx_mock, status):
+    feeds = _feeds(respx_mock, status)
+    redis = Redis.from_url(os.environ["TM_REDIS_URL"])
+    try:
+        for name, feed, event in feeds:
+            for _ in range(get_settings().supplier_breaker_threshold + 1):
+                result, logs = await _call_feed(feed, redis)
+                assert result in (None, 0)  # the usual degraded result
+                assert any(e["event"] == event for e in logs), logs  # still logged
+            assert guard_for(name).state == "closed", name
+    finally:
+        await redis.aclose()
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 500, 503])
+async def test_feeds_failing_or_refusing_us_open_the_breaker(respx_mock, status):
+    feeds = _feeds(respx_mock, status)
+    redis = Redis.from_url(os.environ["TM_REDIS_URL"])
+    try:
+        for name, feed, _ in feeds:
+            for _ in range(get_settings().supplier_breaker_threshold):
+                result, _logs = await _call_feed(feed, redis)
+                assert result in (None, 0)
+            assert guard_for(name).state == "open", name
+    finally:
+        await redis.aclose()

@@ -15,7 +15,8 @@ Redis is an optimisation, never a dependency:
 - A process-wide circuit breaker (`resilience.CircuitBreaker`, as the supplier guards use):
   after `read_cache_breaker_failures` (3) consecutive errors or timeouts it skips Redis for
   `read_cache_breaker_cooldown_s` (10 s), then lets one trial call through (half-open). The
-  trial's success closes it; its failure opens it again.
+  trial's success closes it; its failure opens it again. A command admitted before the breaker
+  last opened or closed can't move it: its outcome is ignored (the breaker's epoch).
 - Any failure, or a call skipped by the open breaker, falls through to the loader and counts as
   `error`. The `read_cache_unavailable` warning (error type only) is logged once per opening.
 
@@ -147,13 +148,14 @@ class _Unavailable(Exception):
 async def _call[R](what: str, command: Callable[[], Awaitable[R]]) -> R:
     """One Redis command under the breaker and the read cache's short deadline."""
     breaker = _get_breaker()
-    if not breaker.allow():
+    epoch = breaker.admit()
+    if epoch is None:
         raise _Unavailable
     try:
         async with asyncio.timeout(get_settings().read_cache_timeout_ms / 1000):
             result = await command()
     except _REDIS_ERRORS as exc:
-        if breaker.record_failure():
+        if breaker.record_failure(epoch):
             log.warning(
                 "read_cache_unavailable",
                 cache=what,
@@ -162,9 +164,9 @@ async def _call[R](what: str, command: Callable[[], Awaitable[R]]) -> R:
             )
         raise _Unavailable from None
     except BaseException:
-        breaker.abandon()
+        breaker.abandon(epoch)
         raise
-    breaker.record_success()
+    breaker.record_success(epoch)
     return result
 
 
