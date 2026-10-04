@@ -48,6 +48,10 @@ class Message:
     # A model turn's opaque provider state for its text (Gemini's thought signature, base64),
     # sent back with the text on later turns. Not part of the message's identity.
     text_signature: str | None = field(default=None, compare=False, repr=False)
+    # A user-role message the engine wrote (the grounding re-prompt): the model reads it as the
+    # user's turn, but it is never what the user said (the demo planner's intents and trip, the
+    # guard's stated facts).
+    engine: bool = False
 
 
 @dataclass(frozen=True)

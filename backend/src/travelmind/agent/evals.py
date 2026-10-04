@@ -17,10 +17,14 @@ category at least 90% (`THRESHOLDS`).
 threshold is missed). With `--live` it runs only the live-capable cases (`live: true`, checked by
 their `live_expect`) against the configured Gemini model; it needs TM_GOOGLE_API_KEY or
 GOOGLE_API_KEY, never prints it, lets only the model's own host through the feed mocks, and
-writes `docs/perf/agent-evals-<date>.md`. Either way it uses the test database and Redis (the
-same defaults as the test suite: TM_TEST_DATABASE_URL, TM_TEST_MIGRATION_DATABASE_URL,
-TM_TEST_REDIS_URL), migrated to head; it refuses a database whose name doesn't end in "_test",
-since loading the eval airports replaces the reference airports.
+writes `docs/perf/agent-evals-<date>.md`. A live report lists the categories with no
+live-capable case as "not run", and says that their gates (grounding's 100% among them) are
+enforced only by the offline suite. Either way it uses the test database and Redis (the same
+defaults as the test suite: TM_TEST_DATABASE_URL, TM_TEST_MIGRATION_DATABASE_URL,
+TM_TEST_REDIS_URL), migrated to head.
+
+Every entry point (the command, `run_suite`, a `Runner`) refuses a database whose name doesn't end
+in "_test" (`Runner.ready`), since loading the eval airports replaces the reference airports.
 """
 
 import argparse
@@ -44,6 +48,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import yaml
 from sqlalchemy import func, select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -245,6 +250,11 @@ def load_cases(path: Path = CASES_PATH, *, today: date | None = None) -> list[Ca
     ids = [case.id for case in cases]
     if len(set(ids)) != len(ids):
         raise EvalError("Case ids must be unique.")
+    for case in cases:  # a case that checks nothing would always pass
+        if not case.expect:
+            raise EvalError(f"{case.id}: the case has no expectations.")
+        if case.live and not case.for_live().expect:
+            raise EvalError(f"{case.id}: the live case has no live expectations.")
     return cases
 
 
@@ -633,6 +643,7 @@ class Runner:
         )
         from travelmind.reference.service import reset_airport_index
 
+        require_test_database(get_settings())
         self.engine = create_async_engine(get_settings().migration_database_url, poolclass=NullPool)
         try:
             await load_reference_data(
@@ -854,11 +865,28 @@ class Report:
         found = list(values)
         return sum(found) / len(found) if found else 0.0
 
+    def not_run(self) -> list[str]:
+        """The categories with no case in this report (live: those with no live-capable case)."""
+        return [category for category in CATEGORIES if not self.in_category(category)]
+
+    def gate_note(self) -> str | None:
+        """What a live report doesn't enforce."""
+        if self.mode != "live":
+            return None
+        skipped = ", ".join(self.not_run()) or "none"
+        return (
+            f"Not run live: {skipped}. The grounding gate (100%) is not enforced in live mode: the "
+            "grounding cases are scripted and run only in the offline suite."
+        )
+
     def rows(self) -> list[tuple[str, str, str, str, str, str, str]]:
         rows = []
         for category in CATEGORIES:
             found = self.in_category(category)
             if not found:
+                if self.mode == "live":
+                    need = f"{THRESHOLDS[category]:.0%}"
+                    rows.append((category, "0/0", "-", need, "not run", "-", "-"))
                 continue
             rate = self.rate(category) or 0.0
             rows.append(
@@ -890,6 +918,8 @@ class Report:
         for row in [head, *self.rows()]:
             lines.append("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)))
         lines.append(self.summary())
+        if note := self.gate_note():
+            lines.append(note)
         slowest = sorted(self.results, key=lambda r: r.seconds, reverse=True)[:3]
         lines.append("Slowest: " + ", ".join(f"{r.id} {r.seconds:.1f} s" for r in slowest))
         for result in self.results:
@@ -905,6 +935,7 @@ class Report:
             "",
             f"Mode: {self.mode}. Model: `{self.model}`. {self.summary()}",
             "",
+            *([note, ""] if (note := self.gate_note()) else []),
             "| Category | Passed | Rate | Needs | Met | Avg steps | Avg tokens |",
             "|---|---|---|---|---|---|---|",
         ]
@@ -979,7 +1010,15 @@ def _migrate(settings: Settings) -> None:
 
 
 def _database_name(url: str) -> str:
-    return url.rsplit("/", 1)[-1].split("?", 1)[0]
+    return make_url(url).database or ""
+
+
+def require_test_database(settings: Settings) -> None:
+    """Refuse to run against a database whose name doesn't end in "_test" (see the module
+    docstring): the eval airports replace the reference airports."""
+    for url in (settings.database_url, settings.migration_database_url):
+        if not _database_name(url).endswith("_test"):
+            raise EvalError("Evals run only against a test database (its name must end in _test).")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -999,10 +1038,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.live and settings.google_api_key is None:
         print("Live evals need a model key: set TM_GOOGLE_API_KEY or GOOGLE_API_KEY.")
         return 2
-    for url in (settings.database_url, settings.migration_database_url):
-        if not _database_name(url).endswith("_test"):
-            print("Evals run only against a test database (its name must end in _test).")
-            return 2
+    try:
+        require_test_database(settings)  # before migrating; Runner.ready checks again
+    except EvalError as exc:
+        print(exc)
+        return 2
     _migrate(settings)
     report = asyncio.run(_run(args.cases, settings, live=args.live))
     print(report.text())

@@ -7,8 +7,9 @@ model would, and uses 3-letter codes typed in capitals as they are, except one t
 city ("GOA" is Goa: looked up, which gives GOI).
 
 `plan_turn` derives everything from the conversation, so it holds no state between turns:
-1. Merge what every user message said (a reply to a question fills the fields it asked for).
-   Only the first MAX_MESSAGE_CHARS characters of each message are read.
+1. Merge what every user message said (a reply to a question fills the fields it asked for);
+   a user-role message the engine wrote (the grounding re-prompt, `Message.engine`) is never
+   read as the user's. Only the first MAX_MESSAGE_CHARS characters of each message are read.
 2. Anything required still missing: call `ask_user` with the missing fields. Dates that can't be
    right (an explicit date already past, a return before the departure) are asked about too,
    never passed on or moved to another year.
@@ -22,7 +23,8 @@ city ("GOA" is Goa: looked up, which gives GOI).
    currency and a QUOTE_MARKUP_BP markup.
 6. Otherwise answer with a short summary written only from the tool results: dates as the tools
    displayed them ("20 Nov 2026"), the enquiry and quote numbers the writes returned, and a
-   hand-off when the user asked to book or pay (no tool books or takes money).
+   hand-off when the user asked to book or pay (no tool books or takes money). The hand-off
+   also ends any question the planner asks meanwhile.
 
 The tools themselves (and their result shapes: `matches[].code`, `offers[]`, `hotels[]`,
 `days[]`) belong to the tool registry; this module only names the calls.
@@ -163,11 +165,14 @@ _ENQUIRY_ASK = re.compile(
     r"enquiry\b",
     _I,
 )
+# "and a quote" asks for one ("an enquiry and a quote"); a bare "terms and quote" doesn't.
 _QUOTE_ASK = re.compile(
-    r"\b(?:draft|create|make|prepare|build|send|and)\s+(?:an?\s+|the\s+)?(?:new\s+)?quote\b", _I
+    r"\b(?:(?:draft|create|make|prepare|build|send)\s+(?:an?\s+|the\s+)?|and\s+(?:an?|the)\s+)"
+    r"(?:new\s+)?quote\b",
+    _I,
 )
 _ENQUIRY_REF = re.compile(r"\bE-(\d{1,6})\b", _I)
-_BOOKING = re.compile(r"\b(?:book|pay|purchase|buy)\b", _I)
+_BOOKING = re.compile(r"\b(?:book|booking|booked|pay|payment|purchase|buy|checkout)\b", _I)
 
 _CODE_PAIR = re.compile(r"\b([A-Z]{3})\s*[-–/]\s*([A-Z]{3})\b")
 _ARROWS = re.compile(r"→|⟶|->|–>|=>")  # the arrow alone: tokens skip the spaces around it
@@ -571,6 +576,11 @@ def _reply(trip: TripRequest, text: str, asked: Sequence[str], today: date) -> T
     return trip.merged(later)
 
 
+def _said_by_user(message: Message) -> bool:
+    """A user message the user wrote: never the engine's own (the grounding re-prompt)."""
+    return message.role == "user" and bool(message.text) and not message.engine
+
+
 def _conversation_trip(messages: Sequence[Message], today: date) -> TripRequest:
     trip: TripRequest | None = None
     asked: list[str] = []
@@ -579,8 +589,8 @@ def _conversation_trip(messages: Sequence[Message], today: date) -> TripRequest:
             for call in message.calls:
                 if call.name == "ask_user":
                     asked = list(call.args.get("fields") or [])
-        elif message.role == "user" and message.text:
-            text = message.text[:MAX_MESSAGE_CHARS]
+        elif _said_by_user(message):
+            text = (message.text or "")[:MAX_MESSAGE_CHARS]
             if trip is None:
                 trip = extract_trip(text, today)
             else:
@@ -596,8 +606,8 @@ def _conversation_trip(messages: Sequence[Message], today: date) -> TripRequest:
 def _conversation_intent(messages: Sequence[Message]) -> Intent:
     intent = Intent()
     for message in messages:
-        if message.role == "user" and message.text:
-            intent = intent.merged(extract_intent(message.text[:MAX_MESSAGE_CHARS]))
+        if _said_by_user(message):
+            intent = intent.merged(extract_intent((message.text or "")[:MAX_MESSAGE_CHARS]))
     return intent
 
 
@@ -857,7 +867,11 @@ def plan_turn(messages: Sequence[Message], today: date) -> Generation:
         )
         return Generation(text=None, calls=made, input_tokens=0, output_tokens=0)
 
+    intent = _conversation_intent(messages)
+
     def ask(question: str, missing: list[str]) -> Generation:
+        if intent.booking:  # the hand-off is said whenever the planner speaks, a question too
+            question = f"{question} {HAND_OFF}"
         return calls(("ask_user", {"question": question, "fields": missing}))
 
     trip = _conversation_trip(messages, today)
@@ -902,7 +916,6 @@ def plan_turn(messages: Sequence[Message], today: date) -> Generation:
             pending.append((name, args))
     if pending:
         return calls(*pending)
-    intent = _conversation_intent(messages)
     write, closing = _writes(trip, codes, intent, history, done)
     if write is not None:
         return calls(write)

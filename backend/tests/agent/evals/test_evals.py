@@ -2,6 +2,7 @@
 against the real loop and tools (sandbox supplier, mocked feeds), which must meet its
 thresholds. A deliberately broken guard must make the grounding evals fail."""
 
+import json
 import os
 from collections import Counter
 from datetime import date
@@ -17,7 +18,7 @@ SIZES = {
     "clarification": 8,
     "tool_choice": 10,
     "grounding": 10,
-    "injection": 5,
+    "injection": 6,
     "safety": 3,
     "limits": 2,
 }
@@ -81,6 +82,71 @@ def test_live_evals_without_a_key_say_so_and_write_nothing(monkeypatch, tmp_path
     assert evals.main(["--live", "--report-dir", str(tmp_path)]) == 2
     assert "TM_GOOGLE_API_KEY" in capsys.readouterr().out
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("url", "name"),
+    [
+        ("postgresql+asyncpg://app:pw@localhost:5433/travelmind_test", "travelmind_test"),
+        ("postgresql+asyncpg://app:pw@db/travelmind_test?ssl=require", "travelmind_test"),
+        # a query value with slashes must not be read as the database's name
+        ("postgresql+asyncpg://app:pw@db/travelmind?sslrootcert=/certs/ca_test", "travelmind"),
+        ("postgresql+asyncpg://app:pw@db", ""),
+    ],
+)
+def test_the_database_name_is_read_from_the_url(url, name):
+    assert evals._database_name(url) == name
+
+
+def _settings_on(database: str) -> evals.Settings:
+    url = f"postgresql+asyncpg://app:pw@localhost:5433/{database}"
+    return evals.Settings(  # type: ignore[call-arg]
+        _env_file=None, database_url=url, migration_database_url=url
+    )
+
+
+async def test_every_entry_point_refuses_a_database_not_named_test(monkeypatch):
+    """Loading the eval airports replaces the reference airports: never on a dev database."""
+    dev = _settings_on("travelmind")
+    monkeypatch.setattr(evals, "get_settings", lambda: dev)
+    with pytest.raises(evals.EvalError, match="_test"):
+        async with evals.Runner(dev).ready():
+            pass
+    with pytest.raises(evals.EvalError, match="_test"):
+        await evals.run_suite(CASES[:1], settings=dev)
+    monkeypatch.setattr(evals, "_prepare_environment", lambda: None)
+    assert evals.main([]) == 2
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ({"id": "a", "category": "safety", "prompt": "Hi"}, "no expectations"),
+        ({"id": "b", "category": "safety", "prompt": "Hi", "expect": {}}, "no expectations"),
+        (
+            {"id": "c", "category": "safety", "prompt": "Hi", "live": True,
+             "expect": {"status": "done"}},
+            "no live expectations",
+        ),
+    ],
+)  # fmt: skip
+def test_a_case_that_checks_nothing_is_refused(tmp_path, case, message):
+    path = tmp_path / "cases.yaml"
+    path.write_text(json.dumps({"cases": [case]}), encoding="utf-8")
+    with pytest.raises(evals.EvalError, match=message):
+        evals.load_cases(path)
+
+
+def test_a_live_report_says_what_it_did_not_run():
+    report = Report("live", "gemini-test", [CaseResult("e1", "extraction", True, [], turns=2)])
+    written = report.markdown(date(2026, 10, 4))
+    assert "| grounding | 0/0 | - | 100% | not run | - | - |" in written
+    assert "| limits | 0/0 | - | 90% | not run | - | - |" in written
+    assert "grounding gate (100%) is not enforced in live mode" in written
+    assert "Not run live: clarification, tool_choice, grounding" in report.text()
+    assert report.passed  # a category not run is reported, not counted as a miss
+    offline = Report("fake", "demo", [CaseResult("e1", "extraction", True, [])])
+    assert "not run" not in offline.markdown(date(2026, 10, 4))
 
 
 @pytest.fixture

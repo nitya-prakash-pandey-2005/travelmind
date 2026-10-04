@@ -194,6 +194,8 @@ async def lookup_airport(ctx: RunContext, args: LookupAirportArgs) -> dict[str, 
         a.iata_code for a in found if not (asked_alias and ambiguous_code(a.iata_code))
     )
     return {
+        # What was asked, so the guard's facts can tell a city alias's lookup (facts.py).
+        "query": clean_text(query, 100),
         "matches": [
             {
                 "code": airport.iata_code,
@@ -203,7 +205,7 @@ async def lookup_airport(ctx: RunContext, args: LookupAirportArgs) -> dict[str, 
                 "country_code": airport.country_code,
             }
             for airport in found
-        ]
+        ],
     }
 
 

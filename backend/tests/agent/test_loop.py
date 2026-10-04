@@ -18,6 +18,7 @@ from travelmind.agent.fake import FakeProvider
 from travelmind.agent.models import AgentRun, AgentStep
 from travelmind.agent.prompts import PROMPT_VERSION
 from travelmind.agent.provider import Generation, Message, ProviderError, ToolCall
+from travelmind.agent.state import RunState
 from travelmind.cache import get_shared_redis
 from travelmind.db import bind_tenant, get_sessionmaker
 from travelmind.metrics import AGENT_RUNS, AGENT_STEPS, AGENT_TOKENS
@@ -184,6 +185,7 @@ async def test_guard_catches_invented_price_in_the_answer(agency, airports):
     )
     reprompt = provider.requests[2].messages[-1]
     assert reprompt.role == "user" and "₹1,111" in (reprompt.text or "")
+    assert reprompt.engine is True  # the engine wrote it, not the user
     assert "AI 999" in (reprompt.text or "")
     assert kinds(steps) == ["tool_call", "tool_result", "guard", "guard", "answer"]
     assert steps[2].payload["action"] == "reprompt"
@@ -220,6 +222,26 @@ async def test_guard_falls_back_after_second_violation(agency, airports):
     assert result["flights"] and result["flights"][0]["total_formatted"] in result["summary"]
     assert steps[-2].kind == "guard" and steps[-2].payload["action"] == "fallback"
     assert steps[-1].kind == "answer" and steps[-1].payload["fallback"] is True
+
+
+async def test_the_re_prompt_never_vouches_for_the_values_it_names(agency, airports):
+    """The re-prompt quotes the ungrounded values back; repeating them must still fail."""
+    _, run, steps = await run_script(
+        agency,
+        [
+            gen(None, tc("search_flights", **flights_args())),
+            gen("It is ₹1,111 on AI 999."),
+            gen("It is ₹1,111 on AI 999."),
+        ],
+    )
+    assert run.status == "done" and run.grounded is False
+    guards = [s.payload for s in steps if s.kind == "guard"]
+    assert [g["action"] for g in guards] == ["reprompt", "fallback"]
+    assert {"₹1,111", "AI 999"} <= {v["text"] for v in guards[1]["violations"]}
+    state = RunState.from_json(run.state)
+    flagged = [m for m in state.messages if m.engine]
+    assert len(flagged) == 1 and flagged[0].role == "user"
+    assert not any("₹1,111" in text for text in state.user_texts)
 
 
 def _itinerary(notes: str):

@@ -18,9 +18,14 @@ prose, "leave on 14 Dec" must still be a date a tool returned.
 
 It never collects text the model wrote and a tool merely echoed back: `MODEL_AUTHORED_PATHS`
 lists those fields per tool (build_itinerary's day titles, notes and dates; ask_user's
-question), and an error result (whose message may repeat the model's ids or names) carries no
-facts at all. So a price the model writes into an itinerary note is not thereby "in the
-results".
+question; lookup_airport's query), and an error result (whose message may repeat the model's
+ids or names) carries no facts at all. So a price the model writes into an itinerary note is not
+thereby "in the results".
+
+An airport lookup for a city alias ("Goa", "GOA") vouches for that city's airports, never for
+the other airport its code spells, even when the search lists it as a fuzzy match: "GOA"
+(Genoa) is not a fact of a Goa lookup, just as the run memory doesn't accept it as a tool
+argument (`travel.lookup_airport`). Genoa is vouched for when it was looked up by name.
 
 Paths are dotted keys with `[]` for a list's items: `days[].notes` is the `notes` of every item
 of the result's `days` list.
@@ -35,6 +40,7 @@ from typing import Any
 
 from travelmind.agent.provider import ToolResult
 from travelmind.agent.tools.base import APPROX
+from travelmind.agent.tools.travel import alias_code, ambiguous_code
 
 # Fields the model wrote itself, per tool: echoed back, but never facts.
 MODEL_AUTHORED_PATHS: Mapping[str, frozenset[str]] = MappingProxyType(
@@ -43,6 +49,7 @@ MODEL_AUTHORED_PATHS: Mapping[str, frozenset[str]] = MappingProxyType(
             {"days[].date", "days[].date_display", "days[].title", "days[].notes"}
         ),
         "ask_user": frozenset({"question", "fields"}),
+        "lookup_airport": frozenset({"query"}),
     }
 )
 
@@ -191,11 +198,26 @@ class _Collector:
         )
 
 
+def _without_spelled_codes(data: dict[str, Any]) -> dict[str, Any]:
+    """A lookup for a city alias without the matches whose code only spells that alias ("Goa"
+    lists Genoa, GOA): see the module docstring."""
+    if alias_code(data.get("query")) is None:
+        return data
+    matches = [
+        match
+        for match in data.get("matches") or []
+        if not (isinstance(match, dict) and ambiguous_code(str(match.get("code") or "")))
+    ]
+    return {**data, "matches": matches}
+
+
 def facts(result: ToolResult) -> GroundFacts:
     """The values one tool result vouches for (see the module docstring)."""
     data = result.data
     if not isinstance(data, dict) or "error" in data:
         return EMPTY
+    if result.name == "lookup_airport":
+        data = _without_spelled_codes(data)
     collector = _Collector(MODEL_AUTHORED_PATHS.get(result.name, frozenset()))
     collector.walk(data, "", None)
     return collector.facts()

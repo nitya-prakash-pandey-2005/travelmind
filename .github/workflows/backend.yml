@@ -77,13 +77,13 @@ jobs:
 
   agent-evals-live:
     # The live-capable cases against the real model. Manual runs only (Actions > backend > Run
-    # workflow), so it never runs for a pull request, a fork's included; it needs the repository
-    # secret GOOGLE_API_KEY and is skipped without it. The report is kept as an artifact.
+    # workflow), so it never runs for a pull request, a fork's included. It needs the repository
+    # secret GOOGLE_API_KEY: without it the job fails at its first step and says so (a run that
+    # can't reach the model is never reported green). Only the evals step sees the key. The
+    # report is kept as an artifact.
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -101,26 +101,29 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - name: Skip without a model key
-        if: env.GOOGLE_API_KEY == ''
+      - name: Check the model key is set
         working-directory: ${{ github.workspace }}
-        run: echo "The GOOGLE_API_KEY secret is not set; live agent evals skipped."
+        env:
+          HAS_MODEL_KEY: ${{ secrets.GOOGLE_API_KEY != '' }}
+        run: |
+          if [ "$HAS_MODEL_KEY" != "true" ]; then
+            echo "::error::The GOOGLE_API_KEY repository secret is not set, so the live agent evals can't run. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
       - uses: actions/checkout@v4
-        if: env.GOOGLE_API_KEY != ''
       - uses: astral-sh/setup-uv@v6
-        if: env.GOOGLE_API_KEY != ''
       - run: uv sync --locked
-        if: env.GOOGLE_API_KEY != ''
       - name: Create roles and databases
-        if: env.GOOGLE_API_KEY != ''
         run: psql -h localhost -p 5433 -U postgres -f ../infra/postgres/init.sql
         env:
           PGPASSWORD: postgres
       - name: Live agent evals
-        if: env.GOOGLE_API_KEY != ''
+        id: evals
         run: uv run python -m travelmind.agent.evals --live
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       - uses: actions/upload-artifact@v4
-        if: always() && env.GOOGLE_API_KEY != ''
+        if: always() && steps.evals.outcome != 'skipped'
         with:
           name: agent-evals-live
           path: docs/perf/agent-evals-*.md

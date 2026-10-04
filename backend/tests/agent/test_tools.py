@@ -20,8 +20,9 @@ from tests.agent.conftest import (
 from tests.hotels.test_hotels_api import FIXTURE as LITEAPI_FIXTURE
 from travelmind.agent import gemini
 from travelmind.agent.context import RunMemory
+from travelmind.agent.facts import facts
 from travelmind.agent.fake import FakeProvider
-from travelmind.agent.provider import Message, ToolCall
+from travelmind.agent.provider import Message, ToolCall, ToolResult
 from travelmind.agent.tools import execute, specs_for, tools_for
 from travelmind.agent.tools.base import clean_text, format_money
 from travelmind.agent.tools.weather import ARCHIVE_URL
@@ -198,6 +199,7 @@ async def test_an_unknown_tool_is_an_error_not_an_exception(agency):
 async def test_lookup_airport_returns_the_top_matches(agency, airports):
     async with run_context(*agency) as ctx:
         data = await call(ctx, "lookup_airport", query="Delhi")
+    assert data["query"] == "Delhi"  # echoed: the guard's facts need to know what was asked
     assert 1 <= len(data["matches"]) <= 5
     assert data["matches"][0] == {
         "code": "DEL",
@@ -783,6 +785,7 @@ async def test_looking_up_goa_does_not_unlock_genoa(agency, airports):
     async with run_context(*agency) as ctx:
         found = await call(ctx, "lookup_airport", query="Goa")
         assert found["matches"][0]["code"] == "GOI"
+        assert "GOA" not in facts(ToolResult("c1", "lookup_airport", found)).iata_codes
         refused = await call(ctx, "search_flights", **flights_args(destination="GOA"))
         goa = await call(ctx, "search_flights", **flights_args(destination="GOI"))
     assert refused["error"]["code"] == "invalid_arguments"

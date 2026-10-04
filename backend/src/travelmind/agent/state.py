@@ -8,7 +8,7 @@ next job, in any worker process, picks it up from here alone:
 - `memo`: answers to calls already made (same tool and arguments), so a repeated call is not run
   again;
 - `user_texts`: what the user typed (the prompt and replies), whose values the guard accepts;
-  never the engine's own re-prompt;
+  never the engine's own re-prompt (a user-role message marked `engine`);
 - `pending`: the question or confirmation the run waits on, with the turn's results so far and
   the calls still to run; `inbox`: the user's answer to it, left by the API for the next job;
 - counters: model calls made (`turns`), whether the one re-prompt was used, running time so far
@@ -59,6 +59,7 @@ def message_to_json(message: Message) -> dict[str, Any]:
         "text_signature": message.text_signature,
         "calls": [call_to_json(c) for c in message.calls],
         "results": [result_to_json(r) for r in message.results],
+        "engine": message.engine,
     }
 
 
@@ -69,6 +70,7 @@ def message_from_json(data: dict[str, Any]) -> Message:
         calls=tuple(call_from_json(c) for c in data.get("calls") or []),
         results=tuple(result_from_json(r) for r in data.get("results") or []),
         text_signature=data.get("text_signature"),
+        engine=bool(data.get("engine")),
     )
 
 

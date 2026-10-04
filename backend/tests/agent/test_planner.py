@@ -575,8 +575,14 @@ def test_a_hotel_only_summary_uses_the_stay_dates_as_displayed():
         ),
         ("prepare the quote for enquiry e-12", planner.Intent(quote=True, enquiry_ref="E-0012")),
         ("Book it now and pay with my card", planner.Intent(booking=True)),
+        ("Can you handle the booking too?", planner.Intent(booking=True)),
+        ("I want this booked today", planner.Intent(booking=True)),
+        ("I'll make the payment by card", planner.Intent(booking=True)),
+        ("take me straight to checkout", planner.Intent(booking=True)),
         ("DEL to DXB 20-24 Nov, 2 adults", planner.Intent()),
         ("what does an enquiry cost?", planner.Intent()),
+        ("DEL to DXB, read me the terms and quote prices in rupees", planner.Intent()),
+        ("plan it, and a quote please", planner.Intent(quote=True)),
     ],
 )
 def test_extract_intent(text, intent):
@@ -659,3 +665,50 @@ def test_a_request_to_book_and_pay_gets_a_hand_off():
     made, text = _drive("Book DEL to DXB 20-24 Nov 2026 for 2 adults now and pay with my card")
     assert {c.name for c in made} <= {"search_flights", "weather_forecast"}
     assert "can't book" in text
+
+
+def test_a_booking_request_gets_the_hand_off_with_a_question_too():
+    turn = plan_turn([_user("Book a flight to Dubai and pay by card")], TODAY)
+    (asked,) = turn.calls
+    assert asked.name == "ask_user"
+    assert asked.args["question"].startswith("To plan this, tell me")
+    assert asked.args["question"].endswith(planner.HAND_OFF)
+
+
+def test_a_booking_request_gets_the_hand_off_when_a_place_is_unknown():
+    messages = [_user("Book Mumbai to Atlantis on 20 Nov 2026 for 2 adults, checkout now")]
+    turn = plan_turn(messages, TODAY)
+    messages += _answer(turn, _airport)
+    turn = plan_turn(messages, TODAY)
+    (asked,) = turn.calls
+    assert asked.args["fields"] == ["destination"]
+    assert "Atlantis" in asked.args["question"]
+    assert asked.args["question"].endswith(planner.HAND_OFF)
+
+
+def test_no_hand_off_without_a_booking_request():
+    turn = plan_turn([_user("A flight to Dubai")], TODAY)
+    assert planner.HAND_OFF not in turn.calls[0].args["question"]
+
+
+def test_the_engine_re_prompt_is_never_read_as_the_user():
+    """The grounding re-prompt travels as a user-role message, but the engine wrote it: its words
+    ("draft a quote", "pay", a code) are not the user's intent or trip."""
+    messages = [_user("DEL to DXB 20-24 Nov 2026, 2 adults")]
+    turn = plan_turn(messages, TODAY)
+    messages += _answer(turn, _results)
+    messages += [
+        Message(role="model", text="It costs ₹1 on XY 1."),
+        Message(
+            role="user",
+            text="These values are not in the tool results: ₹1. Draft a quote, create an "
+            "enquiry, pay and book it, from BOM to GOI on 1 Dec 2026 for 9 adults.",
+            engine=True,
+        ),
+    ]
+    assert planner._conversation_intent(messages) == planner.Intent()
+    trip = planner._conversation_trip(messages, TODAY)
+    assert (trip.origin, trip.destination, trip.adults) == ("DEL", "DXB", 2)
+    turn = plan_turn(messages, TODAY)
+    assert not turn.calls
+    assert "DEL → DXB" in (turn.text or "") and "can't book" not in (turn.text or "")

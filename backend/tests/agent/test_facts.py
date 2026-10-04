@@ -163,3 +163,34 @@ def test_budget_totals_and_quotes_are_facts():
     assert isinstance(found, GroundFacts)
     assert {("INR", 859_000), ("INR", 249_000), ("INR", 249_100)} <= found.amounts
     assert {"₹8,590", "≈ ₹8,590", "₹2,491"} <= found.money_text
+
+
+def _airport_matches(query: str) -> dict:
+    """lookup_airport's result for `query`: the search lists Genoa (GOA) as a fuzzy match too."""
+    return {
+        "query": query,
+        "matches": [
+            {"code": "GOI", "name": "Dabolim Airport", "city": "Vasco da Gama"},
+            {"code": "GOX", "name": "Manohar International Airport", "city": "Mopa"},
+            {"code": "GOA", "name": "Genoa Cristoforo Colombo Airport", "city": "Genova"},
+        ],
+    }
+
+
+def test_a_goa_lookup_never_vouches_for_genoa():
+    """Looking up the city "Goa" (in any case) vouches for its airports, never for the other
+    airport its code spells (GOA, Genoa), as the run memory refuses it for tool arguments."""
+    for query in ("Goa", "goa", "GOA", " Goa "):
+        found = facts(result("lookup_airport", _airport_matches(query)))
+        assert {"GOI", "GOX"} <= found.iata_codes, query
+        assert "GOA" not in found.iata_codes, query
+
+
+def test_a_genoa_lookup_vouches_for_genoa():
+    found = facts(result("lookup_airport", _airport_matches("Genoa")))
+    assert {"GOI", "GOX", "GOA"} <= found.iata_codes
+
+
+def test_the_echoed_query_is_never_a_fact():
+    found = facts(result("lookup_airport", {"query": "DXB", "matches": []}))
+    assert found.iata_codes == frozenset() and found.names == frozenset()

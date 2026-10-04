@@ -479,7 +479,8 @@ class _Loop:
                     "violations": [v.to_json() for v in violations],
                 },
             )
-            self.state.messages += [said, Message(role="user", text=reprompt_text(violations))]
+            reprompt = Message(role="user", text=reprompt_text(violations), engine=True)
+            self.state.messages += [said, reprompt]
             self.state.reprompted = True
             return None
         fallback = bool(violations) or not text
