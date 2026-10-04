@@ -476,3 +476,186 @@ def test_the_planner_reads_at_most_max_message_chars_of_a_message():
     started = time.perf_counter()
     plan_turn([_user("1" + " " * 200_000)], TODAY)
     assert time.perf_counter() - started < 0.1
+
+
+# --- plain dates, and the writes a request asks for -----------------------------------------
+
+FRONTEND_ENQUIRY = (
+    "Create an enquiry for this trip: DEL to DXB, 20 Nov 2026 to 24 Nov 2026, 2 adults, economy."
+)
+TRIP_BLOCK = {
+    "origin": "DEL",
+    "destination": "DXB",
+    "depart_date": "2026-11-20",
+    "depart_date_display": "20 Nov 2026",
+    "return_date": "2026-11-24",
+    "return_date_display": "24 Nov 2026",
+}
+ENQUIRY_ID = "6f1c2c1e-1111-4222-8333-944445555666"
+
+
+def _offer(ref: str, total: str, currency: str = "INR") -> dict:
+    return {
+        "offer_id": ref,
+        "flight_numbers": [f"AI {ref[1:]}01"],
+        "total_formatted": total,
+        "supplier_total_currency": currency,
+        "converted": currency != "INR",
+    }
+
+
+def _results(call: ToolCall) -> dict:
+    if call.name == "search_flights":
+        offers = [
+            _offer("F1", "₹40,000"),
+            _offer("F2", "≈ ₹41,000", "USD"),
+            _offer("F3", "₹42,000"),
+            _offer("F4", "₹43,000"),
+            _offer("F5", "₹44,000"),
+        ]
+        return {"trip": TRIP_BLOCK, "currency": "INR", "offers": offers}
+    if call.name == "weather_forecast":
+        return {"label": "typical", "days": [{"date": "2026-11-20"}] * 5}
+    if call.name == "create_enquiry":
+        return {"enquiry_id": ENQUIRY_ID, "number": "E-0007", "status": "new", "trip": TRIP_BLOCK}
+    if call.name == "draft_quote":
+        return {
+            "number": "Q-0003",
+            "currency": "INR",
+            "options": [],
+            "min_sell_formatted": "₹44,000",
+        }
+    raise AssertionError(call.name)
+
+
+def _drive(text: str, decide=_results, *, turns: int = 6):  # type: ignore[no-untyped-def]
+    """Run the planner over `text`, answering each turn's calls with `decide`, until it answers.
+    Returns (every call made, the answer)."""
+    messages = [_user(text)]
+    made: list[ToolCall] = []
+    for _ in range(turns):
+        turn = plan_turn(messages, TODAY)
+        if not turn.calls:
+            return made, turn.text or ""
+        made += turn.calls
+        messages += _answer(turn, decide)
+    raise AssertionError("the planner did not answer")
+
+
+def test_the_summary_speaks_dates_as_the_tools_display_them():
+    made, text = _drive("DEL to DXB 20-24 Nov 2026, 2 adults")
+    assert [c.name for c in made] == ["search_flights", "weather_forecast"]
+    assert "20 Nov 2026 to 24 Nov 2026" in text
+    assert "2026-11-20" not in text and "2026-11-24" not in text
+
+
+def test_a_hotel_only_summary_uses_the_stay_dates_as_displayed():
+    def stay(call: ToolCall) -> dict:
+        if call.name == "search_hotels":
+            trip = {"check_in_display": "12 Dec 2026", "check_out_display": "16 Dec 2026"}
+            return {
+                "trip": trip,
+                "hotels": [{"name": "Rove Downtown", "total_formatted": "₹45,000"}],
+            }
+        return {"label": "typical", "days": []}
+
+    _, text = _drive("just a hotel in DXB 12-16 Dec for 2 adults", stay)
+    assert "12 Dec 2026 to 16 Dec 2026" in text and "2026-12" not in text
+
+
+@pytest.mark.parametrize(
+    ("text", "intent"),
+    [
+        (FRONTEND_ENQUIRY, planner.Intent(enquiry=True)),
+        ("Draft a quote for this trip: DEL to DXB, 20 Nov 2026", planner.Intent(quote=True)),
+        ("please create a new enquiry and draft a quote", planner.Intent(enquiry=True, quote=True)),
+        (
+            "Draft a quote on E-0012 for DEL to DXB",
+            planner.Intent(quote=True, enquiry_ref="E-0012"),
+        ),
+        ("prepare the quote for enquiry e-12", planner.Intent(quote=True, enquiry_ref="E-0012")),
+        ("Book it now and pay with my card", planner.Intent(booking=True)),
+        ("DEL to DXB 20-24 Nov, 2 adults", planner.Intent()),
+        ("what does an enquiry cost?", planner.Intent()),
+    ],
+)
+def test_extract_intent(text, intent):
+    assert planner.extract_intent(text) == intent
+
+
+def test_the_frontend_enquiry_request_reads_as_a_flight_trip():
+    trip = extract_trip(FRONTEND_ENQUIRY, TODAY)
+    assert (trip.origin, trip.destination) == ("DEL", "DXB")
+    assert (trip.depart_date, trip.return_date) == (date(2026, 11, 20), date(2026, 11, 24))
+    assert (trip.adults, trip.cabin, trip.flights) == (2, "economy", True)
+
+
+def test_a_stay_near_a_place_needs_no_origin():
+    trip = extract_trip("Create an enquiry for this trip: a stay near DXB, 12 Dec 2026", TODAY)
+    assert trip.destination == "DXB" and trip.flights is False and trip.hotels is True
+
+
+def test_an_enquiry_request_plans_then_asks_to_create_the_enquiry_then_cites_it():
+    made, text = _drive(FRONTEND_ENQUIRY)
+    assert [c.name for c in made] == ["search_flights", "weather_forecast", "create_enquiry"]
+    assert made[-1].args == {
+        "origin": "DEL",
+        "destination": "DXB",
+        "depart_date": "2026-11-20",
+        "return_date": "2026-11-24",
+        "adults": 2,
+        "cabin": "economy",
+    }
+    assert "E-0007" in text and "20 Nov 2026 to 24 Nov 2026" in text
+    assert "draft_quote" not in [c.name for c in made]
+
+
+def test_a_declined_enquiry_is_reported_and_nothing_follows():
+    def declined(call: ToolCall) -> dict:
+        if call.name == "create_enquiry":
+            return {"status": "declined", "message": "The user declined this action."}
+        return _results(call)
+
+    made, text = _drive(FRONTEND_ENQUIRY.replace("an enquiry", "an enquiry and a quote"), declined)
+    assert [c.name for c in made][-1] == "create_enquiry"
+    assert "not created" in text and "E-0007" not in text
+
+
+def test_a_quote_request_creates_the_enquiry_then_drafts_the_quote():
+    made, text = _drive(
+        "Draft a quote for this trip: DEL to DXB, 20 Nov 2026 to 24 Nov 2026, 2 adults."
+    )
+    names = [c.name for c in made]
+    assert names == ["search_flights", "weather_forecast", "create_enquiry", "draft_quote"]
+    assert made[-1].args == {
+        "enquiry_id": ENQUIRY_ID,
+        "offer_ids": ["F1", "F3", "F4"],  # F2 is billed in USD: not quotable in INR
+        "markup_kind": "percent",
+        "markup_value": 1000,
+    }
+    assert "Q-0003" in text and "E-0007" in text and "₹44,000" in text
+
+
+def test_a_quote_on_a_named_enquiry_creates_no_enquiry():
+    made, text = _drive("Draft a quote on E-0012 for DEL to DXB, 20-24 Nov 2026, 2 adults")
+    assert [c.name for c in made] == ["search_flights", "weather_forecast", "draft_quote"]
+    assert made[-1].args["enquiry_id"] == "E-0012"
+    assert "Q-0003" in text
+
+
+def test_no_quote_is_drafted_without_offers_in_the_agency_currency():
+    def dollars(call: ToolCall) -> dict:
+        data = _results(call)
+        if call.name == "search_flights":
+            data = data | {"offers": [_offer("F1", "≈ ₹40,000", "USD")]}
+        return data
+
+    made, text = _drive("Draft a quote on E-0012 for DEL to DXB, 20-24 Nov 2026, 2 adults", dollars)
+    assert "draft_quote" not in [c.name for c in made]
+    assert "INR" in text and "no quote" in text.lower()
+
+
+def test_a_request_to_book_and_pay_gets_a_hand_off():
+    made, text = _drive("Book DEL to DXB 20-24 Nov 2026 for 2 adults now and pay with my card")
+    assert {c.name for c in made} <= {"search_flights", "weather_forecast"}
+    assert "can't book" in text

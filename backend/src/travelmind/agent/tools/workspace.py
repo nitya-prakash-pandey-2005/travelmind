@@ -4,7 +4,8 @@ They call the workspace services under the run's agency (RLS), exactly as the ap
 The two write tools have `confirm=True`: the engine asks the user before running them; called,
 they just execute, commit, and bump the agency's read cache so the app shows the change.
 
-draft_quote takes offer ids from this run's flight searches (F1, ...), and the quote is priced
+draft_quote takes the enquiry by its id or its number ("E-0012", looked up in the run's agency)
+and offer ids from this run's flight searches (F1, ...), and the quote is priced
 by the server from the offers the agency was shown (the per-agency offer cache), as when an
 agent builds a quote by hand: the model never supplies a price. Before calling the service it
 checks what the run memory knows, so the refusal names the short ids: every offer must be
@@ -16,11 +17,13 @@ Another agency's records are `not_found`: an enquiry (RLS hides it) and a client
 create_enquiry alike.
 """
 
+import re
 from datetime import UTC, date
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import AfterValidator, Field
+from sqlalchemy import select
 
 from travelmind.agent.context import RunContext, SeenItem
 from travelmind.agent.tools.base import (
@@ -40,9 +43,11 @@ from travelmind.workspace.clients import list_clients
 from travelmind.workspace.counters import format_number
 from travelmind.workspace.enquiries import (
     CLIENT_NOT_FOUND_MESSAGE,
+    NOT_FOUND_MESSAGE,
     EnquiryCreate,
     create_enquiry,
 )
+from travelmind.workspace.models import Enquiry
 from travelmind.workspace.quotes import (
     MAX_FIXED_MINOR,
     MAX_OPTIONS,
@@ -143,10 +148,44 @@ async def create_enquiry_tool(ctx: RunContext, args: CreateEnquiryArgs) -> dict[
 # --- draft_quote -------------------------------------------------------------------------
 
 OfferRef = Annotated[str, Field(min_length=1, max_length=1000)]
+ENQUIRY_NUMBER = re.compile(r"E-?(\d{1,9})", re.IGNORECASE)
+
+
+def _enquiry_ref(value: str) -> str:
+    """An enquiry id (a UUID) as is, or an enquiry number in the app's form ("e-12" → "E-0012")."""
+    text = value.strip()
+    try:
+        return str(UUID(text))
+    except ValueError:
+        pass
+    if number := ENQUIRY_NUMBER.fullmatch(text):
+        return format_number("enquiry", int(number.group(1)))
+    raise ValueError(
+        "Give the enquiry_id from create_enquiry, or an enquiry number such as E-0012."
+    )
+
+
+EnquiryRef = Annotated[str, Field(min_length=1, max_length=64), AfterValidator(_enquiry_ref)]
+
+
+async def find_enquiry(ctx: RunContext, ref: str) -> tuple[UUID, int]:
+    """(id, number) of the run's agency's enquiry `ref` (an id or a number such as "E-0012");
+    ToolError not_found for one the agency doesn't have."""
+    query = select(Enquiry.id, Enquiry.number).where(Enquiry.agency_id == ctx.agency_id)
+    if number := ENQUIRY_NUMBER.fullmatch(ref):
+        query = query.where(Enquiry.number == int(number.group(1)))
+    else:
+        query = query.where(Enquiry.id == UUID(ref))
+    row = (await ctx.db.execute(query)).first()
+    if row is None:
+        raise ToolError("not_found", NOT_FOUND_MESSAGE)
+    return row[0], row[1]
 
 
 class DraftQuoteArgs(Args):
-    enquiry_id: UUID = Field(description="The enquiry_id from create_enquiry.")
+    enquiry_id: EnquiryRef = Field(
+        description="The enquiry_id from create_enquiry, or the enquiry's number (E-0012)."
+    )
     offer_ids: list[OfferRef] = Field(
         min_length=1, max_length=MAX_OPTIONS, description="Up to 3 offer_ids, such as F1."
     )
@@ -212,6 +251,7 @@ async def draft_quote(ctx: RunContext, args: DraftQuoteArgs) -> dict[str, Any]:
         raise ToolError("invalid_arguments", "offer_ids: give each offer once.")
     items = [seen(ctx, ref, "flight") for ref in refs]
     check_quotable(ctx, items, ctx.currency)  # the quote takes the agency's currency
+    enquiry_id, _ = await find_enquiry(ctx, args.enquiry_id)
     try:
         quote = await create_quote(
             ctx.db,
@@ -220,7 +260,7 @@ async def draft_quote(ctx: RunContext, args: DraftQuoteArgs) -> dict[str, Any]:
             validate(
                 QuoteCreate,
                 {
-                    "enquiry_id": args.enquiry_id,
+                    "enquiry_id": enquiry_id,
                     "markup_kind": args.markup_kind,
                     "markup_value": args.markup_value,
                 },

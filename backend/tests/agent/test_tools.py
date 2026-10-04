@@ -561,6 +561,27 @@ async def test_create_enquiry_and_draft_quote_use_the_workspace_services(agency,
     )
 
 
+async def test_draft_quote_takes_the_enquiry_number_too(agency, airports):
+    other = await make_agency("Other")
+    async with run_context(*other) as ctx:
+        await call(ctx, "create_enquiry", adults=1)  # Other's E-0001
+    async with run_context(*agency) as ctx:
+        await call(ctx, "search_flights", **flights_args())
+        enquiry = await call(ctx, "create_enquiry", origin="DEL", destination="BOM", adults=2)
+        by_number = await call(ctx, "draft_quote", enquiry_id="e-1", offer_ids=["F1"])
+        missing = await call(ctx, "draft_quote", enquiry_id="E-0042", offer_ids=["F1"])
+        shapeless = await call(ctx, "draft_quote", enquiry_id="the first one", offer_ids=["F1"])
+    assert enquiry["number"] == "E-0001"
+    assert by_number["number"] == "Q-0001", by_number
+    assert missing["error"]["code"] == "not_found"
+    assert shapeless["error"]["code"] == "invalid_arguments"
+    async with run_context(*agency) as ctx:
+        from travelmind.workspace.models import Quote
+
+        quote = (await ctx.db.execute(select(Quote))).scalar_one()
+    assert str(quote.enquiry_id) == enquiry["enquiry_id"]
+
+
 # --- results are data ---------------------------------------------------------------------
 
 

@@ -777,6 +777,21 @@ async def test_the_quote_confirmation_names_the_enquiry(agency, airports):
     assert action.startswith("Draft a quote")
 
 
+async def test_the_quote_confirmation_takes_an_enquiry_number(agency, airports):
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency[0])
+        from travelmind.workspace.enquiries import EnquiryCreate, create_enquiry
+
+        await create_enquiry(db, agency[0], agency[1], EnquiryCreate(adults=2))
+        await db.commit()
+    quote = tc("draft_quote", enquiry_id="E-0001", offer_ids=["F1"])
+    provider = FakeProvider([gen(None, tc("search_flights", **flights_args())), gen(None, quote)])
+    run_id = await start(agency, provider)
+    assert await drive(agency, run_id, provider) == "waiting_for_user"
+    action = (await _pending(agency, run_id))["action"]
+    assert action.startswith("Draft a quote on E-0001 with F1")
+
+
 async def test_a_write_with_bad_arguments_is_answered_without_running_it(agency, monkeypatch):
     from travelmind.agent import loop
 

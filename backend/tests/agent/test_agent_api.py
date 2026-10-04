@@ -15,6 +15,7 @@ from travelmind.agent import events, service
 from travelmind.agent.fake import FakeProvider
 from travelmind.agent.models import AgentStep
 from travelmind.agent.provider import AgentUnavailable, Generation, ToolCall
+from travelmind.agent.tools.base import display_date
 from travelmind.agent.tools.weather import ARCHIVE_URL
 from travelmind.cache import get_shared_redis
 from travelmind.config import Settings, get_settings
@@ -123,6 +124,61 @@ async def test_the_demo_planner_plans_a_grounded_trip_end_to_end(client, airport
     listed = (await client.get(RUNS)).json()["items"]
     assert [r["id"] for r in listed] == [run["id"]]
     assert "steps" not in listed[0]
+
+
+def shown(offset: int) -> str:
+    return display_date(TODAY + timedelta(days=offset))
+
+
+async def approve(client, run: dict[str, Any], tool: str) -> dict[str, Any]:
+    """Approve the write `run` waits on (it must be `tool`); the run once it stops again."""
+    assert run["status"] == "waiting_for_user", run
+    pending = run["pending"]
+    assert pending["kind"] == "confirm" and pending["tool"] == tool, pending
+    decided = await client.post(
+        f"{RUNS}/{run['id']}/confirm", json={"call_id": pending["call_id"], "approve": True}
+    )
+    assert decided.status_code == 202, decided.text
+    await asyncio.sleep(0.05)  # let the queued run start
+    return await wait_for(client, run["id"], "done", "failed", "waiting_for_user")
+
+
+async def test_the_demo_planner_creates_the_enquiry_it_was_asked_for(client, airports, respx_mock):
+    respx_mock.get(url__startswith=ARCHIVE_URL).mock(side_effect=open_meteo_archive)
+    await signup(client)
+    # exactly the follow-up the plan board sends
+    prompt = (
+        f"Create an enquiry for this trip: DEL to BOM, {shown(30)} to {shown(33)}, 2 adults, "
+        "economy."
+    )
+    created = await client.post(RUNS, json={"prompt": prompt})
+    run = await wait_for(client, created.json()["run_id"], "done", "failed", "waiting_for_user")
+    assert run["pending"]["action"].startswith(
+        f"Create an enquiry DEL → BOM, {shown(30)} to {shown(33)}, 2 adults"
+    )
+    assert (await client.get("/api/v1/enquiries")).json()["total"] == 0
+    run = await approve(client, run, "create_enquiry")
+    assert run["status"] == "done" and run["grounded"] is True, run
+    summary = run["result"]["summary"]
+    assert "Enquiry E-0001 is created" in summary
+    assert f"{shown(30)} to {shown(33)}" in summary and day(30) not in summary
+    assert (await client.get("/api/v1/enquiries")).json()["total"] == 1
+
+
+async def test_the_demo_planner_drafts_a_quote_after_two_approvals(client, airports, respx_mock):
+    respx_mock.get(url__startswith=ARCHIVE_URL).mock(side_effect=open_meteo_archive)
+    await signup(client)
+    prompt = f"Draft a quote for this trip: DEL to BOM, {shown(30)} to {shown(33)}, 2 adults."
+    created = await client.post(RUNS, json={"prompt": prompt})
+    run = await wait_for(client, created.json()["run_id"], "done", "failed", "waiting_for_user")
+    run = await approve(client, run, "create_enquiry")
+    action = run["pending"]["action"]
+    assert action.startswith("Draft a quote on E-0001 with F1 (") and "F3 (" in action
+    assert action.endswith("at a 10% markup.")
+    run = await approve(client, run, "draft_quote")
+    assert run["status"] == "done" and run["grounded"] is True, run
+    summary = run["result"]["summary"]
+    assert "Quote Q-0001 is drafted on E-0001 with F1, F2 and F3 at a 10% markup" in summary
 
 
 async def test_prompts_and_replies_are_capped_at_2000_characters(client):

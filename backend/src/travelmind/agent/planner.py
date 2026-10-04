@@ -15,7 +15,14 @@ city ("GOA" is Goa: looked up, which gives GOI).
 3. Places not yet resolved: call `lookup_airport` for each (an unknown place: ask about it).
 4. Searches not yet run: call `search_flights`, `search_hotels` (when a stay is wanted and the
    dates bound it) and `weather_forecast`.
-5. Otherwise answer with a short summary written only from the tool results.
+5. Writes the user asked for (`extract_intent`), one per turn, each paused by the engine for the
+   user's confirmation: "create an enquiry" calls `create_enquiry` with the trip; "draft a quote"
+   calls `draft_quote` on the enquiry this run created (creating it first) or the one the user
+   named ("E-0012"), with the first MAX_QUOTE_OPTIONS flight offers billed in the agency's
+   currency and a QUOTE_MARKUP_BP markup.
+6. Otherwise answer with a short summary written only from the tool results: dates as the tools
+   displayed them ("20 Nov 2026"), the enquiry and quote numbers the writes returned, and a
+   hand-off when the user asked to book or pay (no tool books or takes money).
 
 The tools themselves (and their result shapes: `matches[].code`, `offers[]`, `hotels[]`,
 `days[]`) belong to the tool registry; this module only names the calls.
@@ -34,6 +41,7 @@ from functools import partial
 from typing import Any, Literal
 
 from travelmind.agent.provider import Generation, Message, ToolCall
+from travelmind.agent.tools.base import display_date
 from travelmind.agent.tools.travel import ambiguous_code
 from travelmind.offers.models import Cabin
 
@@ -44,6 +52,10 @@ MAX_MESSAGE_CHARS = 2000
 # as next year's ("28 Dec – 3 Jan") only when that makes a stay of at most this many days; for a
 # longer one the dates were most likely written the wrong way round ("16 Dec to 12 Dec").
 MAX_ROLLOVER_STAY_DAYS = 183
+# A quote the planner drafts: the first offers billed in the agency's currency, at 10% (in basis
+# points, as draft_quote takes it).
+MAX_QUOTE_OPTIONS = 3
+QUOTE_MARKUP_BP = 1000
 
 DateIssue = Literal["past", "reversed"]
 
@@ -135,6 +147,8 @@ _HOTEL_ONLY = re.compile(
     r"|\bno\s+flights?\b|\bwithout\s+flights?\b",
     _I,
 )
+# "a stay near DXB" (the follow-up for a hotel-only plan): no flights when no origin is named.
+_STAY_ONLY = re.compile(r"\ba\s+stay\s+(?:in|near|at)\b", _I)
 _HOTEL_WORDS = re.compile(r"\b(?:hotels?|stay|accommodation|rooms?|resort)\b", _I)
 _CABINS: tuple[tuple[re.Pattern[str], Cabin], ...] = (
     (re.compile(r"\bpremium(?:[ -]economy)?\b", _I), "premium_economy"),
@@ -142,6 +156,18 @@ _CABINS: tuple[tuple[re.Pattern[str], Cabin], ...] = (
     (re.compile(r"\bfirst[ -]class\b", _I), "first"),
     (re.compile(r"\beconomy\b", _I), "economy"),
 )
+
+# What the user wants done besides a plan.
+_ENQUIRY_ASK = re.compile(
+    r"\b(?:create|make|open|raise|log|add|start|set\s+up)\s+(?:an?\s+|the\s+)?(?:new\s+)?"
+    r"enquiry\b",
+    _I,
+)
+_QUOTE_ASK = re.compile(
+    r"\b(?:draft|create|make|prepare|build|send|and)\s+(?:an?\s+|the\s+)?(?:new\s+)?quote\b", _I
+)
+_ENQUIRY_REF = re.compile(r"\bE-(\d{1,6})\b", _I)
+_BOOKING = re.compile(r"\b(?:book|pay|purchase|buy)\b", _I)
 
 _CODE_PAIR = re.compile(r"\b([A-Z]{3})\s*[-–/]\s*([A-Z]{3})\b")
 _ARROWS = re.compile(r"→|⟶|->|–>|=>")  # the arrow alone: tokens skip the spaces around it
@@ -183,7 +209,7 @@ def _backward(tokens: list[str], end: int) -> str | None:
 
 def extract_route(text: str) -> tuple[str | None, str | None]:
     """(origin, destination) as written: "from X", "X to Y", "X → Y", "DEL-DXB"; a stay "in X"
-    when no destination is named with "to"."""
+    or "near X" when no destination is named with "to"."""
     pair = _CODE_PAIR.search(text)
     if pair:
         return pair.group(1), pair.group(2)
@@ -201,7 +227,7 @@ def extract_route(text: str) -> tuple[str | None, str | None]:
             break
     if destination is None:
         for i, word in enumerate(lowered):
-            if word == "in" and (place := _forward(tokens, i + 1)):
+            if word in ("in", "near") and (place := _forward(tokens, i + 1)):
                 destination = place
                 break
     return origin, destination
@@ -422,6 +448,8 @@ def extract_trip(text: str, today: date) -> TripRequest:
     depart, back, issue = read_dates(text, today)
     adults, children, ages = extract_travellers(text)
     flights, hotels = extract_scope(text)
+    if origin is None and _STAY_ONLY.search(text):
+        flights, hotels = False, True
     return TripRequest(
         origin=origin,
         destination=destination,
@@ -435,6 +463,35 @@ def extract_trip(text: str, today: date) -> TripRequest:
         hotels=hotels,
         hotel_mentioned=bool(_HOTEL_WORDS.search(text)),
         date_issue=issue,
+    )
+
+
+@dataclass(frozen=True)
+class Intent:
+    """What the user asked for besides a plan: an enquiry, a quote (on `enquiry_ref`, an
+    enquiry number such as "E-0012", when they named one), or a booking (handed off)."""
+
+    enquiry: bool = False
+    quote: bool = False
+    enquiry_ref: str | None = None
+    booking: bool = False
+
+    def merged(self, later: "Intent") -> "Intent":
+        return Intent(
+            enquiry=self.enquiry or later.enquiry,
+            quote=self.quote or later.quote,
+            enquiry_ref=later.enquiry_ref or self.enquiry_ref,
+            booking=self.booking or later.booking,
+        )
+
+
+def extract_intent(text: str) -> Intent:
+    ref = _ENQUIRY_REF.search(text)
+    return Intent(
+        enquiry=bool(_ENQUIRY_ASK.search(text)),
+        quote=bool(_QUOTE_ASK.search(text)),
+        enquiry_ref=f"E-{int(ref.group(1)):04d}" if ref else None,
+        booking=bool(_BOOKING.search(text)),
     )
 
 
@@ -536,6 +593,14 @@ def _conversation_trip(messages: Sequence[Message], today: date) -> TripRequest:
     return trip
 
 
+def _conversation_intent(messages: Sequence[Message]) -> Intent:
+    intent = Intent()
+    for message in messages:
+        if message.role == "user" and message.text:
+            intent = intent.merged(extract_intent(message.text[:MAX_MESSAGE_CHARS]))
+    return intent
+
+
 def _results(messages: Sequence[Message]) -> list[tuple[ToolCall, dict[str, Any] | None]]:
     """Every call the conversation made, with its result data (None until it has one)."""
     data = {r.call_id: r.data for m in messages for r in m.results}
@@ -592,20 +657,38 @@ def _travellers(trip: TripRequest) -> str:
     return f"{adults} and {trip.children} {'child' if trip.children == 1 else 'children'}"
 
 
-def _summary(
-    trip: TripRequest, codes: dict[str, str], results: dict[str, dict[str, Any] | None]
-) -> str:
-    """A short answer written only from the tool results (and the trip the user gave)."""
+def _shown_dates(trip: TripRequest, results: dict[str, dict[str, Any] | None]) -> str:
+    """The trip's dates as the searches displayed them ("20 Nov 2026 to 24 Nov 2026"); as the
+    user gave them only when no search echoed them."""
+    for name, start, end in (
+        ("search_flights", "depart_date", "return_date"),
+        ("search_hotels", "check_in", "check_out"),
+    ):
+        block = (results.get(name) or {}).get("trip") or {}
+        if first := block.get(f"{start}_display"):
+            last = block.get(f"{end}_display")
+            return f"{first} to {last}" if last else str(first)
     assert trip.depart_date is not None
-    dates = trip.depart_date.isoformat()
+    shown = display_date(trip.depart_date)
     if trip.return_date is not None:
-        dates += f" to {trip.return_date.isoformat()}"
+        shown += f" to {display_date(trip.return_date)}"
+    return shown
+
+
+def _summary(
+    trip: TripRequest,
+    codes: dict[str, str],
+    results: dict[str, dict[str, Any] | None],
+    closing: Sequence[str] = (),
+) -> str:
+    """A short answer written only from the tool results (and the trip the user gave), ending
+    with `closing` (what the writes did, a hand-off) or else a pointer to the quote."""
     where = (
         f"{codes['origin']} → {codes['destination']}"
         if trip.flights
         else f"a stay in {codes['destination']}"
     )
-    lines = [f"Plan for {where}, {dates}, for {_travellers(trip)}."]
+    lines = [f"Plan for {where}, {_shown_dates(trip, results)}, for {_travellers(trip)}."]
     if "search_flights" in results:
         offers = (results["search_flights"] or {}).get("offers") or []
         if offers:
@@ -632,8 +715,135 @@ def _summary(
     if days := weather.get("days") or []:
         label = weather.get("label") or "forecast"
         lines.append(f"Weather: {len(days)} days of {label} conditions are on the board.")
-    lines.append("Pick a flight and a hotel to turn this into a quote.")
+    lines += closing or ["Pick a flight and a hotel to turn this into a quote."]
     return " ".join(lines)
+
+
+# --- writes the user asked for ------------------------------------------------------------
+
+HAND_OFF = (
+    "I can't book or take payment: choose the offers here, then book them with the supplier"
+    " or through your agency's booking process."
+)
+History = Sequence[tuple[ToolCall, dict[str, Any] | None]]
+Call = tuple[str, dict[str, Any]]
+
+
+def _listed(items: Sequence[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + f" and {items[-1]}"
+
+
+def _enquiry_args(trip: TripRequest, codes: dict[str, str]) -> dict[str, Any]:
+    assert trip.depart_date is not None and trip.adults is not None
+    args: dict[str, Any] = {}
+    if trip.flights:
+        args["origin"] = codes["origin"]
+    args["destination"] = codes["destination"]
+    args["depart_date"] = trip.depart_date.isoformat()
+    if trip.return_date is not None:
+        args["return_date"] = trip.return_date.isoformat()
+    args["adults"] = trip.adults
+    if trip.children_ages:
+        args["children_ages"] = list(trip.children_ages)
+    args["cabin"] = trip.cabin or "economy"
+    return args
+
+
+def _made(history: History, name: str) -> list[tuple[ToolCall, dict[str, Any]]]:
+    return [(call, data) for call, data in history if call.name == name and data is not None]
+
+
+def _refused(data: dict[str, Any]) -> str | None:
+    """Why a write didn't happen ("declined", or its error's message), or None when it did."""
+    if data.get("status") == "declined":
+        return "declined"
+    error = data.get("error")
+    if isinstance(error, dict):
+        return str(error.get("message") or "it failed.")
+    return None
+
+
+def _quotable(flights: dict[str, Any] | None) -> list[str]:
+    """The first offers billed in the currency the search showed prices in (the agency's)."""
+    flights = flights or {}
+    currency = flights.get("currency")
+    offers = [
+        str(offer["offer_id"])
+        for offer in flights.get("offers") or []
+        if offer.get("offer_id") and offer.get("supplier_total_currency", currency) == currency
+    ]
+    return offers[:MAX_QUOTE_OPTIONS]
+
+
+def _quote_call(enquiry_id: str, offers: list[str]) -> Call:
+    return (
+        "draft_quote",
+        {
+            "enquiry_id": enquiry_id,
+            "offer_ids": offers,
+            "markup_kind": "percent",
+            "markup_value": QUOTE_MARKUP_BP,
+        },
+    )
+
+
+def _writes(
+    trip: TripRequest,
+    codes: dict[str, str],
+    intent: Intent,
+    history: History,
+    done: dict[str, dict[str, Any] | None],
+) -> tuple[Call | None, list[str]]:
+    """The next write to call, or (None, the lines saying what the writes did)."""
+    lines: list[str] = []
+    enquiry_id, enquiry_shown = intent.enquiry_ref, intent.enquiry_ref
+    if intent.enquiry or (intent.quote and enquiry_id is None):
+        made = _made(history, "create_enquiry")
+        if not made:
+            return ("create_enquiry", _enquiry_args(trip, codes)), []
+        data = made[-1][1]
+        refused = _refused(data)
+        if refused == "declined":
+            tail = ", so no quote was drafted." if intent.quote else "."
+            return None, [f"The enquiry was not created{tail}"]
+        if refused is not None:
+            return None, [f"The enquiry couldn't be created: {refused}"]
+        enquiry_id, enquiry_shown = data.get("enquiry_id"), data.get("number")
+        lines.append(f"Enquiry {enquiry_shown} is created for this trip.")
+    if not intent.quote:
+        return None, lines
+    made = _made(history, "draft_quote")
+    if not made:
+        flights = done.get("search_flights")
+        offers = _quotable(flights)
+        if offers and enquiry_id:
+            return _quote_call(str(enquiry_id), offers), []
+        if "search_flights" not in done:
+            lines.append(
+                "A quote needs flight offers and this plan has none, so no quote was drafted."
+            )
+        else:
+            currency = (flights or {}).get("currency") or "the agency's currency"
+            lines.append(
+                f"None of the flight offers is priced in {currency}, so no quote was drafted."
+            )
+        return None, lines
+    call, data = made[-1]
+    refused = _refused(data)
+    if refused == "declined":
+        lines.append("The quote was not drafted.")
+    elif refused is not None:
+        lines.append(f"The quote couldn't be drafted: {refused}")
+    else:
+        refs = [str(ref) for ref in call.args.get("offer_ids") or []]
+        line = f"Quote {data.get('number')} is drafted on {enquiry_shown}"
+        if refs:
+            line += f" with {_listed(refs)}"
+        line += f" at a {QUOTE_MARKUP_BP / 100:g}% markup"
+        if data.get("min_sell_formatted"):
+            line += f"; the lowest option sells at {data['min_sell_formatted']}"
+        lines.append(line + ".")
+    return None, lines
 
 
 def plan_turn(messages: Sequence[Message], today: date) -> Generation:
@@ -692,4 +902,11 @@ def plan_turn(messages: Sequence[Message], today: date) -> Generation:
             pending.append((name, args))
     if pending:
         return calls(*pending)
-    return Generation(text=_summary(trip, codes, done), calls=(), input_tokens=0, output_tokens=0)
+    intent = _conversation_intent(messages)
+    write, closing = _writes(trip, codes, intent, history, done)
+    if write is not None:
+        return calls(write)
+    if intent.booking:
+        closing.append(HAND_OFF)
+    text = _summary(trip, codes, done, closing)
+    return Generation(text=text, calls=(), input_tokens=0, output_tokens=0)

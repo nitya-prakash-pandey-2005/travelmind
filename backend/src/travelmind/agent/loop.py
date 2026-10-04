@@ -77,14 +77,14 @@ from travelmind.agent.state import (
 from travelmind.agent.tools import execute, get_tool, specs_for
 from travelmind.agent.tools.base import ToolError, clean_text, display_date, format_money
 from travelmind.agent.tools.travel import check_codes
+from travelmind.agent.tools.workspace import find_enquiry
 from travelmind.db import release_connection
 from travelmind.metrics import AGENT_TOKENS
 from travelmind.offers.money import Money
 from travelmind.reference.service import get_airport_index
 from travelmind.workspace.counters import format_number
 from travelmind.workspace.enquiries import CLIENT_NOT_FOUND_MESSAGE
-from travelmind.workspace.enquiries import NOT_FOUND_MESSAGE as ENQUIRY_NOT_FOUND
-from travelmind.workspace.models import Client, Enquiry
+from travelmind.workspace.models import Client
 
 log = structlog.get_logger()
 
@@ -210,13 +210,12 @@ async def _client_name(ctx: RunContext, client_id: UUID) -> str:
     return clean_text(name, 80) or "(unnamed)"
 
 
-async def _enquiry_number(ctx: RunContext, enquiry_id: UUID) -> str:
-    number = await ctx.db.scalar(
-        select(Enquiry.number).where(Enquiry.id == enquiry_id, Enquiry.agency_id == ctx.agency_id)
-    )
-    await release_connection(ctx.db)
-    if number is None:
-        raise ToolError("not_found", ENQUIRY_NOT_FOUND)
+async def _enquiry_number(ctx: RunContext, enquiry: str) -> str:
+    """The number of the agency's enquiry `enquiry` (an id or a number); not_found otherwise."""
+    try:
+        _, number = await find_enquiry(ctx, enquiry)
+    finally:
+        await release_connection(ctx.db)
     return format_number("enquiry", number)
 
 
