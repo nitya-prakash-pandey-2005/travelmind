@@ -5,23 +5,35 @@ an offer is kept as long as its supplier sells it (`expires_at`, bounded to 1 mi
 when the supplier doesn't say). Keeping it for less would refuse price checks and quote options
 the supplier would still honour.
 
-Size: an entry is the offer's JSON without nulls and computed fields, zlib-compressed (about
-550 bytes instead of 1.4 KB for a one-stop offer). Supplier offer ids can be long (a sandbox id
-is about 250 characters), so an entry's key, and its member in the index below, use a 128-bit
-digest of the id (`offer_key`); a recalled offer must carry the id asked for. Entries written
-before this encoding (plain JSON, keyed by the raw id) are still read: a recall asks for both
-keys in one MGET. That fallback can go once no such entry is left (they live 2 h at most).
+Size: an entry is the offer's JSON without computed fields (validation restores them),
+zlib-compressed (about 650 bytes instead of 1.4 KB for a one-stop offer). Nulls are kept: a field
+left out would come back as its default, which need not be None. Supplier offer ids can be long
+(a sandbox id is about 250 characters), so an entry's key, and its member in the indexes below,
+use a 128-bit digest of the id (`offer_key`); a recalled offer must carry the id asked for.
+Entries written before this encoding (plain JSON, keyed by the raw id) are still read: a recall
+asks for both keys in one MGET. That fallback can go once no such entry is left (they live 2 h at
+most).
 
-Bound: each agency keeps at most `max_offers_per_agency()` offers. `offers:idx:<agency>` holds
-the digests of the agency's offer ids, scored by expiry; storing past the cap drops the offers
-that expire soonest (in practice the oldest search's). One Lua script stores a search's offers,
-updates the index and applies the cap in one round trip. It deletes the dropped offers' keys,
-which it can't declare up front: fine on a single Redis, not on Redis Cluster.
+Bound: each agency keeps at most `max_offers_per_agency()` offers. Two sorted sets hold the
+digests of the agency's offer ids:
+- `offers:idx:<agency>`, scored by when the offer was stored (Redis `TIME`, in microseconds,
+  strictly increasing per agency). Storing past the cap drops the offers stored longest ago, but
+  never one of the search being stored: its price checks and quote versions are about to need
+  them. A single search bigger than the cap is kept whole (and drops every older offer).
+- `offers:exp:<agency>`, scored by expiry (Redis `TIME` plus the TTL, in seconds). Offers past
+  their expiry (their entries have lapsed already) leave both sets first, so they don't count
+  against the cap.
+A store refreshes an offer stored again (a price check) in both sets. Members of
+`offers:idx:<agency>` written before these two sets were scored by expiry in seconds, so they
+rank as the oldest and are the first to go.
+
+One Lua script stores a search's offers, updates both sets and applies the cap in one round
+trip, atomically. It deletes the dropped offers' keys, which it can't declare up front: fine on
+a single Redis, not on Redis Cluster.
 """
 
 import base64
 import hashlib
-import time
 import zlib
 from collections.abc import Awaitable, Iterable
 from datetime import UTC, datetime
@@ -42,29 +54,47 @@ MIN_TTL_SECONDS = 60
 COMPRESSION_LEVEL = 6
 log = structlog.get_logger()
 
-# KEYS[1]: the agency's index. ARGV: key prefix, now (unix s), cap, then (id, ttl, value) triples.
+# KEYS: the agency's insertion index, its expiry index. ARGV: key prefix, cap, then
+# (id, ttl, value) triples. Returns how many older offers the cap dropped.
 _REMEMBER = """
-local index, prefix = KEYS[1], ARGV[1]
-local now, cap = tonumber(ARGV[2]), tonumber(ARGV[3])
-local longest = 0
-for i = 4, #ARGV, 3 do
+local inserted, expiry = KEYS[1], KEYS[2]
+local prefix, cap = ARGV[1], tonumber(ARGV[2])
+local clock = redis.call('TIME')
+local now = tonumber(clock[1])
+local stamp = now * 1000000 + tonumber(clock[2])
+local newest = redis.call('ZRANGE', inserted, -1, -1, 'WITHSCORES')
+if newest[2] and tonumber(newest[2]) >= stamp then stamp = tonumber(newest[2]) + 1 end
+local batch, size, longest = {}, 0, 0
+for i = 3, #ARGV, 3 do
     local id, ttl = ARGV[i], tonumber(ARGV[i + 1])
     redis.call('SET', prefix .. id, ARGV[i + 2], 'EX', ttl)
-    redis.call('ZADD', index, now + ttl, id)
+    redis.call('ZADD', inserted, stamp, id)
+    redis.call('ZADD', expiry, now + ttl, id)
+    if not batch[id] then batch[id] = true; size = size + 1 end
     if ttl > longest then longest = ttl end
 end
-redis.call('ZREMRANGEBYSCORE', index, '-inf', now)
-local over = redis.call('ZCARD', index) - cap
+local expired = redis.call('ZRANGEBYSCORE', expiry, '-inf', now)
+for _, id in ipairs(expired) do
+    redis.call('ZREM', inserted, id)
+end
+redis.call('ZREMRANGEBYSCORE', expiry, '-inf', now)
+local over = redis.call('ZCARD', inserted) - cap
+local dropped = 0
 if over > 0 then
-    for _, id in ipairs(redis.call('ZRANGE', index, 0, over - 1)) do
-        redis.call('DEL', prefix .. id)
+    for _, id in ipairs(redis.call('ZRANGE', inserted, 0, over + size - 1)) do
+        if dropped == over then break end
+        if not batch[id] then
+            redis.call('DEL', prefix .. id)
+            redis.call('ZREM', inserted, id)
+            redis.call('ZREM', expiry, id)
+            dropped = dropped + 1
+        end
     end
-    redis.call('ZREMRANGEBYRANK', index, 0, over - 1)
 end
-if redis.call('TTL', index) < longest then
-    redis.call('EXPIRE', index, longest)
+for _, key in ipairs(KEYS) do
+    if redis.call('TTL', key) < longest then redis.call('EXPIRE', key, longest) end
 end
-return math.max(over, 0)
+return dropped
 """
 
 
@@ -85,6 +115,10 @@ def _index(agency_id: UUID) -> str:
     return f"offers:idx:{agency_id}"
 
 
+def _expiry_index(agency_id: UUID) -> str:
+    return f"offers:exp:{agency_id}"
+
+
 def max_offers_per_agency() -> int:
     return get_settings().offer_store_max_per_agency
 
@@ -97,8 +131,8 @@ def _ttl(offer: FlightOffer) -> int:
 
 
 def encode_offer(offer: FlightOffer) -> bytes:
-    """Nulls and computed fields are left out: validation restores both."""
-    json = offer.model_dump_json(exclude_none=True, exclude_computed_fields=True)
+    """Computed fields are left out (validation restores them); nulls are kept."""
+    json = offer.model_dump_json(exclude_computed_fields=True)
     return zlib.compress(json.encode(), COMPRESSION_LEVEL)
 
 
@@ -112,13 +146,14 @@ def decode_offer(raw: bytes) -> FlightOffer | None:
 
 
 async def remember_offers(redis: Redis, agency_id: UUID, offers: Iterable[FlightOffer]) -> None:
-    args: list[Any] = [f"offer:{agency_id}:", int(time.time()), max_offers_per_agency()]
+    args: list[Any] = [f"offer:{agency_id}:", max_offers_per_agency()]
     for offer in offers:
         args += [_digest(offer.id), _ttl(offer), encode_offer(offer)]
-    if len(args) == 3:
+    if len(args) == 2:
         return
+    keys = (_index(agency_id), _expiry_index(agency_id))
     try:
-        dropped = await cast(Awaitable[int], redis.eval(_REMEMBER, 1, _index(agency_id), *args))
+        dropped = await cast(Awaitable[int], redis.eval(_REMEMBER, len(keys), *keys, *args))
     except RedisError as exc:
         log.warning("offer_cache_unavailable", error_type=type(exc).__name__)
         return

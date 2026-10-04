@@ -57,6 +57,16 @@ async def test_offers_are_stored_compressed(redis):
     assert zlib.decompress(raw).startswith(b"{")
 
 
+async def test_nulls_are_stored_so_no_default_can_replace_them(redis):
+    """Fields left out of an entry would come back as their defaults, so a None is stored as
+    null rather than trusted to every field defaulting to None (zlib squeezes the nulls)."""
+    agency = uuid4()
+    original = offer("nulls", owner_name=None)
+    await remember_offers(redis, agency, [original])
+    raw = await redis.get(offer_key(agency, original.id))
+    assert b'"owner_name":null' in zlib.decompress(raw)
+
+
 async def test_an_entry_written_as_plain_json_is_still_read(redis):
     """Entries written before the compact encoding (plain JSON under the raw id, during a
     rolling deploy) stay readable."""
@@ -79,7 +89,11 @@ async def test_an_offer_lives_as_long_as_the_supplier_sells_it(redis):
     assert 590 <= await redis.ttl(offer_key(agency, original.id)) <= 600
 
 
-async def test_each_agency_keeps_at_most_its_cap_dropping_the_soonest_to_expire(redis, monkeypatch):
+async def _recallable(redis, agency, offers) -> list[str]:  # type: ignore[no-untyped-def]
+    return [o.id for o in offers if await recall_offer(redis, agency, o.id) is not None]
+
+
+async def test_each_agency_keeps_at_most_its_cap_dropping_the_oldest_stored(redis, monkeypatch):
     monkeypatch.setattr(offer_store, "max_offers_per_agency", lambda: 3)
     agency, other = uuid4(), uuid4()
     first = [offer("a", minutes=5), offer("b", minutes=6)]
@@ -87,12 +101,68 @@ async def test_each_agency_keeps_at_most_its_cap_dropping_the_soonest_to_expire(
     await remember_offers(redis, agency, first)
     await remember_offers(redis, other, first)
     await remember_offers(redis, agency, later)
-    kept = [o.id for o in first + later if await recall_offer(redis, agency, o.id) is not None]
-    assert kept == [o.id for o in later]
+    assert await _recallable(redis, agency, first + later) == [o.id for o in later]
     assert await redis.zcard(f"offers:idx:{agency}") == 3
+    assert await redis.zcard(f"offers:exp:{agency}") == 3
     # Another agency's offers are never touched by this one's cap.
     assert [await recall_offer(redis, other, o.id) for o in first] == first
     assert 1790 <= await redis.ttl(f"offers:idx:{agency}") <= 1920
+    assert 1790 <= await redis.ttl(f"offers:exp:{agency}") <= 1920
+
+
+async def test_the_cap_never_drops_the_search_being_stored(redis, monkeypatch):
+    """At the cap, a new search whose offers expire sooner than the stored ones keeps every one
+    of its offers (its price checks and quote versions need them); the offers stored longest
+    ago go instead, however long they would still live."""
+    monkeypatch.setattr(offer_store, "max_offers_per_agency", lambda: 3)
+    agency = uuid4()
+    stored = [offer("a", minutes=110), offer("b", minutes=100), offer("c", minutes=90)]
+    for each in stored:  # three searches, oldest first
+        await remember_offers(redis, agency, [each])
+    fresh = [offer("d", minutes=5), offer("e", minutes=6)]
+    await remember_offers(redis, agency, fresh)
+    assert await _recallable(redis, agency, fresh) == [o.id for o in fresh]
+    assert await _recallable(redis, agency, stored) == [stored[2].id]
+    assert await redis.zcard(f"offers:idx:{agency}") == 3
+
+
+async def test_a_search_bigger_than_the_cap_is_kept_whole(redis, monkeypatch):
+    monkeypatch.setattr(offer_store, "max_offers_per_agency", lambda: 2)
+    agency = uuid4()
+    old = offer("old", minutes=60)
+    await remember_offers(redis, agency, [old])
+    big = [offer(ref, minutes=5) for ref in ("p", "q", "r")]
+    await remember_offers(redis, agency, big)
+    assert await _recallable(redis, agency, big) == [o.id for o in big]
+    assert await recall_offer(redis, agency, old.id) is None
+
+
+async def test_expired_offers_leave_the_index_and_free_their_place(redis, monkeypatch):
+    """An offer past its expiry no longer counts against the cap (its entry lapsed already)."""
+    monkeypatch.setattr(offer_store, "max_offers_per_agency", lambda: 2)
+    agency = uuid4()
+    keep = offer("keep", minutes=60)
+    await remember_offers(redis, agency, [keep])
+    gone = offer_store._digest("stub~gone")
+    await redis.zadd(f"offers:idx:{agency}", {gone: 1})
+    await redis.zadd(f"offers:exp:{agency}", {gone: 1})  # expired long ago
+    fresh = offer("fresh", minutes=30)
+    await remember_offers(redis, agency, [fresh])
+    assert await _recallable(redis, agency, [keep, fresh]) == [keep.id, fresh.id]
+    members = {m.decode() for m in await redis.zrange(f"offers:idx:{agency}", 0, -1)}
+    assert gone not in members and len(members) == 2
+    assert await redis.zscore(f"offers:exp:{agency}", gone) is None
+
+
+async def test_the_index_is_scored_by_redis_time(redis):
+    agency = uuid4()
+    await remember_offers(redis, agency, [offer("t", minutes=10)])
+    seconds, micros = await redis.time()
+    [(_, inserted)] = await redis.zrange(f"offers:idx:{agency}", 0, -1, withscores=True)
+    [(_, expires)] = await redis.zrange(f"offers:exp:{agency}", 0, -1, withscores=True)
+    now_us = seconds * 1_000_000 + micros
+    assert now_us - 5_000_000 <= inserted <= now_us
+    assert seconds + 590 <= expires <= seconds + 600
 
 
 async def test_storing_the_same_offer_again_does_not_count_twice(redis, monkeypatch):
@@ -121,7 +191,11 @@ async def test_keys_stay_short_whatever_the_supplier_id(redis):
     original = offer("x" * 400)
     await remember_offers(redis, agency, [original])
     keys = [k.decode() for k in await redis.keys(f"offer*{agency}*")]
-    expected = [len(f"offer:{agency}:") + 22, len(f"offers:idx:{agency}")]
+    expected = [
+        len(f"offer:{agency}:") + 22,
+        len(f"offers:idx:{agency}"),
+        len(f"offers:exp:{agency}"),
+    ]
     assert sorted(len(k) for k in keys) == sorted(expected)
     members = await redis.zrange(f"offers:idx:{agency}", 0, -1)
     assert [len(m) for m in members] == [22]
