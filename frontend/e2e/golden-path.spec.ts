@@ -19,10 +19,11 @@ test("an owner plots a route, invites an agent, and the agent joins the workspac
   await pickAirport(page, "From", "DEL");
   await pickAirport(page, "To", "BOM");
   // Real OurAirports coordinates (local dev) and the CI fixture CSVs differ by about a kilometre,
-  // so the readouts are checked by shape: DEL→BOM is ~1,13x km and ~1h 5xm.
-  const scanner = page.getByRole("region", { name: "Route planner" });
-  await expect(scanner.getByText(/^1,13\d\s?km$/)).toBeVisible();
-  await expect(scanner.getByText(/^1h 5\dm$/)).toBeVisible();
+  // so the readouts are checked by shape: DEL→BOM is ~1,13x km and ~1h 5xm. The recent-routes list in the
+  // same panel also shows the distance, so only the readout values are checked.
+  const readouts = page.getByRole("region", { name: "Route planner" }).getByRole("definition");
+  await expect(readouts.filter({ hasText: /^1,13\d\s?km$/ })).toBeVisible();
+  await expect(readouts.filter({ hasText: /^1h 5\dm$/ })).toBeVisible();
   await expect(page.getByRole("region", { name: "Recent routes" }).getByText("DEL → BOM")).toBeVisible();
 
   // The Command Center may link to the roster too; use the sidebar's entry.
