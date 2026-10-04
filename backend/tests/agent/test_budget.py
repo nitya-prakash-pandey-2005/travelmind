@@ -193,3 +193,14 @@ async def test_the_slot_ttl_setting_is_counted_from_acquisition(monkeypatch):
         await budget.acquire_run_slot(redis, agency, "next", limit=1)
     await asyncio.sleep(0.4)  # from acquisition, whether the run ever started or not
     await budget.acquire_run_slot(redis, agency, "next", limit=1)
+
+
+async def test_acquire_run_slot_says_whether_this_call_took_the_slot():
+    redis = get_shared_redis()
+    agency = uuid4()
+    assert await budget.acquire_run_slot(redis, agency, "run-1", limit=1) is True
+    # The same holder again (a duplicate resume): held already, not taken by this call, and
+    # not refused even though the agency's only slot is the one it holds.
+    assert await budget.acquire_run_slot(redis, agency, "run-1", limit=1) is False
+    with pytest.raises(TooManyRuns):
+        await budget.acquire_run_slot(redis, agency, "run-2", limit=1)

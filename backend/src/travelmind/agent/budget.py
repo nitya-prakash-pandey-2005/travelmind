@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.agent.models import AgentUsageMonthly
 from travelmind.config import get_settings
-from travelmind.semaphore import release_slot, take_slot
+from travelmind.semaphore import claim_slot, release_slot
 
 
 class BudgetExceeded(Exception):
@@ -128,19 +128,22 @@ async def acquire_run_slot(
     *,
     limit: int | None = None,
     ttl_s: float | None = None,
-) -> None:
+) -> bool:
     """Take one of the agency's run slots for `holder` (the run id), or raise TooManyRuns. The
-    slot is held for at most `ttl_s` (agent_run_slot_ttl_s by default) from now."""
+    slot is held for at most `ttl_s` (agent_run_slot_ttl_s by default) from now. Returns whether
+    this call took it: False when `holder` already held one (a concurrent resume of the same run
+    won it), which this caller must then never release. Redis down: True (nothing is held)."""
     settings = get_settings()
-    taken = await take_slot(
+    taken = await claim_slot(
         redis,
         run_slot_key(agency_id),
         holder,
         limit=settings.agent_max_concurrent_runs_per_agency if limit is None else limit,
         ttl_s=settings.agent_run_slot_ttl_s if ttl_s is None else ttl_s,
     )
-    if taken is False:
+    if taken == "full":
         raise TooManyRuns
+    return taken != "held"
 
 
 async def release_run_slot(redis: Redis, agency_id: UUID, holder: str) -> None:

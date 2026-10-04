@@ -136,6 +136,17 @@ class Settings(BaseSettings):
             self.google_api_key = self.google_api_key_fallback
         return self
 
+    @model_validator(mode="after")
+    def _no_inline_agent_runs_in_production(self) -> Self:
+        """Inline runs live in an API process, with no job timeout or stuck-run recovery of their
+        own: production queues them for the worker. Refused at startup, not ignored."""
+        if self.environment == "production" and self.agent_inline:
+            raise ValueError(
+                "TM_AGENT_INLINE=true is not allowed in production: agent runs must go through "
+                "the worker queue. Unset TM_AGENT_INLINE (or set it to false)."
+            )
+        return self
+
     @property
     def agent_inline_enabled(self) -> bool:
         if self.agent_inline is not None:

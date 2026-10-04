@@ -6,13 +6,13 @@ import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import func, select, text
 
 from tests.agent.conftest import agent_settings, make_agency
-from tests.helpers import exec_as_tenant
+from tests.helpers import exec_as_tenant, run_as_owner
 from travelmind.agent import budget, service
 from travelmind.agent.fake import FakeProvider
 from travelmind.agent.models import AgentRun, AgentStep
@@ -663,3 +663,291 @@ async def test_steps_belong_to_their_agency_only(agency):
         assert await db.scalar(text("SELECT count(*) FROM agent_runs")) == 0
         with pytest.raises(service.RunNotFound):
             await service.get_run(db, other[0], run.id)
+
+
+# --- review fixes: confirmations, races, cancellation ------------------------------------------
+
+
+async def _client_named(agency, name: str) -> str:
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency[0])
+        client = await create_client(db, agency[0], agency[1], ClientCreate(name=name))
+        await db.commit()
+        return str(client.id)
+
+
+async def _teammate(agency) -> UUID:
+    """A second user of the agency (an agent who approves what the owner's run asks)."""
+    user_id = uuid4()
+    await run_as_owner(
+        "INSERT INTO users (id, agency_id, email, full_name, password_hash, role) "
+        "VALUES (:id, :aid, :email, 'Agent', 'x', 'agent')",
+        {"id": user_id, "aid": agency[0], "email": f"agent-{user_id.hex[:8]}@alpha.example"},
+    )
+    return user_id
+
+
+async def _pending(agency, run_id) -> dict[str, Any]:
+    run, steps = await load(agency, run_id)
+    assert run.status == "waiting_for_user", (run.status, run.error)
+    assert steps[-1].kind == "ask_user"
+    return steps[-1].payload
+
+
+async def test_the_confirmation_names_the_client_and_the_notes(agency, airports):
+    client_id = await _client_named(agency, "Priya Sharma")
+    create = tc(
+        "create_enquiry",
+        client_id=client_id,
+        origin="DEL",
+        destination="BOM",
+        adults=2,
+        notes="Window seats and vegetarian meals for both travellers, please. " * 3,
+    )
+    provider = FakeProvider([gen(None, create), gen("Done.")])
+    run_id = await start(agency, provider)
+    assert await drive(agency, run_id, provider) == "waiting_for_user"
+    pending = await _pending(agency, run_id)
+    action = pending["action"]
+    assert action.startswith("Create an enquiry DEL → BOM")
+    assert "for client Priya Sharma" in action
+    assert "with notes: «Window seats and vegetarian meals" in action
+    assert "…»" in action  # cut at 120 characters
+    assert pending["warnings"] == []
+    run, _ = await load(agency, run_id)
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency[0])
+        assert (await service.get_run(db, agency[0], run_id)).id == run.id
+    from travelmind.agent.schemas import run_out
+
+    assert run_out(run).pending is not None and run_out(run).pending["warnings"] == []
+
+
+async def test_a_confirmation_without_a_client_says_so(agency, airports):
+    provider = FakeProvider([gen(None, tc("create_enquiry", adults=1)), gen("Done.")])
+    run_id = await start(agency, provider)
+    await drive(agency, run_id, provider)
+    assert (await _pending(agency, run_id))["action"].endswith(", no client.")
+
+
+async def test_unverified_values_in_enquiry_notes_raise_a_warning(agency, airports):
+    create = tc("create_enquiry", adults=1, notes="Fly AI 999 for ₹3,000 on 31 Dec")
+    provider = FakeProvider([gen(None, create), gen("Done.")])
+    run_id = await start(agency, provider)
+    await drive(agency, run_id, provider)
+    pending = await _pending(agency, run_id)
+    assert len(pending["warnings"]) == 1
+    warning = pending["warnings"][0]
+    assert "AI 999" in warning and "₹3,000" in warning and "31 Dec" in warning
+    run, _ = await load(agency, run_id)
+    from travelmind.agent.schemas import run_out
+
+    assert run_out(run).pending["warnings"] == pending["warnings"]  # type: ignore[index]
+
+
+async def test_another_agencys_client_is_refused_without_asking(agency, airports):
+    other = await make_agency("Beta")
+    foreign = await _client_named(other, "Not Yours")
+
+    def after(messages):
+        assert messages[-1].results[0].data["error"]["code"] == "not_found"
+        return gen("That client isn't yours.")
+
+    provider = FakeProvider([gen(None, tc("create_enquiry", client_id=foreign, adults=1)), after])
+    run_id = await start(agency, provider)
+    assert await drive(agency, run_id, provider) == "done"
+
+
+async def test_the_quote_confirmation_names_the_enquiry(agency, airports):
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency[0])
+        from travelmind.workspace.enquiries import EnquiryCreate, create_enquiry
+
+        enquiry = await create_enquiry(db, agency[0], agency[1], EnquiryCreate(adults=2))
+        await db.commit()
+        enquiry_id, number = str(enquiry.id), enquiry.number
+    from travelmind.workspace.counters import format_number
+
+    quote = tc("draft_quote", enquiry_id=enquiry_id, offer_ids=["F1"])
+    provider = FakeProvider([gen(None, tc("search_flights", **flights_args())), gen(None, quote)])
+    run_id = await start(agency, provider)
+    assert await drive(agency, run_id, provider) == "waiting_for_user"
+    action = (await _pending(agency, run_id))["action"]
+    assert f"on {format_number('enquiry', number)}" in action
+    assert action.startswith("Draft a quote")
+
+
+async def test_a_write_with_bad_arguments_is_answered_without_running_it(agency, monkeypatch):
+    from travelmind.agent import loop
+
+    executed: list[str] = []
+    real = loop.execute
+
+    async def counting(ctx, call):
+        executed.append(call.name)
+        return await real(ctx, call)
+
+    monkeypatch.setattr(loop, "execute", counting)
+
+    def after(messages):
+        assert messages[-1].results[0].data["error"]["code"] == "invalid_arguments"
+        return gen("Fixed nothing.")
+
+    _, run, steps = await run_script(agency, [gen(None, tc("create_enquiry", adults=0)), after])
+    assert run.status == "done"
+    assert executed == []
+    assert kinds(steps)[:2] == ["tool_call", "tool_result"]
+    assert steps[1].payload["ok"] is False
+
+
+async def _confirmed_run(agency, approve: bool = True, *, by=None):
+    create = tc("create_enquiry", origin="DEL", destination="BOM", adults=2)
+    provider = FakeProvider([gen(None, create), gen("Done.")])
+    run_id = await start(agency, provider)
+    assert await drive(agency, run_id, provider) == "waiting_for_user"
+    return provider, run_id, create
+
+
+async def test_an_approved_write_is_in_the_trace_once_and_names_the_approver(agency, airports):
+    approver = await _teammate(agency)
+    provider, run_id, create = await _confirmed_run(agency)
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency[0])
+        await service.confirm(
+            db,
+            get_shared_redis(),
+            agent_settings(),
+            agency_id=agency[0],
+            user_id=approver,
+            run_id=run_id,
+            call_id=create.id,
+            approve=True,
+        )
+    assert await drive(agency, run_id, provider) == "done"
+    _, steps = await load(agency, run_id)
+    calls = [s for s in steps if s.kind == "tool_call" and s.payload["call_id"] == create.id]
+    assert len(calls) == 1
+    results = [s for s in steps if s.kind == "tool_result" and s.payload["call_id"] == create.id]
+    assert len(results) == 1 and results[0].payload["ok"] is True
+    decision = next(s for s in steps if s.kind == "user")
+    assert decision.payload["by_user_id"] == str(approver)
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency[0])
+        enquiry = await db.scalar(select(Enquiry))
+    assert enquiry is not None and enquiry.created_by == approver
+
+
+async def test_a_losing_duplicate_confirm_keeps_the_winners_slot(agency, airports, monkeypatch):
+    _, run_id, create = await _confirmed_run(agency)
+    real = service._move
+    arrived: list[int] = []
+    both = asyncio.Event()
+
+    async def together(db, run, from_statuses, **values):
+        if from_statuses == ("waiting_for_user",):
+            arrived.append(1)
+            if len(arrived) == 2:
+                both.set()
+            await asyncio.wait_for(both.wait(), 5)
+        return await real(db, run, from_statuses, **values)
+
+    monkeypatch.setattr(service, "_move", together)
+    outcomes = await asyncio.gather(
+        _confirm(agency, run_id, create.id, True),
+        _confirm(agency, run_id, create.id, True),
+        return_exceptions=True,
+    )
+    assert sorted(type(o).__name__ for o in outcomes) == ["AgentRun", "RunConflict"]
+    assert await slot_holders(agency[0]) == [str(run_id)]  # the winner's slot stays taken
+
+
+async def test_a_cancel_racing_an_approval_never_writes(agency, airports, monkeypatch):
+    provider, run_id, create = await _confirmed_run(agency)
+    await _confirm(agency, run_id, create.id, True)
+    real = service.build_context
+
+    async def cancel_first(*args, **kwargs):
+        await _cancel(agency, run_id)  # the user cancels just after the job claimed the run
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(service, "build_context", cancel_first)
+    assert await drive(agency, run_id, provider) == "cancelled"
+    assert await enquiry_count(agency[0]) == 0
+    run, steps = await load(agency, run_id)
+    assert run.status == "cancelled"
+    assert not [s for s in steps if s.kind == "tool_result"]
+
+
+async def test_a_cancelled_run_writes_no_more_steps_and_is_counted_once(agency):
+    holder: dict[str, UUID] = {}
+
+    async def cancel_then_answer(messages):
+        await _cancel(agency, holder["run"])
+        return gen("Hello.")
+
+    before = AGENT_RUNS.labels(status="cancelled")._value.get()
+    provider = FakeProvider([cancel_then_answer])
+    holder["run"] = await start(agency, provider)
+    assert await drive(agency, holder["run"], provider) == "cancelled"
+    _, steps = await load(agency, holder["run"])
+    assert steps == []  # no guard, no answer after the cancel
+    assert AGENT_RUNS.labels(status="cancelled")._value.get() - before == 1
+
+
+async def test_a_retry_after_a_step_timeout_checks_for_a_cancel(agency):
+    holder: dict[str, UUID] = {}
+
+    async def slow_and_cancelled(messages):
+        await _cancel(agency, holder["run"])
+        await asyncio.sleep(10)
+        return gen("Too late.")
+
+    provider = FakeProvider([slow_and_cancelled, gen("Retried.")])
+    holder["run"] = await start(agency, provider)
+    status = await drive(agency, holder["run"], provider, agent_step_timeout_s=1.5)
+    assert status == "cancelled"
+    assert len(provider.requests) == 1
+
+
+async def test_a_retry_after_a_step_timeout_checks_the_budget(agency):
+    async def slow_and_spent(messages):
+        await exec_as_tenant(
+            agency[0],
+            "INSERT INTO agent_usage_monthly (agency_id, month, input_tokens, output_tokens) "
+            "VALUES (:a, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1000, 0)",
+            {"a": agency[0]},
+        )
+        await asyncio.sleep(10)
+        return gen("Too late.")
+
+    provider = FakeProvider([slow_and_spent, gen("Retried.")])
+    run_id = await start(agency, provider, agent_monthly_token_budget=500)
+    status = await drive(
+        agency, run_id, provider, agent_step_timeout_s=1.5, agent_monthly_token_budget=500
+    )
+    assert status == "budget_exceeded"
+    assert len(provider.requests) == 1
+
+
+async def test_traveller_runs_are_not_listed_or_answered_as_agency_runs(agency):
+    provider = FakeProvider([gen(None, tc("ask_user", question="Who?"))])
+    run_id = await start(agency, provider)
+    await drive(agency, run_id, provider)
+    await exec_as_tenant(
+        agency[0], "UPDATE agent_runs SET kind = 'traveller' WHERE id = :id", {"id": run_id}
+    )
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency[0])
+        assert await service.list_runs(db, agency[0]) == []
+        with pytest.raises(service.RunNotFound):
+            await service.reply(
+                db,
+                get_shared_redis(),
+                agent_settings(),
+                agency_id=agency[0],
+                user_id=agency[1],
+                run_id=run_id,
+                text="me",
+            )
+        with pytest.raises(service.RunNotFound):
+            await service.cancel(db, get_shared_redis(), agency_id=agency[0], run_id=run_id)

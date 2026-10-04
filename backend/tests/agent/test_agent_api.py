@@ -174,7 +174,14 @@ def test_runs_are_inline_only_in_development_and_test():
 
     assert inline("development") and inline("test")
     assert not inline("production")
-    assert not inline("development", False) and inline("production", True)
+    assert not inline("development", False) and not inline("production", False)
+
+
+def test_production_refuses_inline_agent_runs_at_startup():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="TM_AGENT_INLINE=true is not allowed in production"):
+        Settings(_env_file=None, environment="production", agent_inline=True)  # type: ignore[call-arg]
 
 
 async def test_without_inline_runs_the_job_is_queued(client, monkeypatch):

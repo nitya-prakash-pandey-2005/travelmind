@@ -10,20 +10,28 @@ Pauses (status waiting_for_user, the run's slot handed back by the service):
 - ask_user: the question is stored as pending; the user's reply comes back as the call's result
   (`answer`) together with the reply as a user message. Calls planned after it in the same turn
   are not run ("skipped").
-- a write tool (`confirm`): never runs before the user approves it. Its arguments are checked
-  first (a call that would fail is answered with its error, not put to the user), then the run
-  stores what will happen ("Create an enquiry DEL → BOM, ... for 2 adults.") and stops. Approved,
-  it runs and the turn's remaining calls follow; declined, the model is told so. So a tool result
-  that "asks" for a write (prompt injection) can at most produce a confirmation request.
+- a write tool (`confirm`): never runs before the user approves it, and never through
+  `execute` outside an approval. Its arguments are checked first, and so are its targets (the
+  client, the enquiry: looked up in the run's agency): a call that would fail is answered with
+  its error at once, never put to the user. Otherwise the run stores what will happen ("Create
+  an enquiry DEL → BOM, 3 Nov 2026, 2 adults, for client Priya Sharma, with notes: «...».",
+  `describe_action`), with warnings when the notes carry values no tool returned (the guard's
+  check), and stops. Approved, it runs once (the trace keeps the one tool_call written when it
+  was asked, then its result), as the approver (the activity names them), unless the run was
+  cancelled meanwhile; the turn's remaining calls follow. Declined, the model is told so. So a
+  tool result that "asks" for a write (prompt injection) can at most produce a confirmation
+  request.
 
 Limits, each ending the run with a clear status:
 - `agent_max_steps` model calls: failed, "The plan took too many steps."
-- a model call over `agent_step_timeout_s`: an error step and one retry; a second: failed.
+- a model call over `agent_step_timeout_s`: an error step and one retry (after the cancel,
+  step and budget checks again); a second: failed.
 - `agent_run_timeout_s` of running time in all (time spent waiting for the user excluded):
   failed, "The plan took too long."
 - the run's token cap, or the agency's monthly budget (checked before every model call; every
   call's tokens, a failed call's too, recorded at once): budget_exceeded.
-- cancelled by the user: checked before every model call and every tool call.
+- cancelled by the user (or failed by the stuck-run sweeper): checked before every model call,
+  every tool call and every step written, so a cancelled run writes nothing more.
 
 The answer goes through the grounding guard (`agent.grounding`): an answer with values that are
 not in the results is re-prompted once, then replaced by the plan's own summary (grounded=false).
@@ -37,8 +45,9 @@ import asyncio
 import json
 import time
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
+from uuid import UUID
 
 import structlog
 from sqlalchemy import select
@@ -67,10 +76,15 @@ from travelmind.agent.state import (
 )
 from travelmind.agent.tools import execute, get_tool, specs_for
 from travelmind.agent.tools.base import ToolError, clean_text, display_date, format_money
+from travelmind.agent.tools.travel import check_codes
 from travelmind.db import release_connection
 from travelmind.metrics import AGENT_TOKENS
 from travelmind.offers.money import Money
 from travelmind.reference.service import get_airport_index
+from travelmind.workspace.counters import format_number
+from travelmind.workspace.enquiries import CLIENT_NOT_FOUND_MESSAGE
+from travelmind.workspace.enquiries import NOT_FOUND_MESSAGE as ENQUIRY_NOT_FOUND
+from travelmind.workspace.models import Client, Enquiry
 
 log = structlog.get_logger()
 
@@ -83,6 +97,8 @@ TOO_MANY_CALLS = ToolError(
 )
 SKIPPED = ToolError("skipped", "Not run: the run stopped to ask the user first.")
 DECLINED = {"status": "declined", "message": "The user declined this action. Nothing was changed."}
+NOT_APPROVED = ToolError("not_allowed", "This action needs the user's confirmation.")
+NOTES_SHOWN = 120  # characters of an enquiry's notes the confirmation quotes
 
 TOO_MANY_STEPS = "The plan took too many steps."
 TOO_LONG = "The plan took too long."
@@ -183,9 +199,34 @@ def _travellers(adults: int, children: Sequence[int]) -> str:
     return text
 
 
-def describe_action(ctx: RunContext, name: str, parsed: Any) -> str:
-    """What a confirmed write will do, in plain words, from its validated arguments."""
+async def _client_name(ctx: RunContext, client_id: UUID) -> str:
+    """The client's name, looked up in the run's agency; another agency's is not found."""
+    name = await ctx.db.scalar(
+        select(Client.name).where(Client.id == client_id, Client.agency_id == ctx.agency_id)
+    )
+    await release_connection(ctx.db)
+    if name is None:
+        raise ToolError("not_found", CLIENT_NOT_FOUND_MESSAGE)
+    return clean_text(name, 80) or "(unnamed)"
+
+
+async def _enquiry_number(ctx: RunContext, enquiry_id: UUID) -> str:
+    number = await ctx.db.scalar(
+        select(Enquiry.number).where(Enquiry.id == enquiry_id, Enquiry.agency_id == ctx.agency_id)
+    )
+    await release_connection(ctx.db)
+    if number is None:
+        raise ToolError("not_found", ENQUIRY_NOT_FOUND)
+    return format_number("enquiry", number)
+
+
+async def describe_action(ctx: RunContext, name: str, parsed: Any) -> str:
+    """What a confirmed write will do, in plain words, from its validated arguments: the trip,
+    whose it is (the client by name) and its notes (the first NOTES_SHOWN characters), or the
+    quote's enquiry by number. A target the agency doesn't have raises ToolError (not_found),
+    and so does a code that reads as another airport ("GOA" not looked up)."""
     if name == "create_enquiry":
+        await check_codes(ctx, parsed.origin, parsed.destination)
         text = "Create an enquiry"
         if parsed.origin and parsed.destination:
             text += f" {parsed.origin} → {parsed.destination}"
@@ -195,14 +236,22 @@ def describe_action(ctx: RunContext, name: str, parsed: Any) -> str:
             text += f", {display_date(parsed.depart_date)}"
             if parsed.return_date:
                 text += f" to {display_date(parsed.return_date)}"
-        text += f", for {_travellers(parsed.adults, parsed.children_ages)}"
+        text += f", {_travellers(parsed.adults, parsed.children_ages)}"
         if parsed.cabin in CABINS:
             text += f", {CABINS[parsed.cabin]}"
         if parsed.budget_minor and parsed.budget_currency:
             money = Money(amount_minor=parsed.budget_minor, currency=parsed.budget_currency)
             text += f", budget {format_money(money)}"
+        if parsed.client_id is not None:
+            text += f", for client {await _client_name(ctx, parsed.client_id)}"
+        else:
+            text += ", no client"
+        notes = clean_text(parsed.notes, NOTES_SHOWN)
+        if notes:
+            text += f", with notes: «{notes}»"
         return text + "."
     if name == "draft_quote":
+        enquiry = await _enquiry_number(ctx, parsed.enquiry_id)
         options = []
         for ref in parsed.offer_ids:
             item = ctx.memory.get(ref)
@@ -218,7 +267,7 @@ def describe_action(ctx: RunContext, name: str, parsed: Any) -> str:
         else:
             money = Money(amount_minor=parsed.markup_value, currency=ctx.currency)
             markup = f"a {format_money(money)} markup per option"
-        return f"Draft a quote with {', '.join(options)} at {markup}."
+        return f"Draft a quote on {enquiry} with {', '.join(options)} at {markup}."
     return f"Run {_text(name) or 'a tool'}."
 
 
@@ -234,6 +283,7 @@ class _Loop:
         self.ctx = ctx
         self.provider = provider
         self.run = run
+        self.run_id = run.id  # kept: a rollback (a timeout mid-call) expires the run's attributes
         self.state = state
         self.emit = emit
         self.settings = ctx.settings
@@ -260,7 +310,10 @@ class _Loop:
             return stop.outcome
         except TimeoutError:
             await self._rollback()
-            await self.emit("error", {"code": "run_timeout", "message": TOO_LONG})
+            try:
+                await self._emit("error", {"code": "run_timeout", "message": TOO_LONG})
+            except _Stop as stop:
+                return stop.outcome
             return LoopOutcome("failed", error=TOO_LONG)
         finally:
             self.state.elapsed_s += time.monotonic() - started
@@ -282,14 +335,21 @@ class _Loop:
                 return outcome
 
     async def _stop(self, status: Status, message: str, code: str) -> None:
-        await self.emit("error", {"code": code, "message": message})
+        await self._emit("error", {"code": code, "message": message})
         raise _Stop(LoopOutcome(status, error=message))
 
     async def _check_cancelled(self) -> None:
-        status = await self.ctx.db.scalar(select(AgentRun.status).where(AgentRun.id == self.run.id))
+        """Stop when the run is no longer running: cancelled by the user (or failed by the
+        stuck-run sweeper). The job's final move then finds it moved and leaves it be."""
+        status = await self.ctx.db.scalar(select(AgentRun.status).where(AgentRun.id == self.run_id))
         await release_connection(self.ctx.db)
-        if status == "cancelled":
+        if status != "running":
             raise _Stop(LoopOutcome("cancelled"))
+
+    async def _emit(self, kind: str, payload: dict[str, Any], took: int | None = None) -> None:
+        """Write a step, unless the run was cancelled: then stop instead."""
+        await self._check_cancelled()
+        await self.emit(kind, payload, took)
 
     # --- model turns ----------------------------------------------------------------------
 
@@ -358,9 +418,8 @@ class _Loop:
             timeouts += 1
             if timeouts >= 2:
                 await self._stop("failed", MODEL_TOO_SLOW, "timeout")
-            await self.emit("error", {"code": "timeout", "message": RETRYING}, _ms(started))
-            if self.state.turns >= self.settings.agent_max_steps:
-                await self._stop("failed", TOO_MANY_STEPS, "max_steps")
+            await self._emit("error", {"code": "timeout", "message": RETRYING}, _ms(started))
+            await self._check_limits()  # steps, the run's tokens and the month's budget again
 
     async def _tokens(self, input_tokens: int, output_tokens: int) -> None:
         input_tokens, output_tokens = max(0, input_tokens), max(0, output_tokens)
@@ -396,7 +455,7 @@ class _Loop:
     async def _thinking(self, text: str, took: int) -> None:
         unverified = bool(await self._violations(text))
         payload = {"text": None if unverified else text, "unverified": unverified}
-        await self.emit("thinking", payload, took)
+        await self._emit("thinking", payload, took)
 
     async def _answer(self, generation: Generation, took: int) -> LoopOutcome | None:
         text = (generation.text or "").strip()
@@ -413,7 +472,7 @@ class _Loop:
             violations += await self._violations(itinerary_text(draft.itinerary), within_trip=True)
         said = Message(role="model", text=generation.text, text_signature=generation.text_signature)
         if violations and not self.state.reprompted:
-            await self.emit(
+            await self._emit(
                 "guard",
                 {
                     "passed": False,
@@ -425,7 +484,7 @@ class _Loop:
             self.state.reprompted = True
             return None
         fallback = bool(violations) or not text
-        await self.emit(
+        await self._emit(
             "guard",
             {
                 "passed": not fallback,
@@ -438,7 +497,7 @@ class _Loop:
             result = build_result(memory, results, plan, summary=summary, fallback=True)
             result.summary = fallback_summary(result)
         self.state.messages.append(said)
-        await self.emit(
+        await self._emit(
             "answer",
             {"text": result.summary, "grounded": not fallback, "fallback": fallback},
             took,
@@ -458,15 +517,19 @@ class _Loop:
             if tool is not None and (tool.confirm or tool.ends_turn):
                 try:
                     parsed = tool.parse(dict(call.args))
-                except ToolError:
-                    parsed = None  # answered with its error below, never put to the user
-                if parsed is not None and tool.confirm:
-                    return await self._ask_confirmation(call, parsed, queue, done, tail)
-                if parsed is not None:
-                    paused = await self._ask_question(call, queue, done, tail)
-                    if paused is not None:
-                        return paused
+                    action = (
+                        await describe_action(self.ctx, call.name, parsed) if tool.confirm else ""
+                    )
+                except ToolError as exc:  # answered with its error, never put to the user
+                    done.append(await self._refused(call, exc))
                     continue
+                if tool.confirm:
+                    warnings = await self._warnings(parsed)
+                    return await self._ask_confirmation(call, action, warnings, queue, done, tail)
+                paused = await self._ask_question(call, queue, done, tail)
+                if paused is not None:
+                    return paused
+                continue
             done.append(await self._call(call))
         self.state.messages.append(Message(role="tool", results=tuple(done + tail)))
         return None
@@ -490,25 +553,44 @@ class _Loop:
             "tail": [result_to_json(r) for r in tail],
         }
 
+    async def _refused(self, call: ToolCall, error: ToolError) -> ToolResult:
+        """Answer a call that can't run (bad arguments, a target the agency doesn't have) with
+        its error, without running anything: its two trace steps, then the result."""
+        await self._emit(
+            "tool_call",
+            {"call_id": call.id, "tool": call.name, "args": call.args, "label": call_label(call)},
+        )
+        data = error.as_data()
+        await self._result_step(call, data, took=0)
+        return ToolResult(call_id=call.id, name=call.name, data=data)
+
+    async def _warnings(self, parsed: Any) -> list[str]:
+        """What the user should know before approving: notes with values no tool returned."""
+        notes = getattr(parsed, "notes", None)
+        if not isinstance(notes, str):
+            return []
+        violations = await self._violations(notes)
+        if not violations:
+            return []
+        listed = ", ".join(dict.fromkeys(v.text for v in violations))
+        return [f"The notes mention values no search returned: {listed}. Check them first."]
+
     async def _ask_confirmation(
         self,
         call: ToolCall,
-        parsed: Any,
+        action: str,
+        warnings: list[str],
         queue: list[ToolCall],
         done: list[ToolResult],
         tail: list[ToolResult],
     ) -> LoopOutcome:
-        await self.emit(
+        await self._emit(
             "tool_call",
             {"call_id": call.id, "tool": call.name, "args": call.args, "label": call_label(call)},
         )
-        shown = {
-            "tool": call.name,
-            "action": describe_action(self.ctx, call.name, parsed),
-            "args": call.args,
-        }
+        shown = {"tool": call.name, "action": action, "args": call.args, "warnings": warnings}
         self.state.pending = self._pending("confirm", call, queue, done, tail, **shown)
-        await self.emit("ask_user", {"kind": "confirm", "call_id": call.id, **shown})
+        await self._emit("ask_user", {"kind": "confirm", "call_id": call.id, **shown})
         return LoopOutcome("waiting_for_user")
 
     async def _ask_question(
@@ -525,18 +607,24 @@ class _Loop:
             return None
         shown = {"question": data["question"], "fields": data.get("fields") or []}
         self.state.pending = self._pending("question", call, queue, done, tail, **shown)
-        await self.emit("ask_user", {"kind": "question", "call_id": call.id, **shown})
+        await self._emit("ask_user", {"kind": "question", "call_id": call.id, **shown})
         return LoopOutcome("waiting_for_user")
 
     async def _call(self, call: ToolCall) -> ToolResult:
-        """Run one call (or answer it from the memo), with its two trace steps."""
-        await self.emit(
+        """Run one call (or answer it from the memo), with its two trace steps. Never a write
+        tool: those run only through `_approved`."""
+        await self._emit(
             "tool_call",
             {"call_id": call.id, "tool": call.name, "args": call.args, "label": call_label(call)},
         )
         tool = get_tool(self.ctx.role, call.name)
-        # A write the user approved runs every time; questions are never repeated from memory.
-        cacheable = tool is None or not (tool.confirm or tool.ends_turn)
+        if tool is not None and tool.confirm:  # a bug if reached: writes need an approval
+            log.error("agent_write_without_approval", tool=call.name)
+            data = NOT_APPROVED.as_data()
+            await self._result_step(call, data, took=0)
+            return ToolResult(call_id=call.id, name=call.name, data=data)
+        # Questions are never repeated from memory.
+        cacheable = tool is None or not tool.ends_turn
         key = json.dumps([call.name, call.args], sort_keys=True, default=str)
         started = time.monotonic()
         memo = cacheable and key in self.state.memo
@@ -549,10 +637,32 @@ class _Loop:
         await self._result_step(call, data, memo=memo, took=_ms(started))
         return ToolResult(call_id=call.id, name=call.name, data=data)
 
+    async def _approved(self, call: ToolCall, approver: object) -> ToolResult:
+        """Run the write the user approved, once, as the approver: its result step only (its
+        tool_call step was written when the user was asked). Never after a cancel."""
+        await self._check_cancelled()
+        ctx = self.ctx
+        try:
+            ctx = replace(ctx, user_id=UUID(str(approver))) if approver else ctx
+        except ValueError:
+            pass
+        started = time.monotonic()
+        data = (await execute(ctx, call)).data
+        # Written whatever happens next: the write is done, the trace must say so.
+        await self._result_step(call, data, took=_ms(started), checked=False)
+        return ToolResult(call_id=call.id, name=call.name, data=data)
+
     async def _result_step(
-        self, call: ToolCall, data: dict[str, Any], *, memo: bool = False, took: int | None = None
+        self,
+        call: ToolCall,
+        data: dict[str, Any],
+        *,
+        memo: bool = False,
+        took: int | None = None,
+        checked: bool = True,
     ) -> None:
-        await self.emit(
+        emit = self._emit if checked else self.emit
+        await emit(
             "tool_result",
             {
                 "call_id": call.id,
@@ -587,7 +697,7 @@ class _Loop:
             self.state.user_texts.append(answer)
             return None
         if inbox.get("approve"):
-            done.append(await self._call(call))
+            done.append(await self._approved(call, inbox.get("by_user_id")))
         else:
             await self._result_step(call, DECLINED)
             done.append(ToolResult(call.id, call.name, dict(DECLINED)))

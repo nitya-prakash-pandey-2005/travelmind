@@ -2,7 +2,8 @@
 
 Responses mirror the run and its steps. They never carry the run's working state (`state`: the
 conversation and the supplier ids behind F1/H1/P1), the agency or user ids, or anything secret.
-`pending` is the question or confirmation a waiting run needs answered.
+`pending` is the question or confirmation a waiting run needs answered; a confirmation carries
+`warnings` (plain sentences, [] when none: notes with values no tool returned).
 """
 
 from datetime import datetime
@@ -87,7 +88,7 @@ def is_demo(provider: str | None, model: str | None) -> bool:
 
 
 _QUESTION_FIELDS = ("kind", "call_id", "question", "fields")
-_CONFIRM_FIELDS = ("kind", "call_id", "tool", "action", "args")
+_CONFIRM_FIELDS = ("kind", "call_id", "tool", "action", "args", "warnings")
 
 
 def pending_of(run: AgentRun) -> dict[str, Any] | None:
@@ -97,8 +98,11 @@ def pending_of(run: AgentRun) -> dict[str, Any] | None:
     pending = run.state.get("pending")
     if not isinstance(pending, dict) or run.state.get("inbox"):
         return None
-    shown = _QUESTION_FIELDS if pending.get("kind") == "question" else _CONFIRM_FIELDS
-    return {key: pending.get(key) for key in shown}
+    if pending.get("kind") == "question":
+        return {key: pending.get(key) for key in _QUESTION_FIELDS}
+    shown = {key: pending.get(key) for key in _CONFIRM_FIELDS}
+    shown["warnings"] = list(shown.get("warnings") or [])  # [] for runs paused before warnings
+    return shown
 
 
 def step_out(step: AgentStep) -> StepOut:

@@ -12,7 +12,9 @@ next job, in any worker process, picks it up from here alone:
 - `pending`: the question or confirmation the run waits on, with the turn's results so far and
   the calls still to run; `inbox`: the user's answer to it, left by the API for the next job;
 - counters: model calls made (`turns`), whether the one re-prompt was used, running time so far
-  (`elapsed_s`, which excludes time spent waiting for the user) and when the run was last queued.
+  (`elapsed_s`, which excludes time spent waiting for the user), when the run was last queued
+  (`queued_at`) and when a job last claimed it (`running_at`: the stuck-run sweeper's measure of
+  a running run's last activity, with its newest step).
 
 The state holds supplier ids (in the memory): it never leaves the server.
 """
@@ -82,6 +84,7 @@ class RunState:
     reprompted: bool = False
     elapsed_s: float = 0.0
     queued_at: datetime | None = None
+    running_at: datetime | None = None
 
     @classmethod
     def start(cls, prompt: str, now: datetime) -> "RunState":
@@ -103,12 +106,13 @@ class RunState:
             "reprompted": self.reprompted,
             "elapsed_s": self.elapsed_s,
             "queued_at": self.queued_at.isoformat() if self.queued_at else None,
+            "running_at": self.running_at.isoformat() if self.running_at else None,
         }
 
     @classmethod
     def from_json(cls, data: dict[str, Any] | None) -> "RunState":
         data = data or {}
-        queued = data.get("queued_at")
+        queued, running = data.get("queued_at"), data.get("running_at")
         return cls(
             messages=[message_from_json(m) for m in data.get("messages") or []],
             memory=RunMemory.restore(data.get("memory")),
@@ -120,4 +124,5 @@ class RunState:
             reprompted=bool(data.get("reprompted")),
             elapsed_s=float(data.get("elapsed_s") or 0.0),
             queued_at=datetime.fromisoformat(queued) if isinstance(queued, str) else None,
+            running_at=datetime.fromisoformat(running) if isinstance(running, str) else None,
         )

@@ -112,19 +112,26 @@ class QueueUnavailable(Exception):
 # --- reading ------------------------------------------------------------------------------
 
 
-async def get_run(db: AsyncSession, agency_id: UUID, run_id: UUID) -> AgentRun:
-    run = await db.scalar(
-        select(AgentRun).where(AgentRun.id == run_id, AgentRun.agency_id == agency_id)
-    )
+async def get_run(
+    db: AsyncSession, agency_id: UUID, run_id: UUID, *, kind: str | None = None
+) -> AgentRun:
+    """The agency's run (of `kind`, when given: "agency" for staff answering their own runs)."""
+    query = select(AgentRun).where(AgentRun.id == run_id, AgentRun.agency_id == agency_id)
+    if kind is not None:
+        query = query.where(AgentRun.kind == kind)
+    run = await db.scalar(query)
     if run is None:
         raise RunNotFound
     return run
 
 
-async def list_runs(db: AsyncSession, agency_id: UUID, *, limit: int = 20) -> list[AgentRun]:
+async def list_runs(
+    db: AsyncSession, agency_id: UUID, *, limit: int = 20, kind: str = "agency"
+) -> list[AgentRun]:
+    """The agency's runs of `kind` (staff see their agency's own planning, not travellers')."""
     rows = await db.execute(
         select(AgentRun)
-        .where(AgentRun.agency_id == agency_id)
+        .where(AgentRun.agency_id == agency_id, AgentRun.kind == kind)
         .order_by(AgentRun.created_at.desc(), AgentRun.id)
         .limit(limit)
     )
@@ -286,7 +293,9 @@ async def _finish_elsewhere(
     clock: Clock = utcnow,
 ) -> str:
     """Move the run to `status` in a fresh session (whatever state the job's session is in),
-    hand back its slot and publish the status. Returns the run's status afterwards."""
+    hand back its slot and publish the status. Returns the run's status afterwards. A move that
+    loses (the run was cancelled, or swept, meanwhile: whoever moved it released its slot and
+    published) changes, releases, publishes and counts nothing."""
     redis = get_shared_redis()
     values: dict[str, Any] = {"status": status, "error": error}
     if status in TERMINAL_STATUSES:
@@ -298,9 +307,12 @@ async def _finish_elsewhere(
         values["grounded"] = outcome.grounded
     async with get_sessionmaker()() as db:
         await bind_tenant(db, agency_id)
-        await _move(db, run_id, from_statuses, **values)
+        moved = await _move(db, run_id, from_statuses, **values)
         await db.commit()
         run = await db.get(AgentRun, run_id)
+        if not moved:
+            await db.commit()
+            return run.status if run is not None else "missing"
         await _release(redis, agency_id, run_id)
         if run is None:
             return "missing"
@@ -336,8 +348,14 @@ async def drive_run(
             return await _finish_elsewhere(
                 run_id, agency_id, ("queued",), "failed", WAITED_TOO_LONG, clock=clock
             )
+        state.running_at = now
         if not await _move(
-            db, run_id, ("queued",), status="running", started_at=run.started_at or now
+            db,
+            run_id,
+            ("queued",),
+            status="running",
+            started_at=run.started_at or now,
+            state=state.to_json(),
         ):
             await db.commit()
             return (await db.get(AgentRun, run_id, populate_existing=True) or run).status
@@ -415,14 +433,19 @@ async def _resume(
     clock: Clock,
 ) -> AgentRun:
     """Queue a waiting run again with the user's answer: budget, a slot, the answer stored for
-    the job, the user's step in the trace, then the job."""
+    the job, the user's step in the trace, then the job.
+
+    The slot's holder is the run id, so two answers at once (a double click, two tabs) share
+    it: a loser hands it back only if this call took it and the run isn't now queued or running
+    (the winner's resume, which needs it)."""
+    run_id, agency_id = run.id, run.agency_id  # a rollback below expires the run's attributes
     now = clock()
-    await budget.reserve(db, run.agency_id, now, budget=settings.agent_monthly_token_budget)
+    await budget.reserve(db, agency_id, now, budget=settings.agent_monthly_token_budget)
     await release_connection(db)
-    await budget.acquire_run_slot(
+    took = await budget.acquire_run_slot(
         redis,
-        run.agency_id,
-        str(run.id),
+        agency_id,
+        str(run_id),
         limit=settings.agent_max_concurrent_runs_per_agency,
         ttl_s=settings.agent_run_slot_ttl_s,
     )
@@ -430,19 +453,35 @@ async def _resume(
         state.inbox = inbox
         state.queued_at = now
         moved = await _move(
-            db, run.id, ("waiting_for_user",), status="queued", state=state.to_json()
+            db, run_id, ("waiting_for_user",), status="queued", state=state.to_json()
         )
         if not moved:
             raise RunConflict("This plan isn't waiting for that any more.")
-        writer = await events.StepWriter.open(db, redis, run.id, run.agency_id)
+        writer = await events.StepWriter.open(db, redis, run_id, agency_id)
         await writer.emit("user", step)  # commits the move with the step
     except BaseException:
         with contextlib.suppress(Exception):
             await db.rollback()
-        await _release(redis, run.agency_id, run.id)
+        if took:
+            await asyncio.shield(_release_unless_resumed(redis, agency_id, run_id))
         raise
     await _publish(db, redis, run)
     return run
+
+
+async def _release_unless_resumed(redis: Redis, agency_id: UUID, run_id: UUID) -> None:
+    """Hand back the run's slot, unless another answer resumed the run meanwhile (it is queued
+    or running on that same slot). Read in a fresh session: the caller's may be broken."""
+    try:
+        async with get_sessionmaker()() as db:
+            await bind_tenant(db, agency_id)
+            status = await db.scalar(select(AgentRun.status).where(AgentRun.id == run_id))
+            await db.commit()
+    except Exception as exc:
+        log.warning("agent_resume_status_unread", error_type=type(exc).__name__)
+        status = None
+    if status not in ("queued", "running"):
+        await _release(redis, agency_id, run_id)
 
 
 async def reply(
@@ -455,18 +494,18 @@ async def reply(
     run_id: UUID,
     text: str,
     clock: Clock = utcnow,
+    kind: str = "agency",
 ) -> AgentRun:
     """Answer the question a waiting run asked; the run is queued again (the caller launches
     it). Raises RunNotFound, RunConflict, budget.BudgetExceeded or budget.TooManyRuns."""
-    run = await get_run(db, agency_id, run_id)
+    run = await get_run(db, agency_id, run_id, kind=kind)
     state = RunState.from_json(run.state)
     pending = state.pending or {}
     if run.status != "waiting_for_user" or pending.get("kind") != "question" or state.inbox:
         raise RunConflict("This plan isn't waiting for an answer.")
-    step = {"text": text, "call_id": pending.get("call_id")}
-    return await _resume(
-        db, redis, settings, run, state, {"kind": "reply", "text": text}, step, clock
-    )
+    step = {"text": text, "call_id": pending.get("call_id"), "by_user_id": str(user_id)}
+    inbox = {"kind": "reply", "text": text, "by_user_id": str(user_id)}
+    return await _resume(db, redis, settings, run, state, inbox, step, clock)
 
 
 async def confirm(
@@ -480,10 +519,12 @@ async def confirm(
     call_id: str,
     approve: bool,
     clock: Clock = utcnow,
+    kind: str = "agency",
 ) -> AgentRun:
     """Approve or decline the write a waiting run asked to make; the run is queued again either
-    way (the caller launches it). Raises like `reply`."""
-    run = await get_run(db, agency_id, run_id)
+    way (the caller launches it); an approved write runs as `user_id` (the approver). Raises
+    like `reply`."""
+    run = await get_run(db, agency_id, run_id, kind=kind)
     state = RunState.from_json(run.state)
     pending = state.pending or {}
     if (
@@ -497,17 +538,24 @@ async def confirm(
         "call_id": call_id,
         "decision": "approved" if approve else "declined",
         "action": pending.get("action"),
+        "by_user_id": str(user_id),
     }
-    inbox = {"kind": "confirm", "call_id": call_id, "approve": approve}
+    inbox = {"kind": "confirm", "call_id": call_id, "approve": approve, "by_user_id": str(user_id)}
     return await _resume(db, redis, settings, run, state, inbox, step, clock)
 
 
 async def cancel(
-    db: AsyncSession, redis: Redis, *, agency_id: UUID, run_id: UUID, clock: Clock = utcnow
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    agency_id: UUID,
+    run_id: UUID,
+    clock: Clock = utcnow,
+    kind: str = "agency",
 ) -> AgentRun:
-    """Cancel a run that hasn't finished: a running one stops at its next model or tool call.
-    Raises RunNotFound, or RunConflict when it has already finished."""
-    run = await get_run(db, agency_id, run_id)
+    """Cancel a run that hasn't finished: a running one stops at its next model call, tool call
+    or step. Raises RunNotFound, or RunConflict when it has already finished."""
+    run = await get_run(db, agency_id, run_id, kind=kind)
     active = ("queued", "running", "waiting_for_user")
     if run.status in TERMINAL_STATUSES or not await _move(
         db, run.id, active, status="cancelled", finished_at=clock()
