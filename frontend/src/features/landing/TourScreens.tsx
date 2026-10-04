@@ -154,7 +154,7 @@ export function FareSearchScreen() {
         <Field label="To" value="DXB" sub="Dubai" />
         <Field label="Depart" value="14 Nov" className="max-sm:hidden" />
         <Field label="Travellers" value="1" sub="adult · Economy" className="max-sm:hidden" />
-        <span className="col-span-2 inline-flex h-full min-h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-ink sm:col-span-1">
+        <span className="col-span-2 inline-flex h-full min-h-9 items-center justify-center rounded-md bg-primary bg-(image:--tm-grad) px-3 text-xs font-medium text-primary-ink sm:col-span-1">
           Scan fares
         </span>
       </div>
@@ -167,7 +167,7 @@ export function FareSearchScreen() {
       </div>
       <div className="mt-3 grid items-start gap-3 sm:grid-cols-2">
         <FareInsightCard />
-        <div className="rounded-md border border-line bg-surface p-3">
+        <div className="rounded-[14px] border border-line bg-card-2 p-3">
           <p className="text-[13px] font-semibold text-ink">CO₂ per passenger</p>
           <p className="mt-1 text-xs leading-4 text-dim">Akasa Air emits the least on this route.</p>
           <ul className="mt-3 flex flex-col gap-1.5">
@@ -265,7 +265,7 @@ export function PipelineScreen() {
           </ul>
         </MiniPanel>
       </div>
-      <div className="mt-3 rounded-md border border-dashed border-line-strong bg-surface p-3">
+      <div className="mt-3 rounded-md border border-dashed border-line-strong bg-card-2 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-semibold text-ink">
             Quote Q-0031 <span className="font-normal text-dim">for E-0142 · Mehta family</span>
@@ -328,7 +328,7 @@ export function TeamScreen() {
     <div className="relative sm:pb-10">
       <PreviewWindow active="Team" sidebar="xl">
         <ScreenHeader crumb="Admin / Team" title="Team" meta="Everyone with access to Example Travels." action="Invite teammate" />
-        <div className="mt-3 overflow-hidden rounded-md border border-line bg-surface">
+        <div className="mt-3 overflow-hidden rounded-[14px] border border-line bg-card-2">
           <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4rem] gap-3 border-b border-line px-3 py-2 tm-micro">
             <span>Name</span>
             <span className="max-sm:hidden">Email</span>
@@ -353,7 +353,7 @@ export function TeamScreen() {
             ))}
           </ul>
         </div>
-        <div className="mt-3 rounded-md border border-line bg-surface p-3 sm:max-w-[55%]">
+        <div className="mt-3 rounded-[14px] border border-line bg-card-2 p-3 sm:max-w-[55%]">
           <p className="text-xs font-semibold text-ink">Pending invitations</p>
           <p className="mt-2 flex items-center justify-between gap-2 text-[11px]">
             <span className="truncate text-ink">priya@example.com</span>
@@ -367,7 +367,7 @@ export function TeamScreen() {
           <p className="mt-1 font-mono text-[10px] text-faint">Sent today · expires in 7 days</p>
         </div>
       </PreviewWindow>
-      <div className="absolute bottom-0 right-4 z-10 w-72 rounded-lg border border-line-strong bg-surface p-4 shadow-pop max-sm:hidden">
+      <div className="absolute bottom-0 right-4 z-10 w-72 rounded-[16px] border border-line-soft bg-surface p-4 shadow-pop max-sm:hidden">
         <p className="text-sm font-semibold text-ink">Invite teammate</p>
         <p className="mt-0.5 text-[11px] text-dim">They get a one-time link to join Example Travels.</p>
         <p className="mt-3 text-[11px] font-medium text-ink">Email</p>
@@ -381,7 +381,7 @@ export function TeamScreen() {
           <span className="inline-flex h-7 items-center rounded-md border border-line-strong bg-surface-2 px-2.5 text-[11px] text-ink">
             Cancel
           </span>
-          <span className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-[11px] font-medium text-primary-ink">
+          <span className="inline-flex h-7 items-center rounded-md bg-primary bg-(image:--tm-grad) px-2.5 text-[11px] font-medium text-primary-ink">
             Create invite link
           </span>
         </div>

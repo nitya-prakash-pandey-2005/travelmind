@@ -46,6 +46,7 @@ export function SignupPage() {
 
   return (
     <AuthFrame
+      kicker="New workspace"
       title="Create workspace"
       subtitle="Set up TravelMind for your agency. You'll be the workspace owner and can invite your team next."
       footer={

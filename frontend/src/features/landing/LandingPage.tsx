@@ -36,7 +36,7 @@ const SECTIONS = [
  */
 function TopNav() {
   return (
-    <header className="tm-topbar sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
+    <header className="tm-topbar sticky top-0 z-40 border-b border-line bg-chrome backdrop-blur-[20px]">
       <nav aria-label="Main" className={cn(CONTAINER, "flex h-14 items-center gap-2 min-[440px]:gap-3 sm:gap-6")}>
         <Link to="/" className="mr-auto rounded-sm">
           <Wordmark />
@@ -65,12 +65,16 @@ function TopNav() {
   );
 }
 
-/** The public front door: the pitch with the product beside it, what it connects to, a tour, and two ways in. */
+/**
+ * The public front door: the pitch with the product beside it, what it connects to, a tour, and two ways in. The
+ * kit's ambient glow and HUD grid sit behind the whole page, pinned to the window as it scrolls.
+ */
 export function LandingPage() {
   useDocumentTitle("TravelMind — Operations console for travel agencies");
   usePageDescription(DESCRIPTION);
   return (
-    <div className="tm-landing min-h-dvh overflow-x-clip bg-bg">
+    <div className="tm-landing relative isolate min-h-dvh overflow-x-clip bg-bg">
+      <div aria-hidden="true" className="tm-ambient fixed -z-10" />
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-ink"

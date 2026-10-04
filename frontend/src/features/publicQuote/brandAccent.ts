@@ -44,12 +44,19 @@ export function printPalette(): Palette {
   return resolvePalette({ theme: "clearsky", mode: "light", contrast: false });
 }
 
-/** The accent as custom properties for the page root (`--pq-accent*`, and `--tm-brand` for the agency mark). */
+/**
+ * The accent as custom properties for the page root (`--pq-accent*`, and `--tm-brand` for the agency mark).
+ * `--pq-accent-fill` is the main button's fill: the agency colour run into its hover step (both hold `accentInk` at
+ * 4.5:1, the hover step a little more), or the kit gradient when the theme's primary stands in.
+ */
 export function accentVars(accent: BrandAccent): Record<string, string> {
   return {
     "--pq-accent": accent.accent,
     "--pq-accent-ink": accent.accentInk,
     "--pq-accent-hover": accent.accentHover,
+    "--pq-accent-fill": accent.fromBrand
+      ? `linear-gradient(135deg, ${accent.accent} 0%, ${accent.accentHover} 100%)`
+      : "var(--tm-grad)",
     "--tm-brand": accent.accent,
   };
 }

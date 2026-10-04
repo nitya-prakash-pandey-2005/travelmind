@@ -18,7 +18,8 @@ import { CONTAINER } from "./layout";
 
 const enter = (index: number) => ({ "--tm-enter-index": index }) as CSSProperties;
 
-const HERO_TITLE = "Answer travel enquiries with fares you can explain";
+/** The title in two runs: the second, the promise, carries the kit gradient. One accessible name either way. */
+const HERO_TITLE = ["Answer travel enquiries with", "fares you can explain"] as const;
 const HERO_LEAD =
   "TravelMind searches your airline and hotel suppliers in one pass, shows whether each fare is good for its route, and turns each enquiry into a quote your client can open and accept. Every price says whether it is live, cached or sandbox.";
 
@@ -40,7 +41,7 @@ function HeroComposition() {
       <div aria-hidden="true" className="decor-gradient pointer-events-none absolute -inset-x-16 -inset-y-20 -z-10" style={GLOW} />
       <Illustration caption="Illustration with sample data: names, fares, latencies and figures are examples, not live results.">
         <div className="relative">
-          <PreviewWindow active="Command Center" sidebar="xl" className="shadow-frame">
+          <PreviewWindow active="Command Center" sidebar="xl" className="glow shadow-frame">
             <ScreenHeader
               crumb="Operate / Command Center"
               title="Command Center"
@@ -66,8 +67,8 @@ function HeroComposition() {
             </div>
           </PreviewWindow>
           <div className="mt-3 grid gap-3 max-sm:hidden sm:grid-cols-2">
-            <FareInsightCard className="shadow-raise" />
-            <SupplierStatusCard className="shadow-raise" />
+            <FareInsightCard className="card tight shadow-raise" />
+            <SupplierStatusCard className="card tight shadow-raise" />
           </div>
         </div>
       </Illustration>
@@ -78,7 +79,6 @@ function HeroComposition() {
 export function Hero() {
   return (
     <section aria-labelledby="landing-title" className="relative isolate overflow-hidden border-b border-line">
-      <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-20" />
       <div
         className={cn(
           CONTAINER,
@@ -87,18 +87,18 @@ export function Hero() {
       >
         <div className="min-w-0">
           <p
-            className="tm-rise mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-[13px] text-dim"
+            className="tm-rise mb-5 inline-flex max-w-full items-center gap-2 rounded-full border border-line-soft bg-card-2 px-3 py-1 text-[13px] text-dim backdrop-blur-md"
             style={enter(0)}
           >
-            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />
+            <span aria-hidden="true" className="pulse-dot h-1.5 w-1.5 text-primary" />
             For travel management companies and agency teams
           </p>
           <h1
             id="landing-title"
-            className="tm-rise max-w-[15ch] text-[2.5rem] font-semibold leading-[1.05] tracking-[-0.025em] text-ink sm:text-[3.25rem] xl:text-[3.5rem]"
+            className="tm-rise max-w-[15ch] font-display text-[2.5rem] font-semibold leading-[1.05] tracking-[-0.03em] text-ink sm:text-[3.25rem] xl:text-[3.5rem]"
             style={enter(1)}
           >
-            {HERO_TITLE}
+            {HERO_TITLE[0]} <span className="grad-text">{HERO_TITLE[1]}</span>
           </h1>
           <p className="tm-rise mt-6 max-w-[34rem] text-base leading-7 text-dim sm:text-[17px]" style={enter(2)}>
             {HERO_LEAD}
@@ -119,7 +119,7 @@ export function Hero() {
               <li key={point} className="flex items-center gap-2.5 text-sm text-dim">
                 <span
                   aria-hidden="true"
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-line-strong text-primary"
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-line-soft bg-card-2 bg-(image:--tm-grad-soft) text-primary"
                 >
                   <Check size={12} strokeWidth={2.25} />
                 </span>

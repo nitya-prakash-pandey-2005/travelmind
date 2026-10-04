@@ -37,6 +37,7 @@ export function AcceptInvitePage() {
 
   return (
     <AuthFrame
+      kicker="Invitation"
       title="Join workspace"
       subtitle="You've been invited to your agency's TravelMind workspace. Add your name and choose a password to join."
       footer={

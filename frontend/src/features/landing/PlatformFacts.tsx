@@ -3,6 +3,7 @@ import { ApiError } from "../../api/client";
 import { connectedSuppliers, platformApi, platformFactsQueryOptions, type PlatformFacts as Facts } from "../../api/platform";
 import { cn } from "../../ui/cn";
 import { formatNumber } from "../../lib/format";
+import { Kicker } from "./Kicker";
 import { CONTAINER, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
 import { RoutesGlobe } from "./RoutesGlobe";
 
@@ -93,6 +94,7 @@ export function PlatformFacts() {
     <section aria-labelledby="facts-title" className="border-b border-line">
       <div className={cn(CONTAINER, SECTION_Y, "grid gap-10 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] lg:gap-12")}>
         <div className="flex min-w-0 flex-col">
+          <Kicker>Platform</Kicker>
           <h2 id="facts-title" className={SECTION_TITLE}>
             Built on real travel data
           </h2>
@@ -100,15 +102,14 @@ export function PlatformFacts() {
             Fares and rates come from supplier APIs, every price carries its source, and the reference data is public and named. The figures
             below describe the product itself.
           </p>
-          <div className="mt-8 flex flex-1 flex-col overflow-hidden rounded-lg border border-line">
-            <ul aria-label="Platform facts" className="grid flex-1 gap-px bg-line sm:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-8 flex flex-1 flex-col gap-3">
+            {/* Kit Stat tiles: the big Space Grotesk figure, its label, and what it means. */}
+            <ul aria-label="Platform facts" className="grid flex-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-3">
               {staticFacts(live).map((fact) => (
-                <li key={fact.label} className="flex min-w-0 flex-col bg-bg p-5">
-                  <span className="flex items-baseline gap-2">
-                    <span className="font-mono text-[28px] font-medium leading-[34px] tabular-nums tracking-tight text-ink">
-                      {fact.value}
-                    </span>
-                    <span className="text-[13px] font-medium text-ink">{fact.label}</span>
+                <li key={fact.label} className={cn("card stat flex min-w-0 flex-col px-4 py-4", fact.live && "glow")}>
+                  <span className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="v text-[30px] leading-9">{fact.value}</span>
+                    <span className="text-[13px] font-semibold text-ink">{fact.label}</span>
                   </span>
                   <span className="mt-1.5 flex items-start gap-1.5 text-[13px] leading-5 text-dim">
                     {fact.live && <span aria-hidden="true" className="tm-live mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ok text-ok" />}
@@ -118,7 +119,7 @@ export function PlatformFacts() {
               ))}
             </ul>
             {!facts.isError && (
-              <p className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1 border-t border-line bg-surface px-5 py-2.5 text-[13px] text-dim">
+              <p className="card tight flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-dim">
                 {live ? (
                   <>
                     <span className="flex items-center gap-2 font-medium text-ink">

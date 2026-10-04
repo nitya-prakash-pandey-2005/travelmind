@@ -39,12 +39,12 @@ export function RoutesGlobe({ className }: { className?: string }) {
   const [webgl] = useState(hasWebGL);
   const captionId = useId();
   return (
-    <figure className={cn("flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-bg", className)}>
-      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-        <span id={captionId} className="text-[13px] font-medium text-ink">
+    <figure className={cn("card flush flex min-w-0 flex-col", className)}>
+      <div className="flex items-center justify-between gap-3 border-b border-line bg-chrome px-4 py-2.5">
+        <span id={captionId} className="font-display text-[14px] font-semibold text-ink">
           Popular routes
         </span>
-        <span className="text-xs text-faint">Illustration</span>
+        <span className="hud">Illustration</span>
       </div>
       {/* Decorative: the page scrolls (and swipes) straight past it. */}
       <div aria-hidden="true" className="pointer-events-none relative mx-auto aspect-square w-full max-w-[22rem] flex-1">
@@ -63,7 +63,7 @@ export function RoutesGlobe({ className }: { className?: string }) {
           {POPULAR_ROUTES.map(({ from, to }) => (
             <li
               key={`${from.iata_code}-${to.iata_code}`}
-              className="rounded-[4px] border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] text-dim"
+              className="rounded-full border border-line bg-card-2 px-2 py-0.5 font-mono text-[11px] text-dim"
             >
               <span className="sr-only">
                 {from.city} to {to.city},{" "}

@@ -1,6 +1,7 @@
 import { DatabaseZap, LockKeyhole, ScrollText, Tags, UsersRound, type LucideIcon } from "lucide-react";
 import { cn } from "../../ui/cn";
-import { ANCHOR, CONTAINER, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
+import { Kicker } from "./Kicker";
+import { ANCHOR, CONTAINER, ICON_CHIP, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
 
 type Control = { icon: LucideIcon; title: string; body: string };
 
@@ -48,10 +49,10 @@ const POLICY = [
 
 function PolicyCard() {
   return (
-    <figure className="mt-8 min-w-0 overflow-hidden rounded-lg border border-line bg-bg">
-      <div className="flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-2.5">
-        <span className="text-[13px] font-medium text-ink">Tenant isolation policy</span>
-        <span className="font-mono text-[11px] text-faint">PostgreSQL</span>
+    <figure className="card flush mt-8 min-w-0">
+      <div className="flex items-center justify-between gap-3 border-b border-line bg-chrome px-4 py-2.5">
+        <span className="font-display text-[14px] font-semibold text-ink">Tenant isolation policy</span>
+        <span className="hud">PostgreSQL</span>
       </div>
       <pre className="overflow-x-auto px-4 py-4 font-mono text-[12px] leading-5">
         {POLICY.map((line, index) => (
@@ -72,6 +73,7 @@ export function TrustSection() {
     <section id="security" aria-labelledby="security-title" className={ANCHOR}>
       <div className={cn(CONTAINER, SECTION_Y, "grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-16")}>
         <div className="min-w-0">
+          <Kicker>Security</Kicker>
           <h2 id="security-title" className={SECTION_TITLE}>
             Security and data handling
           </h2>
@@ -81,14 +83,11 @@ export function TrustSection() {
           </p>
           <PolicyCard />
         </div>
-        <ul className="grid content-start gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2">
+        <ul className="grid content-start gap-4 sm:grid-cols-2">
           {CONTROLS.map(({ icon: Icon, title, body }, index) => (
-            <li key={title} className={cn("flex flex-col bg-bg p-5", index === 0 && "sm:col-span-2")}>
+            <li key={title} className={cn("card flex flex-col p-5", index === 0 && "glow sm:col-span-2")}>
               <span className="flex items-center gap-3">
-                <span
-                  aria-hidden="true"
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line-strong bg-surface text-primary"
-                >
+                <span aria-hidden="true" className={ICON_CHIP}>
                   <Icon size={16} strokeWidth={1.75} />
                 </span>
                 <h3 className="text-[15px] font-semibold text-ink">{title}</h3>

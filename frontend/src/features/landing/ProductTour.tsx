@@ -3,6 +3,7 @@ import { useRef, useState, type ComponentType, type KeyboardEvent } from "react"
 import { cn } from "../../ui/cn";
 import { Illustration } from "./ConsolePreview";
 import { CtaLink } from "./CtaLink";
+import { Kicker } from "./Kicker";
 import { ANCHOR, CONTAINER, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
 import { CommandCenterScreen, FareSearchScreen, PipelineScreen, TeamScreen } from "./TourScreens";
 
@@ -114,7 +115,7 @@ export function ProductTour() {
     <section
       id="product"
       aria-labelledby="tour-title"
-      className={cn(ANCHOR, "relative isolate overflow-hidden border-b border-line bg-surface")}
+      className={cn(ANCHOR, "relative isolate overflow-hidden border-b border-line")}
     >
       <div
         aria-hidden="true"
@@ -122,9 +123,12 @@ export function ProductTour() {
       />
       <div className={cn(CONTAINER, SECTION_Y)}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
-          <h2 id="tour-title" className={SECTION_TITLE}>
-            One workspace, from enquiry to quote
-          </h2>
+          <div className="min-w-0">
+            <Kicker>Product tour</Kicker>
+            <h2 id="tour-title" className={SECTION_TITLE}>
+              One workspace, from enquiry to quote
+            </h2>
+          </div>
           <p className={cn(SECTION_LEAD, "lg:mt-0")}>
             The screens your agents use every day. Pick one to see what it shows and what it saves them.
           </p>
@@ -157,11 +161,13 @@ export function ProductTour() {
                     tabIndex={selected ? 0 : -1}
                     onClick={() => setActive(candidate.id)}
                     className={cn(
-                      "relative flex shrink-0 flex-col items-start rounded-lg border px-4 py-3 text-left transition-colors duration-150 ease-tm lg:py-4",
-                      selected ? "border-line-strong bg-bg" : "border-transparent hover:border-line hover:bg-hover",
+                      "relative flex shrink-0 flex-col items-start overflow-hidden rounded-[18px] border px-4 py-3 text-left transition-colors duration-150 ease-tm lg:py-4",
+                      selected
+                        ? "border-line-soft bg-card bg-(image:--tm-grad-soft) backdrop-blur-[18px]"
+                        : "border-transparent hover:border-line hover:bg-card-2",
                     )}
                   >
-                    {selected && <span aria-hidden="true" className="absolute inset-y-3 left-0 w-0.5 rounded-full bg-primary" />}
+                    {selected && <span aria-hidden="true" className="absolute inset-y-3 left-0 w-[3px] rounded-full bg-primary bg-(image:--tm-grad)" />}
                     <span
                       id={`${PANEL_ID}-${candidate.id}-label`}
                       className={cn("flex items-center gap-2 text-[13px] font-medium", selected ? "text-primary" : "text-dim")}
@@ -169,7 +175,7 @@ export function ProductTour() {
                       <Icon aria-hidden="true" size={14} strokeWidth={1.75} />
                       {candidate.label}
                     </span>
-                    <span className="mt-1.5 hidden text-[15px] font-semibold leading-5 text-ink lg:block">{candidate.title}</span>
+                    <span className="mt-1.5 hidden font-display text-[15px] font-semibold leading-5 text-ink lg:block">{candidate.title}</span>
                     <span className={cn("mt-1 hidden text-[13px] leading-5 lg:block", selected ? "text-dim" : "text-faint")}>
                       {candidate.body}
                     </span>
@@ -177,7 +183,7 @@ export function ProductTour() {
                 );
               })}
             </div>
-            <div className="hidden rounded-lg border border-dashed border-line-strong p-4 lg:block">
+            <div className="card tight hidden lg:block">
               <p className="text-[13px] leading-5 text-dim">Every screen here opens in the demo workspace, filled with sample data.</p>
               <CtaLink to="/demo" size="sm" variant="secondary" context=" to explore these screens" className="mt-3">
                 Open demo workspace
@@ -191,14 +197,14 @@ export function ProductTour() {
             tabIndex={0}
             className="min-w-0 rounded-sm"
           >
-            <p className="text-lg font-semibold leading-6 tracking-[-0.01em] text-ink lg:hidden">{stop.title}</p>
+            <p className="font-display text-lg font-semibold leading-6 tracking-[-0.01em] text-ink lg:hidden">{stop.title}</p>
             <p className="mt-1 text-sm leading-6 text-dim lg:hidden">{stop.body}</p>
             <ul className="mb-5 mt-4 grid gap-3 sm:grid-cols-3 lg:mt-0">
               {stop.points.map((point) => (
                 <li key={point} className="flex gap-2.5 text-[13px] leading-5 text-ink">
                   <span
                     aria-hidden="true"
-                    className="mt-px inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line-strong text-primary"
+                    className="mt-px inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line-soft bg-card-2 bg-(image:--tm-grad-soft) text-primary"
                   >
                     <Check size={12} strokeWidth={2.25} />
                   </span>

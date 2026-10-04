@@ -1,6 +1,7 @@
 import { BedDouble, Command, Gauge, Leaf, Radar, ReceiptText, SquareKanban, Tags, type LucideIcon } from "lucide-react";
 import { cn } from "../../ui/cn";
-import { ANCHOR, CONTAINER, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
+import { Kicker } from "./Kicker";
+import { ANCHOR, CONTAINER, ICON_CHIP, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
 
 type Feature = {
   icon: LucideIcon;
@@ -56,25 +57,25 @@ export function FeatureGrid() {
     <section id="features" aria-labelledby="features-title" className={ANCHOR}>
       <div className={cn(CONTAINER, SECTION_Y)}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
-          <h2 id="features-title" className={SECTION_TITLE}>
-            Features
-          </h2>
+          <div className="min-w-0">
+            <Kicker>Capabilities</Kicker>
+            <h2 id="features-title" className={SECTION_TITLE}>
+              Features
+            </h2>
+          </div>
           <p className={cn(SECTION_LEAD, "lg:mt-0")}>
             Search, pricing context, the enquiry pipeline and client quotes in one workspace, so agents stop switching between
             supplier tabs and spreadsheets.
           </p>
         </div>
-        <ul className="mt-10 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
+        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {FEATURES.map(({ icon: Icon, title, body }) => (
-            <li key={title} className="flex bg-bg">
-              <article className="flex w-full flex-col p-5">
-                <span
-                  aria-hidden="true"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line-strong bg-surface text-primary"
-                >
+            <li key={title} className="flex">
+              <article className="card flex w-full flex-col p-5">
+                <span aria-hidden="true" className={ICON_CHIP}>
                   <Icon size={16} strokeWidth={1.75} />
                 </span>
-                <h3 className="mt-4 text-[15px] font-semibold text-ink">{title}</h3>
+                <h3 className="mt-4 text-[15px] font-semibold leading-5 text-ink">{title}</h3>
                 <p className="mt-1.5 text-[13px] leading-5 text-dim">{body}</p>
               </article>
             </li>

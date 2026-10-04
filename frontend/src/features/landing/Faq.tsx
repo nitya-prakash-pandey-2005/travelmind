@@ -1,4 +1,5 @@
 import { cn } from "../../ui/cn";
+import { Kicker } from "./Kicker";
 import { ANCHOR, CONTAINER, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
 
 type Entry = { question: string; answer: string };
@@ -42,15 +43,18 @@ export function Faq() {
     <section id="faq" aria-labelledby="faq-title" className={cn(ANCHOR, "border-t border-line")}>
       <div className={cn(CONTAINER, SECTION_Y)}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
-          <h2 id="faq-title" className={SECTION_TITLE}>
-            Questions agencies ask
-          </h2>
+          <div className="min-w-0">
+            <Kicker>FAQ</Kicker>
+            <h2 id="faq-title" className={SECTION_TITLE}>
+              Questions agencies ask
+            </h2>
+          </div>
           <p className={cn(SECTION_LEAD, "lg:mt-0")}>Straight answers about data sources, pricing labels, the demo and access.</p>
         </div>
-        <dl className="mt-10 grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-2 lg:grid-cols-3">
+        <dl className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {FAQ.map(({ question, answer }) => (
-            <div key={question} className="bg-bg p-5 lg:p-6">
-              <dt className="text-[15px] font-semibold leading-6 text-ink">{question}</dt>
+            <div key={question} className="card p-5 lg:p-6">
+              <dt className="font-display text-[15px] font-semibold leading-6 text-ink">{question}</dt>
               <dd className="mt-2 text-[13px] leading-5 text-dim">{answer}</dd>
             </div>
           ))}

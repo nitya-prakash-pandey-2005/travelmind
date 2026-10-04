@@ -76,23 +76,20 @@ export function DemoLaunchPage() {
 
   return (
     <div className="relative isolate flex min-h-dvh flex-col bg-bg px-4 py-6 sm:px-10">
-      <div aria-hidden="true" className="tm-dot-grid tm-grid-fade absolute inset-0 -z-10" />
+      <div aria-hidden="true" className="tm-ambient -z-10" />
       <header>
         <Link to="/" className="rounded-sm">
           <Wordmark />
         </Link>
       </header>
       <main className="flex flex-1 items-center justify-center py-10">
-        <div className="w-full max-w-md rounded-lg border border-line bg-surface">
+        <div className="card glow flush w-full max-w-md">
           {error ? (
             <div className="p-6">
-              <span
-                aria-hidden="true"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-danger/40 bg-danger/10 text-danger"
-              >
+              <span aria-hidden="true" className="tone-fill inline-flex h-10 w-10 items-center justify-center rounded-[12px] border text-danger">
                 <CircleAlert size={18} strokeWidth={1.75} />
               </span>
-              <h1 className="mt-4 text-lg font-semibold text-ink">The demo couldn't start</h1>
+              <h1 className="mt-4 font-display text-xl font-semibold text-ink">The demo couldn't start</h1>
               <p role="alert" className="mt-1.5 text-sm leading-6 text-dim">
                 {error.message}
               </p>
@@ -111,29 +108,29 @@ export function DemoLaunchPage() {
           ) : (
             <>
               <div className="p-6">
-                <p className="flex items-center gap-2 text-[13px] text-dim">
-                  <span aria-hidden="true" className="tm-live h-1.5 w-1.5 rounded-full bg-warn text-warn" />
+                <p className="hud c-amber flex items-center gap-2">
+                  <span aria-hidden="true" className="pulse-dot h-1.5 w-1.5 text-warn" />
                   Demo workspace
                 </p>
-                <h1 className="mt-3 text-lg font-semibold text-ink">Preparing your demo workspace…</h1>
+                <h1 className="mt-3 font-display text-xl font-semibold tracking-[-0.02em] text-ink">Preparing your demo workspace…</h1>
                 <p className="mt-1.5 text-sm leading-6 text-dim">
                   A private agency with sample data, labelled as a demo on every screen and deleted after 7 days. Pricing
                   the sample trips can take a minute.
                 </p>
-                <div
-                  role="progressbar"
-                  aria-label="Preparing your demo workspace"
-                  className="mt-5 h-1 overflow-hidden rounded-full bg-surface-2"
-                >
-                  <div className="tm-progress-sweep h-full rounded-full bg-primary" />
+                {/* The kit progress bar, sweeping: the server answers once, at the end, so there is no percentage. */}
+                <div role="progressbar" aria-label="Preparing your demo workspace" className="progress mt-5 h-1.5">
+                  <i className="tm-progress-sweep" />
                 </div>
               </div>
               <div className="border-t border-line px-6 py-5">
-                <p className="tm-micro">What happens now</p>
-                <ol aria-label="Demo setup steps" className="mt-3 flex flex-col gap-2.5">
+                <p className="hud">What happens now</p>
+                <ol aria-label="Demo setup steps" className="list mt-2">
                   {STEPS.map((step, index) => (
-                    <li key={step} className="flex items-center gap-3 text-[13px] text-dim">
-                      <span aria-hidden="true" className="w-4 shrink-0 font-mono text-xs text-faint">
+                    <li key={step} className="li gap-3 py-2.5 text-[13px] text-dim">
+                      <span
+                        aria-hidden="true"
+                        className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-line-soft bg-card-2 bg-(image:--tm-grad-soft) font-display text-xs font-semibold text-primary"
+                      >
                         {index + 1}
                       </span>
                       {step}
@@ -141,7 +138,7 @@ export function DemoLaunchPage() {
                   ))}
                 </ol>
               </div>
-              <div className="flex items-center justify-between gap-3 border-t border-line px-6 py-3 font-mono text-xs text-faint">
+              <div className="flex items-center justify-between gap-3 border-t border-line bg-chrome px-6 py-3 font-mono text-xs text-faint">
                 <span>Sandbox inventory · not bookable</span>
                 <span className="tabular-nums">Elapsed {formatElapsed(elapsed)}</span>
               </div>
