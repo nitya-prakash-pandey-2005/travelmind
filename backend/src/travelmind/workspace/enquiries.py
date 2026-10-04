@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
-from sqlalchemy import ColumnElement, Select, func, or_, select
+from sqlalchemy import ColumnElement, Select, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from travelmind.db import DbSession, utcnow
@@ -471,7 +471,8 @@ async def set_enquiry_status(
 async def update_enquiry(
     db: AsyncSession, enquiry: Enquiry, actor_user_id: UUID | None, data: EnquiryUpdate
 ) -> None:
-    """Apply a partial update; a new assignee records `enquiry.assigned`. The caller commits."""
+    """Apply a partial update; a new assignee records `enquiry.assigned`, and a new client
+    takes the enquiry's quotes with it. The caller commits."""
     changes: dict[str, Any] = {
         field: value
         for field, value in data.model_dump(exclude_unset=True).items()
@@ -497,6 +498,13 @@ async def update_enquiry(
     for field, value in changes.items():
         setattr(enquiry, field, value)
     enquiry.updated_at = at
+    if "client_id" in changes:
+        # A quote belongs to its enquiry's client: the quotes follow the enquiry.
+        await db.execute(
+            update(Quote)
+            .where(Quote.enquiry_id == enquiry.id)
+            .values(client_id=changes["client_id"], updated_at=at)
+        )
     if assigning:
         await _record_assignment(db, enquiry, member, actor_user_id, at)
     await db.flush()
