@@ -21,6 +21,7 @@ from travelmind.readcache import (
     agency_key,
     agency_version,
     bump_agency_version,
+    bump_agency_version_throttled,
     cached_json,
     invalidate_agency,
 )
@@ -194,6 +195,7 @@ def test_read_cache_defaults():
     assert settings.read_cache_timeout_ms == 150
     assert settings.read_cache_breaker_failures == 3
     assert settings.read_cache_breaker_cooldown_s == 10.0
+    assert settings.search_bump_interval_s == 5
 
 
 async def test_breaker_opens_after_consecutive_failures_then_half_opens(clock, redis):
@@ -281,6 +283,50 @@ async def test_version_helpers_swallow_redis_errors():
     assert await agency_version(down, agency) is None
     await bump_agency_version(down, agency)  # no exception
     await invalidate_agency(down, agency)
+
+
+async def test_throttled_bump_bumps_at_most_once_per_interval(redis, monkeypatch):
+    from travelmind.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "search_bump_interval_s", 1)
+    agency, other = uuid4(), uuid4()
+    assert await bump_agency_version_throttled(redis, agency) is True
+    assert await agency_version(redis, agency) == 1
+    assert 0 < await redis.pttl(f"tm:sb:{agency}") <= 1000
+    assert await bump_agency_version_throttled(redis, agency) is False  # within the interval
+    assert await agency_version(redis, agency) == 1
+    assert await bump_agency_version_throttled(redis, other) is True  # per agency
+    await asyncio.sleep(1.1)
+    assert await bump_agency_version_throttled(redis, agency) is True
+    assert await agency_version(redis, agency) == 2
+
+
+async def test_throttled_bump_without_an_interval_always_bumps(redis, monkeypatch):
+    from travelmind.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "search_bump_interval_s", 0)
+    agency = uuid4()
+    assert await bump_agency_version_throttled(redis, agency) is True
+    assert await bump_agency_version_throttled(redis, agency) is True
+    assert await agency_version(redis, agency) == 2
+
+
+@pytest.mark.parametrize("broken", [DownRedis, HungRedis])
+async def test_throttled_bump_fails_open_and_quickly(broken):
+    started = time.perf_counter()
+    assert await bump_agency_version_throttled(broken(), uuid4()) is False  # no exception
+    assert time.perf_counter() - started < 0.25  # one short read-cache timeout at most
+
+
+async def test_throttled_bump_goes_through_the_breaker(clock, redis):
+    down = DownRedis()
+    for _ in range(3):
+        await bump_agency_version_throttled(down, uuid4())
+    assert readcache._breaker.state == "open"
+    agency = uuid4()
+    assert await bump_agency_version_throttled(redis, agency) is False  # skipped while open
+    assert await redis.exists(f"tm:sb:{agency}") == 0
+    assert await agency_version(redis, agency) is None  # the breaker skips the read too
 
 
 async def test_stampede_lock(redis):
@@ -394,13 +440,16 @@ NO_INVALIDATION = {
     ("POST", "/api/v1/auth/login"),
     ("POST", "/api/v1/auth/logout"),
 }
-# Frequent writes that must NOT retire the agency's cache. A search only feeds the dashboard's
-# "searches" KPI, which may be up to the summary TTL (30 s) stale; pricing an offer and marking
+# Searches feed the dashboard's "searches" KPI and activity: they bump the agency's version, but
+# at most once per `search_bump_interval_s` per agency, so searching doesn't empty the cache.
+THROTTLED_BUMP = {
+    ("POST", "/api/v1/flights/search"),
+    ("POST", "/api/v1/hotels/search"),
+}
+# Frequent writes that must NOT retire the agency's cache: pricing an offer and marking
 # notifications seen touch no cached data.
 NEVER_BUMP = {
-    ("POST", "/api/v1/flights/search"),
     ("POST", "/api/v1/flights/offers/{offer_id}/price"),
-    ("POST", "/api/v1/hotels/search"),
     ("POST", "/api/v1/notifications/seen"),
 }
 # Reads that can write: lazy quote expiry, or the client's first view of a shared quote.
@@ -433,7 +482,7 @@ def _api_routes(routes):
 def test_every_write_invalidates_the_agency_cache(app):
     routes = list(_api_routes(app.routes))
     assert len(routes) > 40
-    bumps, publishes, seen = set(), set(), set()
+    bumps, publishes, throttled, seen = set(), set(), set(), set()
     for route in routes:
         for method in route.methods:
             pair = (method, route.path)
@@ -442,12 +491,16 @@ def test_every_write_invalidates_the_agency_cache(app):
                 bumps.add(pair)
             if _depends_on(route.dependant, readcache.publish_marked_changes_after):
                 publishes.add(pair)
-            if method in MUTATING and pair not in NO_INVALIDATION | NEVER_BUMP:
+            if _depends_on(route.dependant, readcache.bump_agency_throttled_after):
+                throttled.add(pair)
+            if method in MUTATING and pair not in NO_INVALIDATION | NEVER_BUMP | THROTTLED_BUMP:
                 assert pair in bumps, pair
     for pair in READS_THAT_WRITE:  # their marked changes are published
         assert pair in bumps | publishes, pair
     for pair in NEVER_BUMP:
-        assert pair in seen and pair not in bumps, pair
+        assert pair in seen and pair not in bumps | throttled, pair
+    assert throttled == THROTTLED_BUMP  # only searches, and never also on every request
+    assert not throttled & bumps
     assert READS_THAT_WRITE <= seen  # every listed read still exists
     assert ("POST", "/api/v1/public/quotes/{token}/decision") in bumps
     assert ("POST", "/api/v1/demo") in bumps

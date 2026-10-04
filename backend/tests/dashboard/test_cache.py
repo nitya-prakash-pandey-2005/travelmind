@@ -2,6 +2,7 @@
 from it until the agency's data changes, never shared between agencies, and fresh on the very
 next read after any write."""
 
+import asyncio
 import os
 import time
 from datetime import UTC, datetime
@@ -9,9 +10,11 @@ from uuid import UUID
 
 import pytest
 from redis.asyncio import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from tests.helpers import make_client, signup
 from tests.workspace.test_public_quotes import URL, overdue, public, sent_quote, setup
+from travelmind.config import get_settings
 from travelmind.dashboard import metrics
 from travelmind.db import bind_tenant, get_sessionmaker
 from travelmind.identity import service as identity_service
@@ -105,25 +108,129 @@ async def test_write_invalidates_agency_cache(seeded):
     assert final["quoting"] == before_stages["quoting"] + 1
 
 
-async def test_a_search_does_not_retire_the_cache(client, airports, redis):
-    """Searches are frequent: they don't bump the agency's version, so the "searches" KPI may
-    lag by up to the summary TTL (30 s)."""
-    enquiry, _ = await setup(client)  # one search so far
-    assert enquiry
+SEARCH = "/api/v1/flights/search"
+TRIP = {"origin": "DEL", "destination": "GOI", "departure_date": "2027-01-15"}
+STAY = {"destination": "BOM", "checkin": "2027-01-15", "checkout": "2027-01-17"}
+
+
+def throttle_key(agency: UUID) -> str:
+    return f"tm:sb:{agency}"
+
+
+async def test_a_search_refreshes_the_dashboard_at_most_every_few_seconds(
+    client, airports, redis, monkeypatch
+):
+    """The first search bumps the agency's version, so the "searches" KPI is fresh at once;
+    more searches within `search_bump_interval_s` don't (the cache keeps its hit rate under
+    load); the first one after it bumps again."""
+    monkeypatch.setattr(get_settings(), "search_bump_interval_s", 1)
+    await signup(client)
     agency = await agency_id_of(client)
     before = await kpis(client)
     version = await agency_version(redis, agency)
-    r = await client.post(
-        "/api/v1/flights/search",
-        json={"origin": "DEL", "destination": "GOI", "departure_date": "2027-01-15"},
-    )
-    assert r.status_code == 200
-    seen = await client.post("/api/v1/notifications/seen")
-    assert seen.status_code == 204
+    assert (await client.post(SEARCH, json=TRIP)).status_code == 200
+    assert await agency_version(redis, agency) == version + 1
+    assert (await kpis(client))["searches"] == before["searches"] + 1  # fresh at once
+    assert (await client.post(SEARCH, json=TRIP)).status_code == 200
+    assert (await client.post("/api/v1/hotels/search", json=STAY)).status_code == 200
+    assert await agency_version(redis, agency) == version + 1  # within the interval: no bump
+    assert (await kpis(client))["searches"] == before["searches"] + 1  # still cached
+    await asyncio.sleep(1.1)
+    assert (await client.post(SEARCH, json=TRIP)).status_code == 200
+    assert await agency_version(redis, agency) == version + 2
+    assert (await kpis(client))["searches"] == before["searches"] + 4  # hotel searches count too
+
+
+async def test_the_search_throttle_lasts_the_configured_interval(client, airports, redis):
+    await signup(client)
+    agency = await agency_id_of(client)
+    assert get_settings().search_bump_interval_s == 5
+    version = await agency_version(redis, agency)
+    assert (await client.post("/api/v1/hotels/search", json=STAY)).status_code == 200
+    assert await agency_version(redis, agency) == version + 1  # a hotel search bumps too
+    assert 0 < await redis.ttl(throttle_key(agency)) <= 5
+    assert (await client.post(SEARCH, json=TRIP)).status_code == 200
+    assert await agency_version(redis, agency) == version + 1  # one throttle for both
+
+
+async def test_failed_searches_reprices_and_seen_notifications_do_not_bump(client, airports, redis):
+    await signup(client)
+    agency = await agency_id_of(client)
+    offers = (await client.post(SEARCH, json=TRIP)).json()["offers"]
+    await redis.delete(throttle_key(agency))  # as if the interval had passed
+    version = await agency_version(redis, agency)
+    unknown = await client.post(SEARCH, json=TRIP | {"origin": "ZZZ"})
+    assert unknown.status_code == 422
+    priced = await client.post(f"/api/v1/flights/offers/{offers[0]['id']}/price")
+    assert priced.status_code == 200, priced.text
+    assert (await client.post("/api/v1/notifications/seen")).status_code == 204
     assert await agency_version(redis, agency) == version
-    assert (await kpis(client))["searches"] == before["searches"]  # cached, ≤ 30 s stale
-    await redis.delete(*await redis.keys(f"tm:rc:a:{agency}:*"))  # as if the TTL ran out
-    assert (await kpis(client))["searches"] == before["searches"] + 1
+    assert await redis.exists(throttle_key(agency)) == 0
+
+
+class ThrottleDownRedis:
+    """The real Redis, except that the search throttle's SET fails as a lost Redis does."""
+
+    def __init__(self, real: Redis) -> None:
+        self.real = real
+        self.refused = 0
+
+    def __getattr__(self, name):
+        return getattr(self.real, name)
+
+    async def set(self, name, *args, **kwargs):
+        if str(name).startswith("tm:sb:"):
+            self.refused += 1
+            raise RedisConnectionError("Connection refused.")
+        return await self.real.set(name, *args, **kwargs)
+
+
+class ThrottleHungRedis(ThrottleDownRedis):
+    async def set(self, name, *args, **kwargs):
+        if str(name).startswith("tm:sb:"):
+            self.refused += 1
+            await asyncio.Event().wait()
+        return await self.real.set(name, *args, **kwargs)
+
+
+@pytest.mark.parametrize("flaky", [ThrottleDownRedis, ThrottleHungRedis])
+async def test_a_search_succeeds_when_the_throttle_redis_fails(client, app, airports, flaky):
+    from travelmind.cache import get_redis
+
+    await signup(client)
+    real = Redis.from_url(os.environ["TM_REDIS_URL"])
+    broken = flaky(real)
+
+    async def broken_redis():
+        yield broken
+
+    app.dependency_overrides[get_redis] = broken_redis
+    try:
+        started = time.perf_counter()
+        flights = await client.post(SEARCH, json=TRIP)
+        hotels = await client.post("/api/v1/hotels/search", json=STAY)
+        assert flights.status_code == 200, flights.text
+        assert hotels.status_code == 200, hotels.text
+        assert broken.refused == 2
+        assert time.perf_counter() - started < 2.0  # the read cache's short deadline at most
+    finally:
+        app.dependency_overrides.pop(get_redis)
+        await real.aclose()
+
+
+async def test_a_search_succeeds_when_redis_is_down(client, airports, monkeypatch):
+    await signup(client)
+    monkeypatch.setenv("TM_REDIS_URL", "redis://127.0.0.1:1/0")
+    from travelmind import cache
+
+    await cache.close_redis()
+    get_settings.cache_clear()
+    try:
+        assert (await client.post(SEARCH, json=TRIP)).status_code == 200
+        assert (await client.post("/api/v1/hotels/search", json=STAY)).status_code == 200
+    finally:
+        await cache.close_redis()
+        get_settings.cache_clear()
 
 
 async def test_a_hung_redis_adds_at_most_one_short_timeout_per_request(seeded, app):

@@ -8,12 +8,13 @@ from travelmind.hotels.models import HotelSearchRequest
 from travelmind.hotels.schemas import HotelSearchResponse
 from travelmind.identity.deps import AuthedUser
 from travelmind.identity.service import get_agency
+from travelmind.readcache import ThrottledInvalidatesAgencyCache
 
-# A hotel search doesn't retire the agency's read cache (see readcache).
+# A hotel search retires the agency's read cache at most once per few seconds (readcache).
 hotels_router = APIRouter(prefix="/api/v1/hotels", tags=["hotels"])
 
 
-@hotels_router.post("/search")
+@hotels_router.post("/search", dependencies=[ThrottledInvalidatesAgencyCache])
 async def search_hotels_route(
     body: HotelSearchRequest, current: AuthedUser, db: DbSession, redis: RedisClient
 ) -> HotelSearchResponse:

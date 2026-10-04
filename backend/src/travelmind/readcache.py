@@ -34,10 +34,16 @@ returned and before the response is sent, bumps:
 Over-invalidating (say, a write that failed after a partial commit) only costs a cache miss.
 
 Frequent writes that don't change what the cache holds take `PublishesMarkedAgencyChanges`
-instead, which bumps only marked agencies: flight and hotel searches, offer repricing and
-marking notifications seen. A search does feed the dashboard's "searches" KPI and activity, so
-those may be up to the summary TTL (30 s) stale after a search: accepted, so that searching
-doesn't empty the agency's cache every few seconds.
+instead, which bumps only marked agencies: offer repricing and marking notifications seen.
+
+Flight and hotel searches feed the dashboard's "searches" KPI and activity, so they take
+`ThrottledInvalidatesAgencyCache`: after a successful search it bumps the agency's version, but at
+most once per `search_bump_interval_s` (5 s) per agency. The throttle is a `SET tm:sb:<agency> 1
+NX EX <interval>`; only the search whose SET succeeds bumps. So the first search after a quiet
+spell shows on the dashboard at once, and a burst of searches retires the agency's cache once per
+interval, not once per search. A search inside the interval may lag on the dashboard until the
+next bump or the summary TTL (30 s). Like every cache command, the SET and the bump go through
+the breaker and the short deadline, and a failure skips the bump: a search never fails for it.
 """
 
 import asyncio
@@ -67,9 +73,12 @@ __all__ = [
     "CircuitBreaker",
     "InvalidatesAgencyCache",
     "PublishesMarkedAgencyChanges",
+    "ThrottledInvalidatesAgencyCache",
     "agency_key",
     "agency_version",
     "bump_agency_version",
+    "bump_agency_throttled_after",
+    "bump_agency_version_throttled",
     "cached_agency_json",
     "cached_json",
     "discard_agency_changes",
@@ -89,6 +98,7 @@ CacheName = Literal["summary", "pipeline", "airports", "route_intel"]
 CACHE_PREFIX = "tm:rc:"
 LOCK_PREFIX = "tm:rcl:"
 VERSION_PREFIX = "tm:av:"
+SEARCH_BUMP_PREFIX = "tm:sb:"
 LOCK_TTL_MS = 3000  # longer than a normal load; a crashed holder's lock lapses on its own
 LOCK_WAIT_SECONDS = 0.25
 LOCK_POLL_SECONDS = 0.025
@@ -270,6 +280,23 @@ async def bump_agency_version(redis: Redis, agency_id: UUID) -> None:
         await _call("version", bump)
 
 
+async def bump_agency_version_throttled(redis: Redis, agency_id: UUID) -> bool:
+    """Bump the agency's version unless this already happened within the last
+    `search_bump_interval_s`; True when it bumped. Fails open: a Redis error, a timeout or the
+    open breaker skips the bump (the entries then live out their TTL)."""
+    interval = get_settings().search_bump_interval_s
+    if interval > 0:
+        key = f"{SEARCH_BUMP_PREFIX}{agency_id}"
+        try:
+            first = await _call("version", lambda: redis.set(key, 1, nx=True, ex=interval))
+        except _Unavailable:
+            return False
+        if not first:
+            return False
+    await bump_agency_version(redis, agency_id)
+    return True
+
+
 async def invalidate_agency(redis: Redis, agency_id: UUID) -> None:
     """Call after a successful commit that changed the agency's data."""
     await bump_agency_version(redis, agency_id)
@@ -339,5 +366,15 @@ async def publish_marked_changes_after(db: DbSession, redis: RedisClient) -> Asy
         await publish_agency_changes(db, redis)
 
 
+async def bump_agency_throttled_after(db: DbSession, redis: RedisClient) -> AsyncIterator[None]:
+    """Router dependency for searches: once the endpoint has returned (not when it raised),
+    bumps the session's bound agency, at most once per `search_bump_interval_s`."""
+    yield
+    bound: Any = db.info.get("agency_id")
+    if bound is not None:
+        await bump_agency_version_throttled(redis, bound)
+
+
 InvalidatesAgencyCache = Depends(publish_agency_changes_after, scope="function")
 PublishesMarkedAgencyChanges = Depends(publish_marked_changes_after, scope="function")
+ThrottledInvalidatesAgencyCache = Depends(bump_agency_throttled_after, scope="function")
