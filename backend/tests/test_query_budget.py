@@ -198,6 +198,14 @@ HOT_INDEXES = {
         "WHERE ((status)::text = ANY ((ARRAY['sent'::character varying, "
         "'viewed'::character varying])::text[]))",
     ),
+    # 0011: the dashboard's live searches KPI walks only an agency's search events.
+    "ix_activity_agency_searches": (
+        "activity_events",
+        "CREATE INDEX ix_activity_agency_searches ON public.activity_events "
+        "USING btree (agency_id, occurred_at) "
+        "WHERE ((kind)::text = ANY ((ARRAY['search.flights'::character varying, "
+        "'search.hotels'::character varying])::text[]))",
+    ),
 }
 
 

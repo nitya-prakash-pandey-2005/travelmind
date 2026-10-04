@@ -10,10 +10,9 @@ from travelmind.offers import service
 from travelmind.offers.models import FlightSearchRequest
 from travelmind.offers.registry import supplier_statuses
 from travelmind.offers.schemas import FlightSearchResponse, RepriceResponse, SupplierStatusOut
-from travelmind.readcache import ThrottledInvalidatesAgencyCache
 
-# A search feeds the Command Center's searches KPI and activity: it retires the agency's read
-# cache at most once per few seconds (readcache). Repricing doesn't touch cached data.
+# Searches and price checks change no cached read (the dashboard computes its searches KPI live),
+# so neither touches the read cache.
 flights_router = APIRouter(prefix="/api/v1/flights", tags=["flights"])
 suppliers_router = APIRouter(prefix="/api/v1/suppliers", tags=["suppliers"])
 
@@ -32,7 +31,7 @@ def _http_error(exc: service.OfferServiceError) -> HTTPException:
     return HTTPException(_STATUS.get(type(exc), status.HTTP_502_BAD_GATEWAY), exc.message)
 
 
-@flights_router.post("/search", dependencies=[ThrottledInvalidatesAgencyCache])
+@flights_router.post("/search")
 async def search_flights_route(
     body: FlightSearchRequest, current: AuthedUser, db: DbSession, redis: RedisClient
 ) -> FlightSearchResponse:

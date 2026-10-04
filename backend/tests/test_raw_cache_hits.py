@@ -13,7 +13,7 @@ from pydantic import BaseModel, TypeAdapter
 from redis.asyncio import Redis
 
 from tests.helpers import signup
-from travelmind.dashboard.schemas import PipelineOut, SummaryOut
+from travelmind.dashboard.schemas import Kpi, PipelineOut, SummaryOut
 from travelmind.readcache import schema_tag
 from travelmind.reference.router import AirportOut
 
@@ -31,14 +31,15 @@ def as_fastapi_would(tp: Any, body: bytes) -> bytes:
 
 
 @pytest.mark.parametrize(
-    ("path", "tp", "name"),
+    ("path", "tp", "name", "stored"),
     [
-        ("/api/v1/dashboard/summary", SummaryOut, "summary"),
-        ("/api/v1/dashboard/pipeline", PipelineOut, "pipeline"),
-        ("/api/v1/reference/airports?q=del", list[AirportOut], "airports"),
+        # The summary stores its cached cards; the live searches card is added around them.
+        ("/api/v1/dashboard/summary", SummaryOut, "summary", list[Kpi]),
+        ("/api/v1/dashboard/pipeline", PipelineOut, "pipeline", PipelineOut),
+        ("/api/v1/reference/airports?q=del", list[AirportOut], "airports", list[AirportOut]),
     ],
 )
-async def test_hits_serve_the_stored_bytes(client, airports, redis, path, tp, name):
+async def test_hits_serve_the_stored_bytes(client, airports, redis, path, tp, name, stored):
     await signup(client)
     miss = await client.get(path)
     hit = await client.get(path)
@@ -46,7 +47,7 @@ async def test_hits_serve_the_stored_bytes(client, airports, redis, path, tp, na
     assert hit.headers["content-type"] == miss.headers["content-type"] == "application/json"
     assert hit.content == miss.content == as_fastapi_would(tp, miss.content)
     keys = [k.decode() for k in await redis.keys(f"tm:rc:*{name}*")]
-    assert keys and all(schema_tag(tp) in k for k in keys), keys
+    assert keys and all(schema_tag(stored) in k for k in keys), keys
 
 
 def test_the_schema_tag_follows_the_shape():

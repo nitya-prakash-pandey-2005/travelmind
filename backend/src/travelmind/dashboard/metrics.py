@@ -81,10 +81,12 @@ __all__ = [
     "notifications",
     "onboarding",
     "pipeline",
+    "searches_kpi",
     "summary",
     "supplier_health",
     "team",
     "window",
+    "workspace_kpis",
 ]
 
 RANGE_DAYS: dict[str, int] = {"7d": 7, "30d": 30, "90d": 90}
@@ -315,22 +317,15 @@ _CO2_DAILY = _series_sql(
 )
 
 # Every search writes a `search.*` event, including hotel searches that never reached a supplier
-# (and so have no search_source_results row).
-_SEARCH_KINDS = "kind IN ('search.flights', 'search.hotels')"
-_SEARCHES = text(
-    f"""
-    SELECT count(*) FILTER (WHERE occurred_at >= :start) AS value,
-           count(*) FILTER (WHERE occurred_at < :start) AS previous
-    FROM activity_events
-    WHERE agency_id = :agency AND {_SEARCH_KINDS}
-      AND occurred_at >= :prev_start AND occurred_at < :end
+# (and so have no search_source_results row). Searches per local day over both windows, in one
+# walk of the partial index ix_activity_agency_searches (migration 0011): the current window's
+# days start at `start` (a local midnight), so the days split the windows exactly.
+_SEARCHES_BY_DAY = text(
     """
-)
-_SEARCHES_DAILY = _series_sql(
-    f"""
     SELECT (occurred_at AT TIME ZONE :tz)::date AS day, count(*) AS value
     FROM activity_events
-    WHERE agency_id = :agency AND {_SEARCH_KINDS} AND occurred_at >= :start AND occurred_at < :end
+    WHERE agency_id = :agency AND kind IN ('search.flights', 'search.hotels')
+      AND occurred_at >= :prev_start AND occurred_at < :end
     GROUP BY 1
     """
 )
@@ -374,7 +369,35 @@ def _kpi(
 async def summary(
     db: AsyncSession, agency: AgencySettings, range_: Range, *, now: datetime
 ) -> SummaryOut:
-    """The KPI cards. The caller expires overdue quotes first (it caches the result)."""
+    """The KPI cards: `workspace_kpis` followed by `searches_kpi`. The caller expires overdue
+    quotes first."""
+    kpis = await workspace_kpis(db, agency, range_, now=now)
+    kpis.append(await searches_kpi(db, agency, range_, now=now))
+    return SummaryOut(range=range_, currency=agency.currency, kpis=kpis)
+
+
+async def searches_kpi(
+    db: AsyncSession, agency: AgencySettings, range_: Range, *, now: datetime
+) -> Kpi:
+    """The "searches" card. Only searches change it, and they are frequent, so the dashboard
+    computes it on every read (one indexed query) instead of caching it with the other cards."""
+    span = window(now, agency.timezone, RANGE_DAYS[range_])
+    rows = await db.execute(_SEARCHES_BY_DAY, _range_params(agency, span))
+    per_day: dict[date, int] = {row.day: row.value for row in rows}
+    days = [span.first + timedelta(days=n) for n in range((span.today - span.first).days + 1)]
+    return _kpi(
+        "searches",
+        sum(count for day, count in per_day.items() if day >= span.first),
+        sum(count for day, count in per_day.items() if day < span.first),
+        [SeriesPoint(date=day, value=per_day.get(day, 0)) for day in days],
+    )
+
+
+async def workspace_kpis(
+    db: AsyncSession, agency: AgencySettings, range_: Range, *, now: datetime
+) -> list[Kpi]:
+    """Every KPI card but "searches": the ones only workspace writes change (the dashboard
+    caches them per agency). The caller expires overdue quotes first."""
     params = _range_params(agency, window(now, agency.timezone, RANGE_DAYS[range_]))
 
     async def one(query: TextClause) -> Any:
@@ -386,8 +409,7 @@ async def summary(
     pipeline_value = await one(_PIPELINE)
     response = await one(_RESPONSE)
     co2 = await one(_CO2)
-    searches = await one(_SEARCHES)
-    kpis = [
+    return [
         _kpi(
             "open_enquiries",
             opened.value,
@@ -419,14 +441,7 @@ async def summary(
             _number(co2.previous),
             await _series(db, _CO2_DAILY, params),
         ),
-        _kpi(
-            "searches",
-            searches.value,
-            searches.previous,
-            await _series(db, _SEARCHES_DAILY, params),
-        ),
     ]
-    return SummaryOut(range=range_, currency=agency.currency, kpis=kpis)
 
 
 # --- pipeline ---------------------------------------------------------------------------------
