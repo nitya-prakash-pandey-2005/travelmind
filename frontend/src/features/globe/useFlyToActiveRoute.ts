@@ -1,10 +1,21 @@
 import { useEffect, type RefObject } from "react";
 import type { GlobeMethods } from "react-globe.gl";
 import type { Airport } from "../../api/types";
-import { midpoint } from "../route/geo";
+import { greatCircleKm, midpoint } from "../route/geo";
 
 const ROUTE_ALTITUDE = 1.9;
 const FLIGHT_MS = 1200;
+const EARTH_RADIUS_KM = 6371;
+
+/**
+ * How high the camera stops over a route (globe radii): close for a short hop so the route and its plane
+ * fill the view, further out for a long-haul route so both ends stay on screen. A compact map sits closer.
+ */
+export function routeAltitude(from: Airport, to: Airport, compact = false): number {
+  const angle = greatCircleKm(from, to) / EARTH_RADIUS_KM;
+  const [min, max, factor] = compact ? [0.35, 1.4, 1.9] : [0.45, 1.9, 2.3];
+  return Math.min(max, Math.max(min, angle * factor));
+}
 
 /**
  * Points the camera at the active route's midpoint. Runs once the globe is mounted and sized (`ready`),

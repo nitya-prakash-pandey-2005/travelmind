@@ -7,7 +7,8 @@ import { CLEAR_CANVAS, useThemePalette } from "../../theme";
 import { useReducedMotion } from "../../ui/useReducedMotion";
 import { COUNTRIES, type Country } from "./countries";
 import { useElementSize } from "../../lib/useElementSize";
-import { useFlyToActiveRoute } from "./useFlyToActiveRoute";
+import { planeArcs, useFlyingPlanes } from "./flyingPlanes";
+import { routeAltitude, useFlyToActiveRoute } from "./useFlyToActiveRoute";
 
 /** `weight` (default 1) thickens a route with more enquiries on it. */
 export type GlobeArc = { from: Airport; to: Airport; active: boolean; weight?: number };
@@ -68,8 +69,8 @@ const MAX_ALTITUDE = 4;
 
 /** Where a showcase globe first looks: over the Gulf, with India, Europe and Singapore in view. */
 const SHOWCASE_VIEW = { lat: 24, lng: 52, altitude: 2.15 };
-/** A compact map frames its route closer, so a short route still reads. */
-const COMPACT_ROUTE_ALTITUDE = 0.95;
+/** Arc height as a share of the route's great-circle angle (the planes ride the same curve). */
+const ARC_AUTO_SCALE = 0.45;
 /** The working map's home view: India and the Gulf, close enough to read borders. */
 const HOME_VIEW = { lat: 22, lng: 66, altitude: 1.9 };
 
@@ -128,7 +129,18 @@ export default function RouteGlobe({ arcs, showcase = false, compact = false }: 
     if (ready) globeRef.current?.pointOfView(showcase ? SHOWCASE_VIEW : HOME_VIEW, 0);
   }, [showcase, ready]);
 
-  useFlyToActiveRoute(globeRef, active, ready, reducedMotion, compact ? COMPACT_ROUTE_ALTITUDE : undefined);
+  // The camera stops closer for a short route, so the whole route fills the view.
+  // With several routes highlighted (the Command Center), keep the wide view that shows them all.
+  const single = useMemo(() => arcs.filter((arc) => arc.active).length === 1, [arcs]);
+  useFlyToActiveRoute(
+    globeRef,
+    active,
+    ready,
+    reducedMotion,
+    active && (single || compact) ? routeAltitude(active.from, active.to, compact) : undefined,
+  );
+  const flying = useMemo(() => planeArcs(arcs), [arcs]);
+  useFlyingPlanes(globeRef, flying, palette.ink, ready, reducedMotion, ARC_AUTO_SCALE);
 
   const zoomBy = useCallback(
     (factor: number) => {
@@ -183,7 +195,7 @@ export default function RouteGlobe({ arcs, showcase = false, compact = false }: 
             arcDashLength={0.6}
             arcDashGap={0.12}
             arcDashAnimateTime={reducedMotion ? 0 : 3200}
-            arcAltitudeAutoScale={0.45}
+            arcAltitudeAutoScale={ARC_AUTO_SCALE}
             labelsData={airports}
             labelLat={(d: object) => (d as GlobeLabel).lat}
             labelLng={(d: object) => (d as GlobeLabel).lng}
@@ -227,7 +239,7 @@ export default function RouteGlobe({ arcs, showcase = false, compact = false }: 
             arcDashLength={0.9}
             arcDashGap={0.25}
             arcDashAnimateTime={reducedMotion ? 0 : 4200}
-            arcAltitudeAutoScale={0.45}
+            arcAltitudeAutoScale={ARC_AUTO_SCALE}
             labelsData={labels}
             labelLat={(d: object) => (d as GlobeLabel).lat}
             labelLng={(d: object) => (d as GlobeLabel).lng}
