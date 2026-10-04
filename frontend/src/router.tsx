@@ -192,7 +192,12 @@ const agentRoute = createRoute({
   validateSearch: validateAgentSearch,
   component: AgentPage,
 });
-const agentRunRoute = createRoute({ getParentRoute: () => appRoute, path: "/agent/$runId", component: AgentPage });
+const agentRunRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/agent/$runId",
+  validateSearch: validateAgentSearch,
+  component: AgentPage,
+});
 const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: "/settings", component: SettingsPage });
 
 /** Pre-/app addresses (bookmarks, old links) move to their new home with their query and hash intact. */

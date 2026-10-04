@@ -6,8 +6,8 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { apiFetch } from "./client";
+import { useEffect, useRef, useState } from "react";
+import { ApiError, apiFetch } from "./client";
 import type { Cabin, Provenance } from "./offers";
 import { segment } from "./workspaceCache";
 
@@ -332,7 +332,12 @@ export function agentRunsQueryOptions(limit = 20) {
 export function agentRunQueryOptions(id: string) {
   return queryOptions({
     queryKey: agentKeys.run(id),
-    queryFn: ({ signal }) => agentApi.get(id, signal),
+    // A refetch keeps any step the stream delivered meanwhile (merged by seq, the server's copy winning).
+    queryFn: async ({ signal, client }) => {
+      const fresh = await agentApi.get(id, signal);
+      const held = client.getQueryData<AgentRunDetail>(agentKeys.run(id));
+      return held ? { ...fresh, steps: mergeSteps(held.steps, fresh.steps) } : fresh;
+    },
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
@@ -377,7 +382,8 @@ export function createAgentRunMutation(client: QueryClient) {
 
 export function replyAgentRunMutation(client: QueryClient) {
   return mutationOptions({
-    mutationFn: ({ runId, text }: { runId: string; text: string }) => agentApi.reply(runId, text),
+    // `callId` names the question answered, so an error shows only against that question; it isn't sent.
+    mutationFn: ({ runId, text }: { runId: string; text: string; callId?: string }) => agentApi.reply(runId, text),
     onSuccess: (run) => applyRun(client, run),
   });
 }
@@ -407,30 +413,59 @@ export const useCancelAgentRun = () => useMutation(cancelAgentRunMutation(useQue
 
 // --- live stream ---------------------------------------------------------------------------
 
-/** `paused`: the server refused another stream (429), so the run is polled every few seconds instead. */
-export type StreamState = "idle" | "connecting" | "open" | "reconnecting" | "paused" | "closed";
-
-/** How often a run is re-read while its live stream is paused. */
-export const STREAM_POLL_MS = 3_000;
+/**
+ * `paused`: no live stream (the server refused another one with 429, it kept failing, or the browser has no
+ * EventSource), so the run is re-read every few seconds instead. `stopped`: the session ended (401); the
+ * app's sign-in handling takes over and nothing is retried.
+ */
+export type StreamState = "idle" | "connecting" | "open" | "reconnecting" | "paused" | "stopped" | "closed";
 
 /**
- * EventSource can't see why a connection failed. Before retrying one that never opened, ask once (and
- * abort straight away) whether the server is refusing more streams.
+ * Stream timing. Reconnect delays grow 1 s, 2 s, 4 s, 8 s, then stay at 15 s, and reset once the stream
+ * delivers. A connection that fails `maxNeverOpened` times in a row without ever opening gives up on live
+ * updates and polls instead. Exported (and writable) so tests can shorten it.
  */
-async function refusedForLoad(url: string): Promise<boolean> {
-  const controller = new AbortController();
-  try {
-    const response = await fetch(url, { credentials: "include", signal: controller.signal, headers: { Accept: "text/event-stream" } });
-    return response.status === 429;
-  } catch {
-    return false;
-  } finally {
-    controller.abort();
-  }
+export const streamTiming = {
+  backoffMs: [1_000, 2_000, 4_000, 8_000, 15_000] as readonly number[],
+  maxNeverOpened: 3,
+  /** Re-read a paused run this often while it works… */
+  pollMs: 3_000,
+  /** …and this often while it waits on someone. */
+  waitingPollMs: 15_000,
+};
+
+/** The delay before reconnect number `attempt` (0-based). */
+export function streamBackoff(attempt: number): number {
+  const steps = streamTiming.backoffMs;
+  return steps[Math.min(Math.max(attempt, 0), steps.length - 1)] ?? 15_000;
 }
 
-/** Reconnect delays: 1 s, 2 s, 4 s … capped at 15 s; reset once the stream delivers again. */
-export const STREAM_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 15_000] as const;
+/** How often a paused run is re-read, or false once it is final (or can't be read any more). */
+export function pollInterval(run: AgentRun | undefined, errorStatus: number | null): number | false {
+  if (!run || isTerminal(run.status)) return false;
+  if (errorStatus === 401 || errorStatus === 403 || errorStatus === 404) return false;
+  return run.status === "waiting_for_user" ? streamTiming.waitingPollMs : streamTiming.pollMs;
+}
+
+/**
+ * EventSource can't see why a connection failed, so the first connection that fails without opening is
+ * asked about once with fetch: its status only (the request is aborted as soon as the headers arrive, and
+ * with `signal` when the hook cleans up). Null when there is no answer.
+ */
+async function probeStatus(url: string, signal: AbortSignal): Promise<number | null> {
+  const probe = new AbortController();
+  const abort = () => probe.abort();
+  signal.addEventListener("abort", abort);
+  try {
+    const response = await fetch(url, { credentials: "include", signal: probe.signal, headers: { Accept: "text/event-stream" } });
+    return response.status;
+  } catch {
+    return null;
+  } finally {
+    probe.abort();
+    signal.removeEventListener("abort", abort);
+  }
+}
 
 function parse<T>(event: MessageEvent): T | null {
   try {
@@ -440,22 +475,34 @@ function parse<T>(event: MessageEvent): T | null {
   }
 }
 
+type Mode = { runId: string; mode: "poll" | "stopped" };
+type Live = { runId: string; state: StreamState };
+
 /**
  * Follows an open run over Server-Sent Events once its detail is loaded: each `step` is merged into the
  * run's cache by seq (a replay never duplicates), each `status` replaces the run's state, and a final status
- * closes the stream. A dropped connection is reopened after a backoff from the last seq held
- * (`?last_event_id=`), so nothing is missed. Closed on unmount.
+ * closes the stream. A dropped connection is reopened after a growing backoff from the last seq held
+ * (`?last_event_id=`), so nothing is missed. A server refusing more streams (429), repeated failures to
+ * connect, or a browser without EventSource switch to polling the run; an ended session (401) stops and
+ * leaves it to the app's sign-in handling. Everything is closed and aborted on unmount or a new run.
+ *
+ * State only changes from event callbacks, never synchronously in the effect: "connecting" is derived (no
+ * report yet for this run), so a new run never shows the previous run's state.
  */
 export function useAgentRunStream(runId: string | undefined): StreamState {
   const client = useQueryClient();
-  const [state, setState] = useState<StreamState>("idle");
-  const [paused, setPaused] = useState<string | null>(null);
-  const polling = Boolean(runId) && paused === runId;
+  const supported = typeof EventSource !== "undefined";
+  const [mode, setMode] = useState<Mode | null>(null);
+  const [live, setLive] = useState<Live | null>(null);
+  // Probe at most once for this hook's lifetime.
+  const probed = useRef(false);
+  const current = runId && mode?.runId === runId ? mode.mode : null;
+  const polling = Boolean(runId) && (current === "poll" || !supported);
   const run = useQuery({
     ...agentRunQueryOptions(runId ?? ""),
     enabled: Boolean(runId),
-    // A paused stream (429) falls back to re-reading the run until it finishes.
-    refetchInterval: (query) => (polling && query.state.data && !isTerminal(query.state.data.status) ? STREAM_POLL_MS : false),
+    refetchInterval: (query) =>
+      polling ? pollInterval(query.state.data, query.state.error instanceof ApiError ? query.state.error.status : null) : false,
   });
   const loaded = run.data !== undefined;
   const status = run.data?.status;
@@ -467,60 +514,65 @@ export function useAgentRunStream(runId: string | undefined): StreamState {
   }, [client, polling, status]);
 
   useEffect(() => {
-    if (!runId || !open || polling || typeof EventSource === "undefined") return;
+    if (!runId || !open || polling || current === "stopped") return;
+    const controller = new AbortController();
     let source: EventSource | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
+    let neverOpened = 0;
     let stopped = false;
 
     const cached = () => client.getQueryData<AgentRunDetail>(agentKeys.run(runId));
-
-    const stop = (final: StreamState) => {
+    const report = (state: StreamState) => setLive({ runId, state });
+    const halt = () => {
       stopped = true;
       source?.close();
       source = null;
       if (timer !== null) clearTimeout(timer);
-      setState(final);
+    };
+    const giveUp = (next: Mode["mode"]) => {
+      halt();
+      setMode({ runId, mode: next });
     };
 
     const connect = () => {
       if (stopped) return;
-      setState(attempt === 0 ? "connecting" : "reconnecting");
       const es = new EventSource(agentApi.eventsUrl(runId, lastSeq(cached()?.steps)), { withCredentials: true });
       source = es;
       let opened = false;
-      es.onopen = () => {
+      const delivered = () => {
         opened = true;
-        if (source === es) setState("open");
+        attempt = 0;
+        neverOpened = 0;
+        report("open");
+      };
+      es.onopen = () => {
+        if (source === es) delivered();
       };
       es.addEventListener("step", (event) => {
         if (source !== es) return;
         const step = parse<AgentStep>(event as MessageEvent);
         if (!step || typeof step.seq !== "number") return;
-        opened = true;
-        attempt = 0;
-        setState("open");
+        delivered();
         if (step.seq > lastSeq(cached()?.steps)) applySteps(client, runId, [step]);
       });
       es.addEventListener("status", (event) => {
         if (source !== es) return;
         const next = parse<AgentRun>(event as MessageEvent);
         if (!next || next.id !== runId) return;
-        opened = true;
-        attempt = 0;
-        setState("open");
+        delivered();
         const before = cached()?.status;
         applyRun(client, next);
         if (before !== next.status) refreshList(client);
-        if (isTerminal(next.status)) stop("closed");
+        if (isTerminal(next.status)) halt();
       });
       es.onerror = () => {
         if (source !== es || stopped) return;
         es.close();
         source = null;
-        const delay = STREAM_BACKOFF_MS[Math.min(attempt, STREAM_BACKOFF_MS.length - 1)];
+        const delay = streamBackoff(attempt);
         attempt += 1;
-        setState("reconnecting");
+        report("reconnecting");
         const retry = () => {
           if (!stopped) timer = setTimeout(connect, delay);
         };
@@ -528,12 +580,24 @@ export function useAgentRunStream(runId: string | undefined): StreamState {
           retry();
           return;
         }
-        void refusedForLoad(agentApi.eventsUrl(runId, lastSeq(cached()?.steps))).then((refused) => {
+        neverOpened += 1;
+        if (neverOpened >= streamTiming.maxNeverOpened) {
+          giveUp("poll");
+          return;
+        }
+        if (probed.current) {
+          retry();
+          return;
+        }
+        probed.current = true;
+        void probeStatus(agentApi.eventsUrl(runId, lastSeq(cached()?.steps)), controller.signal).then((code) => {
           if (stopped) return;
-          if (refused) {
-            stopped = true;
-            setPaused(runId);
-            setState("paused");
+          if (code === 429) {
+            giveUp("poll");
+          } else if (code === 401) {
+            // The session is gone: re-reading the run lets the app's sign-in handling take over.
+            giveUp("stopped");
+            void client.refetchQueries({ queryKey: agentKeys.run(runId) });
           } else {
             retry();
           }
@@ -543,12 +607,14 @@ export function useAgentRunStream(runId: string | undefined): StreamState {
 
     connect();
     return () => {
-      stopped = true;
-      source?.close();
-      if (timer !== null) clearTimeout(timer);
+      halt();
+      controller.abort();
     };
-  }, [client, runId, open, polling]);
+  }, [client, runId, open, polling, current]);
 
+  if (!runId) return "idle";
   if (polling) return open ? "paused" : "closed";
-  return open ? state : loaded ? "closed" : "idle";
+  if (current === "stopped") return "stopped";
+  if (!open) return loaded ? "closed" : "idle";
+  return live?.runId === runId ? live.state : "connecting";
 }

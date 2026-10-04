@@ -42,6 +42,8 @@ export type BoardActions = {
   askError: string | null;
   /** Put a follow-up request in the composer (not sent). */
   onExtend: (prompt: string) => void;
+  /** Why no new plan can start (no model configured); the actions are then disabled. */
+  blockedReason: string | null;
 };
 
 /** "All prices verified against live results", or the warning when the guard fell back. */
@@ -171,7 +173,7 @@ function ExtendPanel({ result, onExtend }: { result: PlanResult; onExtend: (prom
 function PlanHeader({ run, result, actions }: { run: AgentRunDetail; result: PlanResult; actions: BoardActions }) {
   const verified = isVerified(run.grounded, result);
   const fares = result.trip ? fareSearchFor(result.trip) : null;
-  const busy = isWorking(run.status) || run.status === "waiting_for_user";
+  const busy = isWorking(run.status) || run.status === "waiting_for_user" || actions.blockedReason !== null;
   return (
     <Panel title="Plan" description={result.trip ? (routeText(result.trip) ?? undefined) : "From this run's results"}>
       <div className="flex flex-col gap-3">
@@ -210,7 +212,8 @@ function PlanHeader({ run, result, actions }: { run: AgentRunDetail; result: Pla
           )}
         </div>
         <p className="text-xs leading-4 text-dim">
-          Enquiries and quotes are saved only after you approve them here. Nothing is booked or paid for.
+          {actions.blockedReason ??
+            "Each starts a new plan for this trip that asks to save it. Nothing is saved until you approve, and nothing is booked or paid for."}
         </p>
         {actions.askError && (
           <p role="alert" className="flex items-center gap-1.5 text-xs text-danger">
@@ -226,7 +229,7 @@ function PlanHeader({ run, result, actions }: { run: AgentRunDetail; result: Pla
 /** The plan built from a finished run's result. */
 function ResultBoard({ run, result, actions }: { run: AgentRunDetail; result: PlanResult; actions: BoardActions }) {
   const travellers = result.trip ? result.trip.adults + (result.trip.children_ages?.length ?? 0) : 1;
-  const { days, built } = planDays(result);
+  const { days, built, undated } = planDays(result);
   const placesAttribution = useMemo(() => {
     const step = [...run.steps].reverse().find((s): s is ToolResultStep => s.kind === "tool_result" && s.payload.tool === "find_places");
     const attribution = step?.payload.data?.attribution;
@@ -270,9 +273,9 @@ function ResultBoard({ run, result, actions }: { run: AgentRunDetail; result: Pl
       {days.length > 0 && (
         <Panel
           title="Day by day"
-          description={built ? "The itinerary this plan built" : "From the first flight option, the first hotel and the weather"}
+          description={built ? "The itinerary this plan built" : "Each date with the flights and weather the results give for it"}
         >
-          <DayTimeline days={days} />
+          <DayTimeline days={days} undated={undated} />
         </Panel>
       )}
       {result.budget ? <BudgetPanel budget={result.budget} /> : result.flights.length > 1 ? <FareComparison flights={result.flights} /> : null}

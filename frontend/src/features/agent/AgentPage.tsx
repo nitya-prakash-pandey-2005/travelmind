@@ -13,7 +13,7 @@ import {
   WifiOff,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   agentAvailabilityQueryOptions,
   agentRunQueryOptions,
@@ -277,53 +277,34 @@ function Telemetry({ run }: { run: AgentRunDetail }) {
   );
 }
 
-type Layout = { left: ReactNode; centre: ReactNode; right: ReactNode; hasRun: boolean };
-
-/** Space between the panes and the bottom of the window: the main area's padding. */
-const PANE_GAP = 24;
-const MIN_PANE = 560;
-
-/**
- * The height that fills the window below `node`, kept current on resize, so the three panes reach the
- * bottom of the screen and each scrolls on its own (the plan board can be long; the others stay in view).
- */
-function useFillHeight(): [(node: HTMLDivElement | null) => void, number | null] {
-  const [node, setNode] = useState<HTMLDivElement | null>(null);
-  const [height, setHeight] = useState<number | null>(null);
-  useEffect(() => {
-    if (!node) return;
-    const main = node.closest("main");
-    const measure = () => {
-      const bottom = main ? main.getBoundingClientRect().bottom : window.innerHeight;
-      const top = node.getBoundingClientRect().top + (main?.scrollTop ?? 0) - (main ? main.getBoundingClientRect().top : 0);
-      const offset = main ? main.getBoundingClientRect().top : 0;
-      setHeight(Math.max(MIN_PANE, Math.round(bottom - offset - top - PANE_GAP)));
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    if (main) observer?.observe(main);
-    return () => {
-      window.removeEventListener("resize", measure);
-      observer?.disconnect();
-    };
-  }, [node]);
-  return [setNode, height];
-}
+type Layout = {
+  left: ReactNode;
+  centre: ReactNode;
+  right: ReactNode;
+  hasRun: boolean;
+  /** The question or approval the run waits on (its call id): a phone showing the plan switches back to it. */
+  attention?: string | null;
+};
 
 const PANE = "flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]";
 
-function Columns({ left, centre, right, hasRun }: Layout) {
+/**
+ * Wide: three panes that fill the rest of the window (the page is a full-height column) and scroll on their
+ * own, so the long plan board never leaves the others empty. Narrow: stacked, with a Conversation / Plan
+ * switch that returns to the conversation when a new question or approval arrives.
+ */
+function Columns({ left, centre, right, hasRun, attention = null }: Layout) {
   const wide = useWideLayout();
   const [view, setView] = useState<"conversation" | "plan">("conversation");
-  const [paneRef, paneHeight] = useFillHeight();
+  const [seen, setSeen] = useState<string | null>(attention);
+  // Adjusted while rendering (not in an effect): a new request for input brings the conversation forward.
+  if (attention !== seen) {
+    setSeen(attention);
+    if (attention) setView("conversation");
+  }
   if (wide) {
     return (
-      <div
-        ref={paneRef}
-        style={paneHeight ? { height: paneHeight } : undefined}
-        className="grid grid-cols-[17.5rem_minmax(0,1fr)_minmax(0,1.2fr)] gap-4"
-      >
+      <div className="grid min-h-[35rem] flex-1 grid-cols-[17.5rem_minmax(0,1fr)_minmax(0,1.2fr)] grid-rows-[minmax(0,1fr)] gap-4">
         <div data-pane="requests" className={PANE}>{left}</div>
         <div data-pane="conversation" className={PANE}>{centre}</div>
         <div data-pane="plan" className={PANE}>{right}</div>
@@ -370,6 +351,7 @@ function OpenRun({
   onRestart,
   restarting,
   onExtend,
+  unavailable,
 }: {
   run: AgentRunDetail;
   stream: StreamState;
@@ -377,6 +359,7 @@ function OpenRun({
   onRestart: (prompt: string) => void;
   restarting: boolean;
   onExtend: (prompt: string) => void;
+  unavailable: boolean;
 }) {
   const reply = useReplyAgentRun();
   const confirm = useConfirmAgentRun();
@@ -387,37 +370,53 @@ function OpenRun({
   const navigate = useNavigate();
   const working = isWorking(run.status);
   const cancellable = working || run.status === "waiting_for_user";
+  const pendingId = run.status === "waiting_for_user" ? (run.pending?.call_id ?? null) : null;
+  const logRef = useRef<HTMLDivElement>(null);
+  // Answers being typed, by question: held here so a layout change (phone ↔ desktop) keeps them.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   const trace: TraceActions = {
-    onReply: (text) => reply.mutate({ runId: run.id, text }),
+    onReply: (text) =>
+      reply.mutate(
+        { runId: run.id, text, callId: pendingId ?? undefined },
+        {
+          onSuccess: () => {
+            if (pendingId) setDrafts((all) => ({ ...all, [pendingId]: "" }));
+            logRef.current?.focus();
+          },
+        },
+      ),
     replying: reply.isPending,
-    replyError: errorText(reply.error),
-    onDecide: (approve) => confirm.mutate({ runId: run.id, callId: run.pending?.call_id ?? "", approve }),
+    // Errors belong to the question or approval they were sent for; a new one starts clean.
+    replyError: reply.variables?.callId === pendingId ? errorText(reply.error) : null,
+    answerDraft: pendingId ? (drafts[pendingId] ?? "") : "",
+    onAnswerDraft: (text) => {
+      if (pendingId) setDrafts((all) => ({ ...all, [pendingId]: text }));
+    },
+    onDecide: (approve) => confirm.mutate({ runId: run.id, callId: pendingId ?? "", approve }),
     deciding: confirm.isPending ? (confirm.variables?.approve ? "approve" : "decline") : null,
-    decideError: errorText(confirm.error),
+    decideError: confirm.variables?.callId === pendingId ? errorText(confirm.error) : null,
   };
 
-  // The run answers a question with a reply; a finished plan is followed up as a new request about its trip.
+  // A finished plan can't take a reply, so these start a new plan that asks for the write about this trip;
+  // that plan then waits for approval before anything is saved.
   const board: BoardActions = {
     onAsk: (action) => {
       const request = action === "enquiry" ? "Create an enquiry for this trip" : "Draft a quote for this trip";
-      setAskError(null);
-      setAsking(action);
-      const done = { onSettled: () => setAsking(null), onError: (error: unknown) => setAskError(errorText(error)) };
-      if (run.status === "waiting_for_user" && run.pending?.kind === "question") {
-        reply.mutate({ runId: run.id, text: request }, done);
-        return;
-      }
       const trip = run.result?.trip;
       const prompt = trip ? `${request}: ${tripLine(trip)}.` : `${request}. ${run.prompt}`;
+      setAskError(null);
+      setAsking(action);
       create.mutate(prompt, {
-        ...done,
+        onSettled: () => setAsking(null),
+        onError: (error) => setAskError(errorText(error)),
         onSuccess: (created) => void navigate({ to: "/app/agent/$runId", params: { runId: created.run_id } }),
       });
     },
     asking,
     askError,
     onExtend,
+    blockedReason: unavailable ? "New plans can't start until a model is configured." : null,
   };
 
   const conversation = (
@@ -443,7 +442,7 @@ function OpenRun({
             {errorText(cancel.error)}
           </p>
         )}
-        <RunTrace run={run} actions={trace} onRetry={() => onRestart(run.prompt)} retrying={restarting} />
+        <RunTrace run={run} actions={trace} onRetry={() => onRestart(run.prompt)} retrying={restarting} logRef={logRef} />
       </div>
     </Panel>
   );
@@ -451,6 +450,7 @@ function OpenRun({
   return (
     <Columns
       hasRun
+      attention={pendingId}
       left={left}
       centre={
         <>
@@ -519,7 +519,17 @@ function RunWorkspace({
       />
     );
   }
-  return <OpenRun run={run.data} stream={stream} left={left} onRestart={onRestart} restarting={restarting} onExtend={onExtend} />;
+  return (
+    <OpenRun
+      run={run.data}
+      stream={stream}
+      left={left}
+      onRestart={onRestart}
+      restarting={restarting}
+      onExtend={onExtend}
+      unavailable={availability?.available === false}
+    />
+  );
 }
 
 function LoadingRun() {
@@ -537,7 +547,8 @@ function LoadingRun() {
  */
 export function AgentPage() {
   const { runId } = useParams({ strict: false }) as { runId?: string };
-  const search = useSearch({ strict: false }) as { prompt?: string };
+  const raw = useSearch({ strict: false }) as { prompt?: unknown };
+  const search = { prompt: typeof raw.prompt === "string" ? raw.prompt : undefined };
   const navigate = useNavigate();
   const availability = useQuery(agentAvailabilityQueryOptions);
   const create = useCreateAgentRun();
@@ -583,7 +594,7 @@ export function AgentPage() {
   );
 
   return (
-    <>
+    <div className="flex flex-col xl:h-full">
       <PageHeader
         title="Agent"
         description="Plans trips from a plain request with live fares, hotels and weather. Every price is checked against the results."
@@ -635,6 +646,6 @@ export function AgentPage() {
       ) : (
         <Columns hasRun={false} left={left} centre={<HowItWorks />} right={<AgentStatusPanel availability={availability.data} />} />
       )}
-    </>
+    </div>
   );
 }

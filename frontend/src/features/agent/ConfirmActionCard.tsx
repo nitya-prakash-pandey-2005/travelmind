@@ -3,7 +3,7 @@ import { useEffect, useId, useRef } from "react";
 import type { PendingConfirm, WriteTool } from "../../api/agent";
 import { Button } from "../../ui/Button";
 
-const TOOL: Record<WriteTool, { title: string; icon: typeof Inbox }> = {
+const TOOL: Partial<Record<WriteTool | string, { title: string; icon: typeof Inbox }>> = {
   create_enquiry: { title: "Create enquiry", icon: Inbox },
   draft_quote: { title: "Draft quote", icon: FilePlus2 },
 };
@@ -39,7 +39,7 @@ export function ConfirmActionCard({
 }) {
   const titleId = useId();
   const ref = useRef<HTMLElement>(null);
-  const { title, icon: Icon } = TOOL[pending.tool] ?? TOOL.create_enquiry;
+  const { title, icon: Icon } = TOOL[pending.tool] ?? { title: "Approve action", icon: ShieldQuestion };
   const rows = argumentList(pending.args);
   const warnings = (pending.warnings ?? []).filter((warning) => typeof warning === "string" && warning.trim() !== "");
 

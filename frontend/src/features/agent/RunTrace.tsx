@@ -27,7 +27,7 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import {
   isWorking,
   MAX_AGENT_TEXT,
@@ -337,13 +337,16 @@ function QuestionForm({
   onReply,
   sending,
   error,
+  draft,
+  onDraft,
 }: {
   pending: PendingQuestion;
   onReply: (text: string) => void;
   sending: boolean;
   error: string | null;
+  draft: string;
+  onDraft: (text: string) => void;
 }) {
-  const [draft, setDraft] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
   const hintId = useId();
   const errorId = useId();
@@ -365,12 +368,14 @@ function QuestionForm({
 
   return (
     <form
-      className="mt-2.5 flex flex-col gap-2 rounded-lg border border-warn/40 bg-surface-2 p-3"
+      aria-label="Answer the question"
+      className="tm-enter flex flex-col gap-2 rounded-lg border border-warn/40 bg-surface-2 p-3"
       onSubmit={(event) => {
         event.preventDefault();
         send();
       }}
     >
+      <p className="tm-micro text-warn">Your answer to the question above</p>
       {pending.fields.length > 0 && (
         <p id={hintId} className="flex flex-wrap items-center gap-1.5 text-xs text-dim">
           <span>Needed:</span>
@@ -386,7 +391,7 @@ function QuestionForm({
         rows={2}
         value={draft}
         maxLength={MAX_AGENT_TEXT}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => onDraft(event.target.value)}
         onKeyDown={onKeyDown}
         aria-label="Your answer"
         aria-describedby={[pending.fields.length > 0 ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined}
@@ -414,12 +419,15 @@ export type TraceActions = {
   onReply: (text: string) => void;
   replying: boolean;
   replyError: string | null;
+  /** The answer being typed to the pending question. */
+  answerDraft: string;
+  onAnswerDraft: (text: string) => void;
   onDecide: (approve: boolean) => void;
   deciding: "approve" | "decline" | null;
   decideError: string | null;
 };
 
-function StepRow({ step, run, actions, last }: { step: Exclude<AgentStep, ToolCallStep | ToolResultStep>; run: AgentRunDetail; actions: TraceActions; last: boolean }) {
+function StepRow({ step, run, last }: { step: Exclude<AgentStep, ToolCallStep | ToolResultStep>; run: AgentRunDetail; last: boolean }) {
   const pending = run.status === "waiting_for_user" ? run.pending : null;
   switch (step.kind) {
     case "thinking":
@@ -437,26 +445,15 @@ function StepRow({ step, run, actions, last }: { step: Exclude<AgentStep, ToolCa
       if (step.payload.kind === "confirm") {
         return (
           <Row icon={ShieldQuestion} tone="warn" last={last}>
-            {active ? (
-              <ConfirmActionCard
-                pending={pending as PendingConfirm}
-                onDecide={actions.onDecide}
-                deciding={actions.deciding}
-                error={actions.decideError}
-              />
-            ) : (
-              <p className="text-[13px] leading-5 text-dim">Asked to confirm: {step.payload.action}</p>
-            )}
+            <p className="tm-micro">{active ? "Waiting for approval" : "Approval asked"}</p>
+            <p className="mt-0.5 text-[13px] leading-5 text-ink">{step.payload.action}</p>
           </Row>
         );
       }
       return (
         <Row icon={MessageCircleQuestion} tone="warn" last={last}>
-          <p className="tm-micro">Question</p>
+          <p className="tm-micro">{active ? "Question · waiting for your answer" : "Question"}</p>
           <p className="mt-0.5 text-[13px] leading-5 text-ink">{step.payload.question}</p>
-          {active && (
-            <QuestionForm pending={pending as PendingQuestion} onReply={actions.onReply} sending={actions.replying} error={actions.replyError} />
-          )}
         </Row>
       );
     }
@@ -577,25 +574,39 @@ function Working({ status }: { status: AgentRunDetail["status"] }) {
 
 /**
  * The conversation and its live trace: the request, every step in order (tool calls with their result, the
- * price check, questions, replies, decisions and the summary), the inline question or approval the run is
- * waiting on, a live line while it works and how it ended. The list is a polite live log.
+ * price check, questions, replies, decisions and the summary) in a polite live log; after it, the answer box
+ * or approval card the run is waiting on (kept out of the log so typing is never announced), a live line
+ * while it works and how it ended.
  */
 export function RunTrace({
   run,
   actions,
   onRetry,
   retrying,
+  logRef,
 }: {
   run: AgentRunDetail;
   actions: TraceActions;
   onRetry: () => void;
   retrying: boolean;
+  /** The log itself: focus returns here after an answer is sent. */
+  logRef?: Ref<HTMLDivElement>;
 }) {
   const items = traceItems(run.steps);
   const working = isWorking(run.status);
+  const pending = run.status === "waiting_for_user" ? run.pending : null;
   return (
     <div className="flex flex-col gap-3">
-      <ol role="log" aria-live="polite" aria-relevant="additions" aria-label="Plan trace" className="flex flex-col">
+      <div
+        ref={logRef}
+        tabIndex={-1}
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-label="Plan trace"
+        className="rounded-md focus:outline-2 focus:outline-offset-4 focus:outline-primary"
+      >
+        <ol className="flex flex-col">
         <Row icon={UserRound} tone="primary" last={items.length === 0}>
           <p className="tm-micro">Request</p>
           <p className="mt-1 whitespace-pre-wrap rounded-md border border-line bg-surface-2 px-3 py-2 text-[13px] leading-5 text-ink">{run.prompt}</p>
@@ -605,10 +616,29 @@ export function RunTrace({
           return item.type === "tool" ? (
             <ToolRow key={item.key} call={item.call} result={item.result} last={last} />
           ) : (
-            <StepRow key={item.key} step={item.step} run={run} actions={actions} last={last} />
+            <StepRow key={item.key} step={item.step} run={run} last={last} />
           );
         })}
-      </ol>
+        </ol>
+      </div>
+      {pending?.kind === "question" && (
+        <QuestionForm
+          pending={pending as PendingQuestion}
+          onReply={actions.onReply}
+          sending={actions.replying}
+          error={actions.replyError}
+          draft={actions.answerDraft}
+          onDraft={actions.onAnswerDraft}
+        />
+      )}
+      {pending?.kind === "confirm" && (
+        <ConfirmActionCard
+          pending={pending as PendingConfirm}
+          onDecide={actions.onDecide}
+          deciding={actions.deciding}
+          error={actions.decideError}
+        />
+      )}
       {working && <Working status={run.status} />}
       <Outcome run={run} onRetry={onRetry} retrying={retrying} />
     </div>
