@@ -220,6 +220,9 @@ function clientSearch(call: MockCall, populated: boolean) {
  * By default a brand-new, empty workspace; `populated: true` is a busy agency with a month of work.
  */
 export function commandCenterMocks({ populated = false }: { populated?: boolean } = {}): Record<string, MockHandler> {
+  // Stamped now, before the page renders: the feed's clock starts at mount, so items stamped later, at request
+  // time, would read a minute newer than their age whenever the request came more than a moment after mount.
+  const activity = activityItems();
   return {
     "GET /api/v1/dashboard/summary": (call) => {
       const range = call.search.get("range") ?? "30d";
@@ -260,7 +263,7 @@ export function commandCenterMocks({ populated = false }: { populated?: boolean 
     },
     "GET /api/v1/dashboard/activity": (call) => {
       if (!populated) return { status: 200, body: { items: [] } };
-      return { status: 200, body: { items: call.search.get("before") ? olderActivityItems() : activityItems() } };
+      return { status: 200, body: { items: call.search.get("before") ? olderActivityItems() : activity } };
     },
     "GET /api/v1/dashboard/market-pulse": {
       status: 200,
