@@ -162,7 +162,7 @@ async def test_every_kind_builds_an_overpass_query(agency, airports, respx_mock,
         ("Goa", "GOI", 15.3808),  # the city alias, not Genoa's code
         ("goa", "GOI", 15.3808),
         ("GOI", "GOI", 15.3808),
-        ("GOA", "GOA", 44.4133),  # Genoa, written explicitly as a code (in capitals)
+        ("GOA", "GOI", 15.3808),  # the alias wins over Genoa's code, even in capitals
         ("Delhi", "DEL", 28.5665),
         ("DEL", "DEL", 28.5665),
     ],
@@ -202,10 +202,24 @@ async def test_find_places_for_a_city_alias_looks_up_the_city_itself(agency, air
 
 async def test_lookup_airport_puts_a_code_in_capitals_first(agency, airports):
     async with run_context(*agency) as ctx:
-        genoa = await execute(ctx, ToolCall(id="a1", name="lookup_airport", args={"query": "GOA"}))
-        goa = await execute(ctx, ToolCall(id="a2", name="lookup_airport", args={"query": "Goa"}))
-    assert genoa.data["matches"][0]["code"] == "GOA"
-    assert goa.data["matches"][0]["code"] == "GOI"
+        delhi = await execute(ctx, ToolCall(id="a1", name="lookup_airport", args={"query": "DEL"}))
+    assert delhi.data["matches"][0]["code"] == "DEL"
+
+
+@pytest.mark.parametrize("query", ["GOA", "Goa", "goa"])
+async def test_goa_in_any_case_is_the_city_alias_not_genoa(agency, airports, query):
+    """Ruling: a code that equals a city alias is the alias ("GOA" is Goa, GOI)."""
+    async with run_context(*agency) as ctx:
+        found = await execute(ctx, ToolCall(id="a1", name="lookup_airport", args={"query": query}))
+    assert found.data["matches"][0]["code"] == "GOI"
+
+
+async def test_genoa_is_still_reachable_by_name(agency, airports):
+    async with run_context(*agency) as ctx:
+        found = await execute(
+            ctx, ToolCall(id="a1", name="lookup_airport", args={"query": "Genoa"})
+        )
+    assert found.data["matches"][0]["code"] == "GOA"
 
 
 # --- Overpass: notable places first, smaller radius in town, two calls at a time -----------

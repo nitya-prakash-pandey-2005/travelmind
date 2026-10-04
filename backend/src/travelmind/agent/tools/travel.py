@@ -10,10 +10,11 @@ Converted prices: a total shown in the agency's currency but billed by the suppl
 is marked `converted: true` with the rates' date (`fx_as_of`), its formatted amounts start with
 "≈ " as in the app, and the card also gives the supplier's own total (`supplier_total_*`).
 
-Places and codes: text in capitals ("GOA", "DEL") is an airport code; anything else is read as
-a name first, so a city alias ("Goa", "goa", "Delhi": `reference.search.CITY_ALIASES`) is that
-city's main airport, never the code it happens to spell (GOA is Genoa). The code fields here
-apply that rule before a code is checked, and `places.resolve` applies it to place names.
+Places and codes: a city alias ("Goa", "goa", "GOA", "Delhi": `reference.search.CITY_ALIASES`)
+is that city's main airport in any case, never the code it happens to spell: "GOA" is Goa (GOI),
+not Genoa, which stays reachable by name ("Genoa"). Other text in capitals ("DEL") is an airport
+code; anything else is read as a name. The code fields here apply that rule before a code is
+checked, and `places.resolve` applies it to place names.
 
 Dates count from the agency's own today (`RunContext.today`).
 """
@@ -80,13 +81,11 @@ def written_as_code(text: str) -> bool:
 
 
 def alias_code(text: object) -> str | None:
-    """The main airport of a city alias written as a name ("Goa", "goa", "New Delhi"), or None
-    (for anything else, and for text written as a code)."""
+    """The main airport of a city alias ("Goa", "goa", "GOA", "New Delhi"), or None. An alias
+    wins over the code it spells: "GOA" in capitals is Goa (GOI), not Genoa."""
     if not isinstance(text, str):
         return None
     words = " ".join(text.split())
-    if written_as_code(words):
-        return None
     codes = CITY_ALIASES.get(fold(words))
     return codes[0] if codes else None
 
@@ -154,8 +153,8 @@ async def lookup_airport(ctx: RunContext, args: LookupAirportArgs) -> dict[str, 
     index = await get_airport_index(ctx.db)
     found = [hit.airport for hit in index.search(args.query, limit=MAX_AIRPORTS)]
     query = " ".join(args.query.split())
-    exact = index.get(query) if written_as_code(query) else None
-    if exact is not None:  # a code in capitals is that airport first (GOA: Genoa)
+    exact = index.get(query) if written_as_code(query) and alias_code(query) is None else None
+    if exact is not None:  # a code in capitals is that airport first (an alias's code is not)
         found = [exact, *(a for a in found if a.iata_code != exact.iata_code)][:MAX_AIRPORTS]
     return {
         "matches": [

@@ -1,8 +1,9 @@
 """Places to visit (find_places), and turning a place name or airport code into coordinates.
 
-Geocoding (`resolve`): text in capitals that is an airport code ("GOA", "DEL") is that airport;
-a city alias written as a name ("Goa", "goa", "Delhi") is its city's main airport (GOI, DEL:
-never the code it spells); anything else is looked up with Nominatim
+Geocoding (`resolve`): a city alias in any case ("Goa", "goa", "GOA", "Delhi") is its city's
+main airport (GOI, DEL: never the code it spells, so "GOA" is Goa and Genoa is "Genoa"); other
+text in capitals that is an airport code ("DEL") is that airport; anything else is looked up
+with Nominatim
 (`{osm_nominatim_url}/search?format=jsonv2&limit=1`). For `find_places` an airport stands for
 its city (a city's sights are around its centre, not its runway): the city, or the alias as
 written, is geocoded, falling back to the airport's own coordinates.
@@ -180,8 +181,9 @@ async def resolve(ctx: RunContext, place: str, *, city_centre: bool) -> Location
     docstring). With `city_centre`, an airport stands for its city (looked up by name, the
     airport itself when that fails)."""
     text = " ".join(place.split())
-    as_code = written_as_code(text)
-    airport_code = text if as_code else alias_code(text)
+    alias = alias_code(text)  # an alias wins over the code it spells ("GOA" is Goa)
+    as_code = alias is None and written_as_code(text)
+    airport_code = text if as_code else alias
     airport = None
     if airport_code is not None:
         airport = (await get_airport_index(ctx.db)).get(airport_code)

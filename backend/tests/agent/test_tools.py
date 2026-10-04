@@ -720,9 +720,9 @@ async def test_another_agencys_records_are_not_found(airports):
 async def test_search_flights_reads_a_city_alias_before_a_code(agency, airports):
     async with run_context(*agency) as ctx:
         goa = await call(ctx, "search_flights", **flights_args(destination="goa"))
-        genoa = await call(ctx, "search_flights", **flights_args(destination="GOA"))
+        capitals = await call(ctx, "search_flights", **flights_args(destination="GOA"))
     assert goa["trip"]["destination"] == "GOI"
-    assert genoa["trip"]["destination"] == "GOA"
+    assert capitals["trip"]["destination"] == "GOI"  # ruling: the alias wins over Genoa's code
 
 
 # Converted prices: a supplier billing in USD, shown in the agency's rupees.
