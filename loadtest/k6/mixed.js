@@ -25,7 +25,7 @@ import { check, sleep } from 'k6';
 import { SharedArray } from 'k6/data';
 import { Gauge } from 'k6/metrics';
 
-const BASE = __ENV.BASE_URL || 'http://nginx';
+const BASE = __ENV.BASE_URL || 'http://nginx:8080';
 const PASSWORD = __ENV.LOADTEST_PASSWORD || 'loadtest-pass-2026';
 const SESSIONS = parseInt(__ENV.SESSIONS || '200', 10);
 const THINK_MIN = parseFloat(__ENV.THINK_MIN || '1');

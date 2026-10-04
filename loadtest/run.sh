@@ -34,6 +34,7 @@ MIN_FREE_MB="${MIN_FREE_MB:-400}"
 K6_NAME="${PROJECT}-k6"
 RESULTS="$ROOT/loadtest/results"
 PG="${PROJECT}-postgres-1"
+PGB="${PROJECT}-pgbouncer-1"
 API="${PROJECT}-api-1"
 NGINX="${PROJECT}-nginx-1"
 
@@ -65,8 +66,8 @@ sample() {
     echo "=== $(stamp) host_free_mb=$(free_mb)"
     docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>&1 || true
     echo "--- pgbouncer SHOW POOLS"
-    docker exec "$PG" sh -c \
-      'PGPASSWORD="$OWNER_DB_PASSWORD" psql -h pgbouncer -U travelmind_owner -d pgbouncer -c "SHOW POOLS"' 2>&1 || true
+    docker exec "$PGB" sh -c \
+      'PGPASSWORD="$PGBOUNCER_STATS_PASSWORD" psql -h 127.0.0.1 -U travelmind_stats -d pgbouncer -c "SHOW POOLS"' 2>&1 || true
     echo "--- postgres connections by state"
     docker exec "$PG" psql -U postgres -d travelmind -Atc \
       "select coalesce(state,'(bg)'), count(*) from pg_stat_activity group by 1 order by 1" 2>&1 || true
@@ -123,7 +124,7 @@ sample
 docker rm -f "$K6_NAME" >/dev/null 2>&1 || true
 docker run -d --name "$K6_NAME" --network "$NETWORK" \
   -v "$MOUNT:/scripts" \
-  -e LT_STAGES="$STAGES" -e RUN_ID="$RUN_ID" -e BASE_URL="${BASE_URL:-http://nginx}" \
+  -e LT_STAGES="$STAGES" -e RUN_ID="$RUN_ID" -e BASE_URL="${BASE_URL:-http://nginx:8080}" \
   -e LOADTEST_PASSWORD="${LOADTEST_PASSWORD:-}" -e SESSIONS="${SESSIONS:-200}" -e LOGIN_BATCH="${LOGIN_BATCH:-4}" \
   -e THINK_MIN="${THINK_MIN:-1}" -e THINK_MAX="${THINK_MAX:-3}" \
   "$K6_IMAGE" run --quiet /scripts/k6/mixed.js >/dev/null

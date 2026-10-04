@@ -300,9 +300,8 @@ K6_STAGES=full bash loadtest/run.sh      # the 1000-VU ramp
 K6_STAGES=200:1m,200:3m,0:30s bash loadtest/run.sh   # any "target:duration" list
 ```
 
-`run.sh` also samples `SHOW POOLS` as the owner role, which PgBouncer no longer accepts; that
-sample now prints an authentication error (the run carries on) until it switches to the
-`travelmind_stats` command above.
+`run.sh` samples `SHOW POOLS` as the read-only `travelmind_stats` user, inside the pgbouncer
+container, and k6 targets `http://nginx:8080`.
 
 Results go to `loadtest/results/` (only `*-summary.json` is committed). Reports live in
 `docs/perf/`.
