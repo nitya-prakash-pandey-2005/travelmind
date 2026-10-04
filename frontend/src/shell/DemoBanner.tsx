@@ -29,9 +29,11 @@ export function DemoBanner() {
     <div
       role="region"
       aria-label="Demo workspace"
-      className="flex min-h-10 shrink-0 items-center gap-3 border-b border-warn/25 bg-warn/[0.07] px-4 py-1.5 lg:px-6"
+      className="relative flex min-h-11 shrink-0 items-center gap-3 border-b border-warn/25 bg-warn/[0.07] px-(--gutter) py-1.5"
     >
-      <FlaskConical size={14} aria-hidden="true" className="shrink-0 text-warn" />
+      <span aria-hidden="true" className="tone-fill grid h-7 w-7 shrink-0 place-items-center rounded-[9px] border text-warn">
+        <FlaskConical size={14} />
+      </span>
       <p className="min-w-0 flex-1 text-xs leading-4 text-ink sm:text-[13px] sm:leading-5">
         {demoNotice(daysUntil(agency.data?.demo_expires_at))}
       </p>

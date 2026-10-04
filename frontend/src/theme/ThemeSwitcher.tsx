@@ -284,13 +284,13 @@ export function ThemeSwitcher({ align = "end", hideNameBelow, className }: Theme
         onClick={() => setOpen((value) => !value)}
         onKeyDown={onTriggerKeyDown}
         className={cn(
-          "inline-flex h-8 items-center gap-2 rounded-md px-1.5 text-[13px] font-medium text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink",
-          open && "bg-hover text-ink",
+          "inline-flex h-9 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-dim transition-colors duration-150 ease-tm hover:bg-card-2 hover:text-ink",
+          open && "bg-card-2 text-ink",
         )}
       >
         <ThemeSwatch theme={meta} className="h-4 w-6" />
         <span className={cn(hideNameBelow === "sm" && "max-sm:hidden", hideNameBelow === "lg" && "max-lg:hidden")}>{meta.name}</span>
-        <ChevronDown size={14} aria-hidden="true" className="text-faint" />
+        <ChevronDown size={14} aria-hidden="true" className={cn("text-faint", hideNameBelow && "max-sm:hidden")} />
       </button>
       {open && (
         <div

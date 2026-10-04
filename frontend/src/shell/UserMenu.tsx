@@ -30,7 +30,7 @@ export function UserMenu({ me }: { me: Me }) {
         label={me.user.full_name}
         items={items}
         triggerVariant="ghost"
-        triggerClassName="pl-1 pr-1 lg:pr-1.5"
+        triggerClassName="h-10 rounded-[14px] pl-1 pr-1 lg:border lg:border-line lg:bg-card lg:pr-2.5"
         header={
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-[13px] font-medium text-ink">{me.user.full_name}</span>
@@ -39,10 +39,10 @@ export function UserMenu({ me }: { me: Me }) {
         }
         trigger={
           <>
-            <Avatar name={me.user.full_name} size="sm" />
+            <Avatar name={me.user.full_name} size="md" />
             <span className="hidden min-w-0 flex-col items-start leading-none lg:flex">
-              <span className="max-w-36 truncate text-xs font-medium leading-4 text-ink">{me.user.full_name}</span>
-              <span className="text-[11px] capitalize leading-3.5 text-faint">{me.user.role}</span>
+              <span className="max-w-36 truncate text-[13px] font-semibold leading-4 text-ink">{me.user.full_name}</span>
+              <span className="text-[11px] capitalize leading-4 text-faint">{me.user.role}</span>
             </span>
             <ChevronDown size={14} aria-hidden="true" className="hidden text-faint lg:block" />
           </>

@@ -14,6 +14,8 @@
   background: var(--bg);
 }
 .shell > :not(.tm-ambient) { position: relative; z-index: 1; }
+/* Above the main column, so the icon rail's tooltips paint over the page. */
+.shell > .sidebar { z-index: 2; }
 
 /* ---------- sidebar ---------- */
 .sidebar {

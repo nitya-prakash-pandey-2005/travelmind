@@ -310,10 +310,10 @@ input[type="range"].slider::-moz-range-thumb { width: 16px; height: 16px; border
 
 /* ---------- list rows ---------- */
 .list { display: flex; flex-direction: column; }
-.list > .li { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); min-width: 0; }
-.list > .li:last-child { border-bottom: 0; }
-.list > :is(button, a).li { width: 100%; text-align: left; border-radius: 10px; transition: background 0.15s; padding-left: 8px; padding-right: 8px; }
-.list > :is(button, a).li:hover { background: var(--surface-2); }
+.list .li { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); min-width: 0; }
+.list > .li:last-child, .list > :last-child > .li { border-bottom: 0; }
+.list :is(button, a).li { width: 100%; text-align: left; border-radius: 10px; transition: background 0.15s; padding-left: 8px; padding-right: 8px; }
+.list :is(button, a).li:hover { background: var(--surface-2); }
 .li .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .li .s { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 

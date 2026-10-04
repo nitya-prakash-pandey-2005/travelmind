@@ -327,3 +327,78 @@ test("Ctrl+K does nothing while a dialog is open", async () => {
   await user.keyboard("{Control>}k{/Control}");
   expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
 });
+
+/** A phone-sized window for the shell's layout switch (the kit's 900 px breakpoint). */
+function stubPhone() {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query.includes("max-width: 900px"),
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  }));
+}
+
+test("desktop has no tab bar", async () => {
+  mockApi(withSession(ME_OWNER, { ...commandCenterMocks() }));
+  renderApp("/app");
+  await screen.findByRole("navigation", { name: "Primary" });
+  expect(screen.queryByRole("navigation", { name: "Tabs" })).not.toBeInTheDocument();
+});
+
+test("phones get a bottom tab bar, the page title in the top bar and a More sheet with every other destination", async () => {
+  stubPhone();
+  mockApi(withSession(ME_DEMO, { ...commandCenterMocks() }));
+  const { user, router } = renderApp("/app");
+  const tabs = await screen.findByRole("navigation", { name: "Tabs" });
+  expect(within(tabs).getAllByRole("link").map((link) => link.textContent)).toEqual(["Command", "Pipeline", "Agent", "Quotes"]);
+  expect(within(tabs).getByRole("link", { name: "Command" })).toHaveAttribute("aria-current", "page");
+  const banner = screen.getByRole("banner");
+  expect(within(banner).getByText("Command Center")).toBeInTheDocument();
+  expect(within(banner).getByText("Operate")).toBeInTheDocument();
+  expect(within(banner).getByRole("button", { name: /Theme: / })).toBeInTheDocument();
+  expect(within(banner).getByRole("button", { name: /Notifications/ })).toBeInTheDocument();
+  expect(within(banner).getByRole("button", { name: /Search clients, enquiries, quotes/ })).toBeInTheDocument();
+
+  await user.click(within(tabs).getByRole("link", { name: "Pipeline" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/pipeline"));
+  expect(within(screen.getAllByRole("banner")[0] as HTMLElement).getByText("Pipeline")).toBeInTheDocument();
+
+  const more = within(tabs).getByRole("button", { name: "More" });
+  await user.click(more);
+  const sheet = await screen.findByRole("dialog", { name: "More" });
+  // The workspace moves here from the desktop top bar.
+  expect(within(sheet).getByText(ME_DEMO.agency.name)).toBeInTheDocument();
+  expect(within(sheet).getByText("Demo")).toBeInTheDocument();
+  expect(within(sheet).getByRole("button", { name: "Help" })).toBeInTheDocument();
+  expect(within(sheet).getAllByRole("link").map((link) => link.textContent)).toEqual([
+    "Clients",
+    "Fare search",
+    "Hotel search",
+    "Route intel",
+    "Team",
+    "Suppliers",
+    "Settings",
+    "Design system",
+  ]);
+  await user.click(within(sheet).getByRole("link", { name: "Settings" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/app/settings"));
+  expect(screen.queryByRole("dialog", { name: "More" })).not.toBeInTheDocument();
+  expect(within(screen.getByRole("navigation", { name: "Tabs" })).getByRole("button", { name: "More" })).toHaveClass("on");
+});
+
+test("every sidebar destination is reachable on a phone, from a tab or the More sheet", async () => {
+  stubPhone();
+  mockApi(withSession(ME_OWNER, { ...commandCenterMocks() }));
+  const { user } = renderApp("/app");
+  const tabs = await screen.findByRole("navigation", { name: "Tabs" });
+  const tabNames = within(tabs).getAllByRole("link").map((link) => link.textContent);
+  await user.click(within(tabs).getByRole("button", { name: "More" }));
+  const sheet = await screen.findByRole("dialog", { name: "More" });
+  const moreNames = within(sheet).getAllByRole("link").map((link) => link.textContent);
+  const reachable = new Set([...tabNames.map((name) => (name === "Command" ? "Command Center" : name)), ...moreNames]);
+  for (const page of ALL_PAGES) expect(reachable, page).toContain(page);
+});
