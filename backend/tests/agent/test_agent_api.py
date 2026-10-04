@@ -579,11 +579,13 @@ async def test_a_revoked_session_closes_its_stream(client, monkeypatch):
 
 async def test_without_pubsub_the_stream_backs_off_its_database_reads(monkeypatch):
     """Redis down: the stream polls the database, 1 s growing to 5 s (with jitter)."""
-    delays = [events.poll_delay(n) for n in range(6)]
-    assert 0.8 <= delays[0] <= 1.2
-    assert all(later >= earlier * 0.8 for earlier, later in zip(delays, delays[1:], strict=False))
-    assert all(d <= events.POLL_MAX_S * 1.2 for d in delays)
-    assert delays[-1] >= events.POLL_MAX_S * 0.8
+    monkeypatch.setattr(events.random, "uniform", lambda low, high: 1.0)
+    assert [events.poll_delay(n) for n in range(5)] == [1.0, 2.0, 4.0, 5.0, 5.0]
+    monkeypatch.undo()
+    for attempt in range(6):
+        base = min(events.POLL_MAX_S, events.POLL_FIRST_S * 2**attempt)
+        for _ in range(20):
+            assert base * 0.8 <= events.poll_delay(attempt) <= base * 1.2  # jittered
 
 
 # --- the worker and shutdown ----------------------------------------------------------------
