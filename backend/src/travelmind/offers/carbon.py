@@ -18,6 +18,7 @@ from redis.exceptions import RedisError
 from travelmind.http import get_http_client
 from travelmind.metrics import supplier_call
 from travelmind.offers.models import FlightOffer, Segment
+from travelmind.resilience import CircuitOpen, guard_for
 
 TIM_BASE_URL = "https://travelimpactmodel.googleapis.com/v1"
 SUPPLIER = "google_tim"  # metrics label, as in the supplier status list
@@ -201,16 +202,20 @@ class TimClient:
 
     async def _post(self, method: str, body: dict[str, Any]) -> dict[str, Any] | None:
         try:
-            with supplier_call(SUPPLIER):
-                client = get_http_client("tim", timeout=httpx.Timeout(self._timeout_s))
-                response = await client.post(
-                    f"{self._base_url}/flights:{method}",
-                    headers={"X-Goog-Api-Key": self._api_key},
-                    json=body,
-                    timeout=self._timeout_s,
-                )
-                response.raise_for_status()
-                payload = response.json()
+            async with guard_for(SUPPLIER).call():
+                with supplier_call(SUPPLIER):
+                    client = get_http_client("tim", timeout=httpx.Timeout(self._timeout_s))
+                    response = await client.post(
+                        f"{self._base_url}/flights:{method}",
+                        headers={"X-Goog-Api-Key": self._api_key},
+                        json=body,
+                        timeout=self._timeout_s,
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+        except CircuitOpen as exc:  # skipped, not called: offers keep what they have
+            log.info("tim_skipped", method=method, reason=exc.reason)
+            return None
         except httpx.HTTPStatusError as exc:
             # Logged by status only: exception text carries request details we don't want in logs.
             log.warning("tim_unavailable", method=method, status=exc.response.status_code)

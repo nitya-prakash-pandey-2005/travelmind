@@ -89,7 +89,9 @@ QUEUE_DEPTH = Gauge(
 
 
 def observe_supplier(supplier: str, outcome: str, seconds: float) -> None:
-    """Record one outbound call. `outcome` is `ok`, `error`, `timeout` or `cancelled`."""
+    """Record one outbound call. `outcome` is `ok`, `error`, `timeout` or `cancelled`, or
+    `circuit_open` when the supplier's guard refused the call (`travelmind.resilience`; the
+    seconds are the time spent waiting for a slot)."""
     SUPPLIER_DURATION.labels(supplier=supplier, outcome=outcome).observe(seconds)
 
 

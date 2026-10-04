@@ -12,9 +12,10 @@ Redis is an optimisation, never a dependency:
   deadline, `read_cache_timeout_ms` (150 ms), far below the shared pool's socket timeout. A hung
   Redis costs a request one such timeout at most: a failed version read skips the cache for that
   request, and a failed GET goes straight to the loader.
-- A process-wide circuit breaker: after `read_cache_breaker_failures` (3) consecutive errors or
-  timeouts it skips Redis for `read_cache_breaker_cooldown_s` (10 s), then lets one trial call
-  through (half-open). The trial's success closes it; its failure opens it again.
+- A process-wide circuit breaker (`resilience.CircuitBreaker`, as the supplier guards use):
+  after `read_cache_breaker_failures` (3) consecutive errors or timeouts it skips Redis for
+  `read_cache_breaker_cooldown_s` (10 s), then lets one trial call through (half-open). The
+  trial's success closes it; its failure opens it again.
 - Any failure, or a call skipped by the open breaker, falls through to the loader and counts as
   `error`. The `read_cache_unavailable` warning (error type only) is logged once per opening.
 
@@ -42,7 +43,6 @@ doesn't empty the agency's cache every few seconds.
 import asyncio
 import contextlib
 import secrets
-import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -57,6 +57,7 @@ from travelmind.cache import RedisClient
 from travelmind.config import get_settings
 from travelmind.db import DbSession
 from travelmind.metrics import CACHE_REQUESTS
+from travelmind.resilience import CircuitBreaker
 
 __all__ = [
     "CACHE_PREFIX",
@@ -107,49 +108,6 @@ _CHANGED = "tm_changed_agencies"  # AsyncSession.info key
 # Redis-py raises RedisError subclasses; a socket can also surface a bare OSError, and a missed
 # deadline is a TimeoutError (an OSError too).
 _REDIS_ERRORS = (RedisError, OSError)
-
-
-class CircuitBreaker:
-    """Consecutive-failure breaker. Closed: every call goes through. After `failures`
-    consecutive failures it opens and refuses calls for `cooldown_s`; then one trial call goes
-    through (half-open) while the others keep being refused, and its outcome closes or reopens
-    it. Single event loop, so no locking."""
-
-    def __init__(
-        self, *, failures: int, cooldown_s: float, clock: Callable[[], float] = time.monotonic
-    ) -> None:
-        self._threshold = max(1, failures)
-        self._cooldown_s = cooldown_s
-        self._clock = clock
-        self._failures = 0
-        self._open_until: float | None = None
-        self._trial = False
-
-    def allow(self) -> bool:
-        if self._open_until is None:
-            return True
-        if self._trial or self._clock() < self._open_until:
-            return False
-        self._trial = True
-        return True
-
-    def record_success(self) -> None:
-        self._failures = 0
-        self._open_until = None
-        self._trial = False
-
-    def record_failure(self) -> bool:
-        """Count a failure; True when it opened the breaker (closed or half-open to open)."""
-        self._failures += 1
-        if self._trial or (self._open_until is None and self._failures >= self._threshold):
-            self._trial = False
-            self._open_until = self._clock() + self._cooldown_s
-            return True
-        return False
-
-    def abandon(self) -> None:
-        """A call ended without an outcome (cancelled, say): let another trial through."""
-        self._trial = False
 
 
 _breaker: CircuitBreaker | None = None

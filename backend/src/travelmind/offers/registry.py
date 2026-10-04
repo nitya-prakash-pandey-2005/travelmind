@@ -5,6 +5,7 @@ from travelmind.offers.schemas import SupplierStatusOut
 from travelmind.offers.suppliers.base import AirportLookup, FlightSupplier
 from travelmind.offers.suppliers.duffel import DuffelFlightSupplier
 from travelmind.offers.suppliers.sandbox import SandboxFlightSupplier
+from travelmind.resilience import breaker_state
 
 
 def flight_suppliers(settings: Settings, lookup: AirportLookup) -> list[FlightSupplier]:
@@ -27,8 +28,9 @@ def _mode(secret: str, test_prefix: str) -> Literal["live", "test"] | None:
 
 
 def supplier_statuses(settings: Settings) -> list[SupplierStatusOut]:
-    """What is connected and in which mode. Never includes a key or any part of one."""
-    return [
+    """What is connected, in which mode, and this process's breaker state for it. Never
+    includes a key or any part of one."""
+    statuses = [
         SupplierStatusOut(
             code="duffel",
             name="Duffel",
@@ -81,3 +83,4 @@ def supplier_statuses(settings: Settings) -> list[SupplierStatusOut]:
             detail="Daily euro reference rates for approximate converted prices.",
         ),
     ]
+    return [s.model_copy(update={"breaker": breaker_state(s.code)}) for s in statuses]

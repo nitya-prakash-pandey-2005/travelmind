@@ -66,6 +66,13 @@ class Settings(BaseSettings):
     sandbox_supplier: Annotated[bool | None, BeforeValidator(_blank_to_none)] = None
     fx_enabled: bool = True
     search_timeout_seconds: float = 25.0
+    # Per-supplier guards (travelmind.resilience), per process: at most this many calls in flight
+    # to one supplier (waiting up to `acquire_timeout_s` for a slot), and a breaker that skips
+    # the supplier for `reset_s` after `threshold` consecutive failures.
+    supplier_max_concurrent: int = 20
+    supplier_acquire_timeout_s: float = 2.0
+    supplier_breaker_threshold: int = 5
+    supplier_breaker_reset_s: float = 30.0
     search_max_per_minute: int = 30
     reprice_max_per_minute: int = 60  # price checks call the supplier too; a separate budget
     public_quote_max_per_minute: int = 60  # client quote page: per network and per link

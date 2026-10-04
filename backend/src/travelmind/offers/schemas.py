@@ -66,3 +66,5 @@ class SupplierStatusOut(BaseModel):
     connected: bool
     mode: Literal["live", "test", "sandbox"] | None
     detail: str
+    # This API process's circuit breaker for the supplier (each worker has its own).
+    breaker: Literal["closed", "open", "half_open"] = "closed"

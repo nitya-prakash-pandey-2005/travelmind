@@ -49,6 +49,7 @@ from travelmind.offers.search import SourceStatus, fan_out, rank
 from travelmind.offers.suppliers.base import FlightSupplier, SupplierError
 from travelmind.reference.search import AirportRecord
 from travelmind.reference.service import get_airport_index
+from travelmind.resilience import CircuitOpen, guarded
 from travelmind.workspace.activity import record_activity
 from travelmind.workspace.models import SearchSourceResult
 
@@ -420,9 +421,13 @@ async def reprice_offer(
     if supplier is None:
         raise SupplierGone()
     try:
-        with supplier_call(supplier.code):
-            async with asyncio.timeout(REPRICE_TIMEOUT_SECONDS):
-                fresh = await supplier.price(cached.supplier_ref)
+        async with guarded(supplier.code):
+            with supplier_call(supplier.code):
+                async with asyncio.timeout(REPRICE_TIMEOUT_SECONDS):
+                    fresh = await supplier.price(cached.supplier_ref)
+    except CircuitOpen as exc:  # the supplier was skipped, not called
+        log.warning("reprice_skipped", supplier=supplier.code, reason=exc.reason)
+        raise PriceCheckFailed(exc.message) from None
     except TimeoutError:
         log.warning("reprice_timeout", supplier=supplier.code)
         raise PriceCheckFailed("Couldn't confirm the price in time. Try again.") from None
