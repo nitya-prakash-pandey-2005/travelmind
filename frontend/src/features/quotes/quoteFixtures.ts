@@ -1,14 +1,18 @@
 import type { FlightOffer } from "../../api/offers";
 import type { QuoteClientRef, QuoteDetail, QuoteList, QuoteOption, QuoteStatus, QuoteSummary, QuoteVersion } from "../../api/quotes";
+import { isoDateFromNow } from "../../lib/dates";
 import { makeOffer, segment } from "../../test/offerFixtures";
 
 /** Test data for the quote screens, field for field with the backend's quote schemas. */
 
 const DAY_MS = 86_400_000;
 
-/** A calendar date `days` from today, YYYY-MM-DD. */
+/**
+ * A calendar date `days` from today, YYYY-MM-DD, in the local time zone (as the screens count days). A UTC date
+ * would be a day behind between local midnight and the UTC offset, e.g. 00:00-05:30 in India.
+ */
 export function dayFromToday(days: number): string {
-  return new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10);
+  return isoDateFromNow(days);
 }
 
 /** An ISO timestamp `minutes` ago. */
