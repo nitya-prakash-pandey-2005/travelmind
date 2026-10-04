@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ChevronDown, Search } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, Search, X } from "lucide-react";
 import { useId, useState } from "react";
 import type { Cabin, FlightSearchRequest } from "../../api/offers";
 import { isoDateFromNow } from "../../lib/dates";
@@ -8,6 +8,7 @@ import { cn } from "../../ui/cn";
 import { FIELD_LABEL, TextField } from "../../ui/TextField";
 import { AirportPicker } from "../airports/AirportPicker";
 import { routeStore, useRouteSelection } from "../route/routeStore";
+import { MAX_PASSENGERS } from "./fareSearchParams";
 
 export const CABINS: { value: Cabin; label: string }[] = [
   { value: "economy", label: "Economy" },
@@ -22,9 +23,6 @@ const COMPACT_CONTROL = cn(
   "transition-colors duration-150 ease-tm hover:border-faint focus:border-primary",
 );
 
-/** Travellers per search (the field's max). */
-const MAX_ADULTS = 9;
-
 /**
  * The fare search bar: adults and cabin on a toolbar, then route, dates and the scan button in one row on
  * laptops. The route takes the spare width; the dates wrap under it on tablets and everything stacks on phones.
@@ -36,16 +34,22 @@ export function FareSearchForm({
 }: {
   busy: boolean;
   onSearch: (request: FlightSearchRequest) => void;
-  /** Starting values, e.g. an enquiry's trip; read when the form mounts. */
-  initial?: { depart?: string; returning?: string; adults?: number; cabin?: Cabin };
+  /**
+   * Starting values, e.g. an enquiry's trip; read when the form mounts. Children (their ages) come only
+   * from the trip: the form shows them and can drop them, but has no field to add them.
+   */
+  initial?: { depart?: string; returning?: string; adults?: number; children?: readonly number[]; cabin?: Cabin };
 }) {
   const id = useId();
   const { origin, destination } = useRouteSelection();
   const [departure, setDeparture] = useState(() => initial.depart ?? isoDateFromNow(14));
   const [returning, setReturning] = useState(() => initial.returning ?? "");
   // A draft string so the field can be cleared and retyped; it is clamped on blur and on submit.
-  const [adults, setAdults] = useState(() => String(initial.adults ?? 1));
+  const [adults, setAdults] = useState(() => String(Math.min(initial.adults ?? 1, MAX_PASSENGERS - (initial.children?.length ?? 0))));
   const [cabin, setCabin] = useState<Cabin>(() => initial.cabin ?? "economy");
+  const [children, setChildren] = useState<readonly number[]>(() => initial.children ?? []);
+  // Adults fill the seats the children leave.
+  const maxAdults = MAX_PASSENGERS - children.length;
 
   const sameAirport = origin !== null && destination !== null && origin.iata_code === destination.iata_code;
   const departsInPast = departure !== "" && departure < isoDateFromNow(0);
@@ -60,7 +64,7 @@ export function FareSearchForm({
       onSubmit={(event) => {
         event.preventDefault();
         if (!ready || !origin || !destination) return;
-        const travellers = clampGuests(adults, MAX_ADULTS);
+        const travellers = clampGuests(adults, maxAdults);
         setAdults(String(travellers));
         onSearch({
           origin: origin.iata_code,
@@ -68,7 +72,7 @@ export function FareSearchForm({
           departure_date: departure,
           return_date: returning || null,
           adults: travellers,
-          children_ages: [],
+          children_ages: [...children],
           cabin,
           max_connections: 1,
         });
@@ -84,13 +88,26 @@ export function FareSearchForm({
             id={`${id}-adults`}
             type="number"
             min={1}
-            max={MAX_ADULTS}
+            max={maxAdults}
             value={adults}
             onChange={(e) => setAdults(e.target.value)}
-            onBlur={() => setAdults(String(clampGuests(adults, MAX_ADULTS)))}
+            onBlur={() => setAdults(String(clampGuests(adults, maxAdults)))}
             className={cn(COMPACT_CONTROL, "w-16 font-mono")}
           />
         </div>
+        {children.length > 0 && (
+          <div className="flex items-center gap-1">
+            <p className="flex items-center gap-2">
+              <span className={FIELD_LABEL}>Children</span>
+              <span className="font-mono text-[13px] text-ink">
+                {`${children.length} (age${children.length === 1 ? "" : "s"} ${children.join(", ")})`}
+              </span>
+            </p>
+            <Button variant="ghost" size="sm" iconOnly aria-label="Remove children" onClick={() => setChildren([])}>
+              <X size={14} aria-hidden="true" />
+            </Button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <label htmlFor={`${id}-cabin`} className={FIELD_LABEL}>
             Cabin

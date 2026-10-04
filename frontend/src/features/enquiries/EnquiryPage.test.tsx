@@ -98,8 +98,10 @@ test("the header, trip, quotes and timeline describe the enquiry", async () => {
   expect(within(timeline).getByText("New enquiry E-0005 · DEL → BOM")).toBeInTheDocument();
 });
 
-test("Scan fares opens Fare search with the trip filled in", async () => {
-  const { user, router } = enquiryPage();
+test("Scan fares opens Fare search with the whole trip filled in: return date and children too", async () => {
+  const { user, router } = enquiryPage({
+    "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, children_ages: [4, 11] } },
+  });
   const link = await screen.findByRole("link", { name: "Scan fares" });
   const href = new URL(link.getAttribute("href") ?? "", "http://localhost");
   expect(href.pathname).toBe("/app/fares");
@@ -107,11 +109,22 @@ test("Scan fares opens Fare search with the trip filled in", async () => {
     origin: "DEL",
     destination: "BOM",
     depart: "2026-11-20",
+    return: "2026-11-27",
     adults: "2",
+    children: "[4,11]",
     cabin: "business",
   });
   await user.click(link);
   await waitFor(() => expect(router.state.location.pathname).toBe("/app/fares"));
+  expect(router.state.location.search).toMatchObject({ return: "2026-11-27", children: [4, 11] });
+});
+
+test("a one-way trip for adults only leaves the return date and children out of the link", async () => {
+  enquiryPage({ "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, return_date: null } } });
+  const link = await screen.findByRole("link", { name: "Scan fares" });
+  const params = new URL(link.getAttribute("href") ?? "", "http://localhost").searchParams;
+  expect(params.has("return")).toBe(false);
+  expect(params.has("children")).toBe(false);
 });
 
 test("quote values and the budget show in whole units", async () => {
@@ -125,7 +138,8 @@ test("quote values and the budget show in whole units", async () => {
   const trip = screen.getByRole("region", { name: "Trip" });
   expect(within(trip).getByText("₹60,000")).toBeInTheDocument();
   expect(trip).not.toHaveTextContent("₹60,000.49");
-  expect(screen.getByRole("region", { name: "Enquiry figures" })).toHaveTextContent("₹25,772");
+  // Headline tiles are compact, like every other KPI tile.
+  expect(within(screen.getByRole("region", { name: "Enquiry figures" })).getByRole("group", { name: /^Latest quote: ₹25\.8K/ })).toBeInTheDocument();
 });
 
 test("Create quote opens the new-quote dialog for this enquiry, then starts the quote and opens it", async () => {
@@ -165,6 +179,35 @@ test("Create quote opens the new-quote dialog for this enquiry, then starts the 
     markup_kind: "percent",
     markup_value: 750,
   });
+});
+
+test("a lost enquiry can't be quoted until it is reopened", async () => {
+  const { user } = enquiryPage({
+    "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, status: "lost", lost_reason: "Went with another agency", closed_at: "2026-10-02T09:00:00Z" } },
+  });
+  const create = await screen.findByRole("button", { name: "Create quote" });
+  expect(create).toBeDisabled();
+  expect(create).toHaveAccessibleDescription("Reopen the enquiry to quote again.");
+  const quotes = screen.getByRole("region", { name: "Quotes" });
+  const another = await within(quotes).findByRole("button", { name: "New quote" });
+  expect(another).toBeDisabled();
+  expect(another).toHaveAccessibleDescription("Reopen the enquiry to quote again.");
+  await user.click(create);
+  expect(screen.queryByRole("dialog", { name: "New quote" })).not.toBeInTheDocument();
+});
+
+test("a won enquiry can't be quoted again, even from its empty quotes list", async () => {
+  enquiryPage({
+    "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, status: "won", closed_at: "2026-10-02T09:00:00Z" } },
+    "GET /api/v1/quotes": { status: 200, body: { items: [], total: 0 } },
+  });
+  const header = await screen.findByRole("button", { name: "Create quote" });
+  expect(header).toBeDisabled();
+  expect(header).toHaveAccessibleDescription("This enquiry is won. Add a new enquiry to quote another trip.");
+  const quotes = screen.getByRole("region", { name: "Quotes" });
+  const empty = await within(quotes).findByRole("button", { name: "Create quote" });
+  expect(empty).toBeDisabled();
+  expect(empty).toHaveAccessibleDescription("This enquiry is won. Add a new enquiry to quote another trip.");
 });
 
 test("Edit saves only the changed fields", async () => {

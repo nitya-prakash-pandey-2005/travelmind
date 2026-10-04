@@ -33,7 +33,7 @@ test("the list shows every client with company, email, tags, counts and won valu
 
   const figures = screen.getByRole("region", { name: "Client figures" });
   expect(within(figures).getByRole("group", { name: /^Clients: 3/ })).toBeInTheDocument();
-  expect(within(figures).getByRole("group", { name: /^Won value: ₹45,200/ })).toBeInTheDocument();
+  expect(within(figures).getByRole("group", { name: /^Won value: ₹45\.2K/ })).toBeInTheDocument();
 });
 
 test("search and the tag filter ask the server and narrow the rows", async () => {

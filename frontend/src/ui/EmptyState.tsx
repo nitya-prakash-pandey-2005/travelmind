@@ -1,9 +1,18 @@
 import { Link, type LinkProps } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
+import { useId } from "react";
 import { Button, buttonClasses } from "./Button";
 import { cn } from "./cn";
 
-export type EmptyStateAction = { label: string } & ({ onClick: () => void; to?: never } | { to: LinkProps["to"]; onClick?: never });
+export type EmptyStateAction = { label: string } & (
+  | {
+      onClick: () => void;
+      to?: never;
+      /** Shown under the button, which is then disabled and described by it. */
+      disabledReason?: string | null;
+    }
+  | { to: LinkProps["to"]; onClick?: never; disabledReason?: never }
+);
 
 type EmptyStateProps = {
   icon?: LucideIcon;
@@ -16,6 +25,8 @@ type EmptyStateProps = {
 
 /** Empty state: what will appear here, why it is empty, and the one action that fills it. */
 export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps) {
+  const reasonId = useId();
+  const reason = action?.disabledReason;
   return (
     <div role="status" className={cn("flex flex-col items-center gap-3 px-4 py-8 text-center", className)}>
       {Icon && (
@@ -36,9 +47,16 @@ export function EmptyState({ icon: Icon, title, description, action, className }
             {action.label}
           </Link>
         ) : (
-          <Button size="sm" onClick={action.onClick} className="mt-1">
-            {action.label}
-          </Button>
+          <>
+            <Button size="sm" onClick={action.onClick} className="mt-1" disabled={Boolean(reason)} aria-describedby={reason ? reasonId : undefined}>
+              {action.label}
+            </Button>
+            {reason && (
+              <p id={reasonId} className="text-xs leading-4 text-dim">
+                {reason}
+              </p>
+            )}
+          </>
         ))}
     </div>
   );

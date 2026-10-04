@@ -2,7 +2,6 @@ import type { EnquiryOut, EnquiryStatus } from "../../api/enquiries";
 import { ENQUIRY_TRANSITIONS } from "../../api/enquiries";
 import type { QuoteSummary } from "../../api/quotes";
 import { formatDayMonth } from "../../lib/format";
-import { currencyExponent, formatMoney } from "../../lib/money";
 import { STATUS_PILL } from "../../ui/StatusPill";
 
 /** Board order: the stages an enquiry moves through, then the two ways it closes. */
@@ -85,10 +84,4 @@ export function latestQuotes(quotes: readonly QuoteSummary[]): Map<string, Quote
 /** The value an enquiry adds to its column: its latest quote's cheapest option, in the agency currency only. */
 export function quotedValue(quote: QuoteSummary | undefined, currency: string): number {
   return quote && quote.currency === currency && quote.min_sell_minor !== null ? quote.min_sell_minor : 0;
-}
-
-/** A board figure in whole units: "₹2,16,804" rather than "₹2,16,804.38". */
-export function formatWholeMoney(minor: number, currency: string): string {
-  const scale = 10 ** currencyExponent(currency);
-  return formatMoney({ amount_minor: Math.round(minor / scale) * scale, currency });
 }

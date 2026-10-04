@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { clientsQueryOptions, type ClientOut } from "../../api/clients";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { formatDate, formatDayMonth, formatNumber } from "../../lib/format";
+import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { Avatar } from "../../ui/Avatar";
 import { Badge } from "../../ui/Badge";
@@ -16,7 +17,6 @@ import { EmptyState } from "../../ui/EmptyState";
 import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { PanelError } from "../command/PanelError";
-import { formatWholeMoney } from "../pipeline/enquiryFacts";
 import { ClientFormDrawer } from "./ClientFormDrawer";
 import { kindLabel, tagCounts, tripRoute, tripWhen } from "./clientFacts";
 
@@ -117,7 +117,7 @@ function ClientFigures({ figures, currency, loading }: { figures: Figures; curre
       />
       <KpiTile
         label="Won value"
-        value={formatWholeMoney(figures.won, currency)}
+        value={formatMoneyCompact({ amount_minor: figures.won, currency })}
         hint={figures.top ? `Top: ${figures.top.name}` : "No accepted quotes yet"}
         loading={loading}
       />

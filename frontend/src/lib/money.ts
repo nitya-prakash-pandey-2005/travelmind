@@ -1,5 +1,14 @@
 import type { Money } from "../api/offers";
 
+/*
+ * Which format where:
+ * - formatMoneyCompact ("₹31.1L"): KPI tiles and Command Center dashboard figures.
+ * - formatWholeMoney ("₹2,16,804"): tables, cards, facts and budgets.
+ * - formatMoney (exact minor units, "₹2,16,804.38"): only where the client is quoted a price: the quote's
+ *   price breakdowns (and the supplier fares they are built from), the send dialog and WhatsApp text, and
+ *   the public quote page.
+ */
+
 /**
  * ISO 4217 currencies whose minor unit isn't 1/100: the same table the backend uses to define
  * `amount_minor` (backend/src/travelmind/offers/money.py). Intl's own digits differ for some
@@ -50,6 +59,12 @@ export function formatMoney(money: Money): string {
   const digits = exponent(money.currency);
   const scale = 10 ** digits;
   return formatter(money.currency, digits, money.amount_minor % scale === 0).format(money.amount_minor / scale);
+}
+
+/** Whole units, rounded half-up from minor units: "₹2,16,804" rather than "₹2,16,804.38". */
+export function formatWholeMoney(minor: number, currency: string): string {
+  const scale = 10 ** exponent(currency);
+  return formatMoney({ amount_minor: Math.round(minor / scale) * scale, currency });
 }
 
 const compactCache = new Map<string, Intl.NumberFormat>();

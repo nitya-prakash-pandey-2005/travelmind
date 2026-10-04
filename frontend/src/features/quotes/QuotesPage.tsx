@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { quotesQueryOptions, type QuoteStatus, type QuoteSummary } from "../../api/quotes";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { formatDate, formatNumber, formatRelativeTime } from "../../lib/format";
-import { formatMoneyCompact } from "../../lib/money";
+import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
 import { useClock } from "../../shell/useClock";
 import { Button, buttonClasses } from "../../ui/Button";
 import { KpiStrip, KpiTile } from "../../ui/charts";
@@ -18,7 +18,7 @@ import { STATUS_PILL, StatusPill } from "../../ui/StatusPill";
 import { Tabs } from "../../ui/Tabs";
 import { PanelError } from "../command/PanelError";
 import { NewQuoteDialog } from "./NewQuoteDialog";
-import { formatWholeMoney, routeLabel } from "../pipeline/enquiryFacts";
+import { routeLabel } from "../pipeline/enquiryFacts";
 
 /** The list shows up to this many quotes (the API's page limit), newest first. */
 const LIST_LIMIT = 200;

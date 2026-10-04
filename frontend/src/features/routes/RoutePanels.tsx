@@ -23,6 +23,7 @@ import {
   plural,
   previousDay,
   routeName,
+  tileMoney,
   totalSamples,
   WINDOW_DAYS,
 } from "./routeFacts";
@@ -77,14 +78,14 @@ export function RouteFigures({ intel, timeZone, now }: { intel: RouteIntel; time
     <KpiStrip label="Route figures" columns={5} className="mb-4">
       <KpiTile
         label="Median now"
-        value={last ? money(last.median_minor, intel.currency) : "—"}
+        value={last ? tileMoney(last.median_minor, intel.currency) : "—"}
         delta={medianDelta(intel)}
         hint={last ? `${formatDayMonth(last.date)} · ${before ? `vs ${formatDayMonth(before.date)}` : plural(last.samples, "fare")}` : "No fares yet"}
       />
       <KpiTile
         label="Typical range"
-        value={last ? money(last.p25_minor, intel.currency) : "—"}
-        unit={last ? `to ${money(last.p75_minor, intel.currency)}` : undefined}
+        value={last ? tileMoney(last.p25_minor, intel.currency) : "—"}
+        unit={last ? `to ${tileMoney(last.p75_minor, intel.currency)}` : undefined}
         hint={last ? `Middle half of ${plural(last.samples, "fare")} on ${formatDayMonth(last.date)}` : "No fares yet"}
       />
       <KpiTile
@@ -96,7 +97,7 @@ export function RouteFigures({ intel, timeZone, now }: { intel: RouteIntel; time
         label="Best time to book"
         value={best ? bucketRange(best.bucket) : "—"}
         unit={best ? "days out" : undefined}
-        hint={best ? `Median ${money(best.median_minor, intel.currency)} · ${plural(best.samples, "fare")}` : "Not enough fares yet"}
+        hint={best ? `Median ${tileMoney(best.median_minor, intel.currency)} · ${plural(best.samples, "fare")}` : "Not enough fares yet"}
       />
       <KpiTile
         label="Last updated"

@@ -7,7 +7,7 @@ import { invitationsQueryOptions, teamQueryOptions } from "../../api/queries";
 import type { Invitation, Role, TeamMember } from "../../api/types";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { formatDate, formatNumber, formatRelativeTime } from "../../lib/format";
-import { formatMoney, formatMoneyCompact } from "../../lib/money";
+import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
 import { Avatar } from "../../ui/Avatar";
 import { Badge, type BadgeTone } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
@@ -75,7 +75,7 @@ function memberColumns(myId: string, stats: Stats, currency: string): DataTableC
     statColumn("enquiries", "Enquiries", stats, (s) => s.enquiries, formatNumber),
     statColumn("quotes", "Quotes sent", stats, (s) => s.quotes_sent, formatNumber),
     statColumn("won", "Won value", stats, (s) => s.won_value_minor, (v) =>
-      v > 0 ? formatMoney({ amount_minor: v, currency }) : "—",
+      v > 0 ? formatWholeMoney(v, currency) : "—",
     ),
   ];
 }

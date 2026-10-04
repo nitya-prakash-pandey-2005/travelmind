@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { formatMoney, formatMoneyCompact } from "./money";
+import { formatMoney, formatMoneyCompact, formatWholeMoney } from "./money";
 
 test.each([
   [{ amount_minor: 523400, currency: "INR" }, "₹5,234"],
@@ -36,4 +36,14 @@ test.each([
 
 test("a non-finite compact amount reads as a dash", () => {
   expect(formatMoneyCompact({ amount_minor: Number.NaN, currency: "INR" })).toBe("—");
+});
+
+test.each([
+  [21_680_438, "INR", "₹2,16,804"],
+  [6_000_049, "INR", "₹60,000"],
+  [4550, "GBP", "£46"],
+  [148, "JPY", "¥148"],
+  [12_345, "KWD", "KWD 12"],
+])("formats %d %s in whole units as %s", (minor, currency, expected) => {
+  expect(formatWholeMoney(minor, currency).replace(/\s/g, " ")).toBe(expected);
 });

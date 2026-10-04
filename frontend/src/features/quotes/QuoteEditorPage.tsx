@@ -15,7 +15,7 @@ import {
 } from "../../api/quotes";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { formatDate, formatRelativeTime } from "../../lib/format";
-import { formatMoney } from "../../lib/money";
+import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
 import { useClock } from "../../shell/useClock";
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
@@ -28,7 +28,7 @@ import { Skeleton } from "../../ui/Skeleton";
 import { StatusPill } from "../../ui/StatusPill";
 import { PanelError } from "../command/PanelError";
 import { TimelinePanel } from "../enquiries/EnquiryTimeline";
-import { cabinLabel, formatWholeMoney, routeLabel, travellersLabel, tripDates } from "../pipeline/enquiryFacts";
+import { cabinLabel, routeLabel, travellersLabel, tripDates } from "../pipeline/enquiryFacts";
 import { describeMarkup } from "./markup";
 import { OfferPicker } from "./OfferPicker";
 import { QuoteBuilder, type QuotePick } from "./QuoteBuilder";
@@ -90,10 +90,10 @@ function QuoteFigures({ quote, now }: { quote: QuoteDetail; now: Date }) {
       />
       <KpiTile
         label="Cheapest option"
-        value={latest ? formatWholeMoney(latest.totals.min_sell_minor, quote.currency) : "—"}
+        value={latest ? formatMoneyCompact({ amount_minor: latest.totals.min_sell_minor, currency: quote.currency }) : "—"}
         hint={
           latest
-            ? `${latest.totals.options > 1 ? `Up to ${formatWholeMoney(latest.totals.max_sell_minor, quote.currency)} · ` : ""}v${latest.version} · ${latest.totals.options} option${latest.totals.options === 1 ? "" : "s"}`
+            ? `${latest.totals.options > 1 ? `Up to ${formatMoneyCompact({ amount_minor: latest.totals.max_sell_minor, currency: quote.currency })} · ` : ""}v${latest.version} · ${latest.totals.options} option${latest.totals.options === 1 ? "" : "s"}`
             : "No version yet"
         }
       />
@@ -144,7 +144,7 @@ function TripPanel({ quote, enquiry, loading, className }: { quote: QuoteDetail;
               <Fact label="Travellers">{travellersLabel(enquiry)}</Fact>
               <Fact label="Cabin">{cabinLabel(enquiry.cabin)}</Fact>
               <Fact label="Budget" muted={!enquiry.budget}>
-                {enquiry.budget ? <span className="tm-num">{formatMoney(enquiry.budget)}</span> : "No budget given"}
+                {enquiry.budget ? <span className="tm-num">{formatWholeMoney(enquiry.budget.amount_minor, enquiry.budget.currency)}</span> : "No budget given"}
               </Fact>
               <Fact label="Assignee" muted={!enquiry.assignee}>
                 {enquiry.assignee?.full_name ?? "Unassigned"}

@@ -49,7 +49,7 @@ test("an agency quotes an enquiry, sends the link and the client accepts an opti
   const quoteNumber = (await quoteHeading.textContent())?.trim() ?? "";
 
   // The editor searches the enquiry's trip; two sandbox offers go into the version.
-  await page.getByRole("button", { name: "Search fares" }).click();
+  await page.getByRole("button", { name: "Scan fares" }).click();
   const offers = page.getByRole("list", { name: "Flight offers" });
   await expect(offers.getByRole("article").first()).toBeVisible({ timeout: 30_000 });
   await expect(offers.getByRole("article").first()).toContainText("Sandbox · not bookable");

@@ -450,28 +450,53 @@ test("an enquiry's trip in the address fills the search form", async () => {
       [SEARCH]: { status: 200, body: searchResponse({ offers: [indigo] }) },
     }),
   );
-  const { user } = renderApp(`/app/fares?origin=DEL&destination=BOM&depart=${depart}&adults=2&cabin=business`);
+  const returning = isoDateFromNow(37);
+  const { user } = renderApp(
+    `/app/fares?origin=DEL&destination=BOM&depart=${depart}&return=${returning}&adults=2&children=${encodeURIComponent("[4,11]")}&cabin=business`,
+  );
   expect(await screen.findByRole("button", { name: "Change From" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Change To" })).toBeInTheDocument();
   expect(screen.getByLabelText("Adults")).toHaveValue(2);
   expect(screen.getByLabelText("Cabin")).toHaveValue("business");
   expect(screen.getByLabelText("Depart")).toHaveValue(depart);
+  expect(screen.getByLabelText("Return (optional)")).toHaveValue(returning);
+  expect(screen.getByText("2 (ages 4, 11)")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Scan fares" }));
   await screen.findByRole("list", { name: "Flight offers" });
   expect(calls.find((c) => c.path === "/api/v1/flights/search")?.body).toMatchObject({
     origin: "DEL",
     destination: "BOM",
     departure_date: depart,
+    return_date: returning,
     adults: 2,
+    children_ages: [4, 11],
     cabin: "business",
   });
+  expect(screen.getByText(/· 2 adults · 2 children · Business$/)).toBeInTheDocument();
+});
+
+test("children from the address can be taken off the search", async () => {
+  routeStore.set({ origin: AIRPORTS.DEL, destination: AIRPORTS.BOM });
+  const { calls } = mockApi(withSession(ME_OWNER, { [SEARCH]: { status: 200, body: searchResponse({ offers: [indigo] }) } }));
+  const { user } = renderApp(`/app/fares?adults=7&children=${encodeURIComponent("[5,9]")}`);
+  expect(await screen.findByText("2 (ages 5, 9)")).toBeInTheDocument();
+  // Seven adults and two children fill the nine seats a search allows.
+  expect(screen.getByLabelText("Adults")).toHaveAttribute("max", "7");
+  await user.click(screen.getByRole("button", { name: "Remove children" }));
+  expect(screen.queryByText("2 (ages 5, 9)")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Adults")).toHaveAttribute("max", "9");
+  await user.click(screen.getByRole("button", { name: "Scan fares" }));
+  await screen.findByRole("list", { name: "Flight offers" });
+  expect(calls.find((c) => c.path === "/api/v1/flights/search")?.body).toMatchObject({ adults: 7, children_ages: [] });
 });
 
 test("a malformed trip in the address is ignored", async () => {
   routeStore.reset();
   mockApi(withSession(ME_OWNER, { "GET /api/v1/reference/airports": { status: 200, body: [] } }));
-  renderApp("/app/fares?origin=../x&adults=99&cabin=luxury&depart=soon");
+  renderApp("/app/fares?origin=../x&adults=99&cabin=luxury&depart=soon&return=later&children=lots");
   expect(await screen.findByLabelText("Adults")).toHaveValue(1);
   expect(screen.getByLabelText("Cabin")).toHaveValue("economy");
   expect(screen.getByLabelText("Depart")).toHaveValue(isoDateFromNow(14));
+  expect(screen.getByLabelText("Return (optional)")).toHaveValue("");
+  expect(screen.queryByText("Children")).not.toBeInTheDocument();
 });

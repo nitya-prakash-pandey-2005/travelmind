@@ -73,7 +73,7 @@ const offerCard = (name: RegExp) => screen.getByRole("article", { name });
 const addBox = (name: RegExp) => within(offerCard(name)).getByRole("checkbox", { name: "Add to quote" });
 
 async function searchAndPick(user: ReturnType<typeof renderApp>["user"], cards: RegExp[]) {
-  await user.click(await screen.findByRole("button", { name: "Search fares" }));
+  await user.click(await screen.findByRole("button", { name: "Scan fares" }));
   await screen.findByRole("list", { name: "Flight offers" });
   for (const card of cards) await user.click(addBox(card));
 }
@@ -379,4 +379,32 @@ test("a party with children shows the total only", async () => {
   const preview = await screen.findByRole("region", { name: "Version 1 preview" });
   expect(await within(preview).findByText("total price only")).toBeInTheDocument();
   expect(within(preview).queryByText("Per traveller")).not.toBeInTheDocument();
+});
+
+test("the trip budget shows in whole units and the headline figures compactly", async () => {
+  editor(quoteDetail({ versions: [quoteVersion(1, [quoteOption(INDIGO, 52_340, 575_740), quoteOption(AIR_INDIA, 61_200, 673_250)])] }), {
+    "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, budget: { amount_minor: 6_000_049, currency: "INR" } } },
+  });
+  const trip = await screen.findByRole("region", { name: "Trip" });
+  expect(await within(trip).findByText("₹60,000")).toBeInTheDocument();
+  expect(trip).not.toHaveTextContent("₹60,000.49");
+  const figures = screen.getByRole("region", { name: "Quote figures" });
+  const cheapest = within(figures).getByRole("group", { name: "Cheapest option: ₹5.8K" });
+  expect(cheapest).toHaveTextContent("Up to ₹6.7K");
+  // The breakdown keeps exact paise.
+  expect(within(screen.getByRole("region", { name: "Version 1 preview" })).getByText("₹5,757.40")).toBeInTheDocument();
+});
+
+test("Change search keeps the trip's children and offers one Scan fares, the form's", async () => {
+  const { user, calls } = editor(quoteDetail(), {
+    "GET /api/v1/enquiries/e-5": { status: 200, body: { ...ENQUIRY, adults: 2, children_ages: [7] } },
+  });
+  await user.click(await screen.findByRole("button", { name: "Change search" }));
+  const form = await screen.findByRole("form", { name: "Search flights" });
+  expect(within(form).getByText("1 (age 7)")).toBeInTheDocument();
+  await waitFor(() => expect(within(form).getByRole("button", { name: "Change To" })).toBeInTheDocument());
+  expect(screen.getAllByRole("button", { name: "Scan fares" })).toHaveLength(1);
+  await user.click(within(form).getByRole("button", { name: "Scan fares" }));
+  await screen.findByRole("list", { name: "Flight offers" });
+  expect(calls.find((c) => c.path === "/api/v1/flights/search")?.body).toMatchObject({ adults: 2, children_ages: [7] });
 });

@@ -1,7 +1,7 @@
 import type { DailyFares, DaysOutBucket, DaysOutFares, RouteIntel } from "../../api/routeIntel";
-import { formatWholeMoney } from "../pipeline/enquiryFacts";
+import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
 
-/** Plain-language readings of a route's fare figures. Money is shown in whole units of the route currency. */
+/** Plain-language readings of a route's fare figures. Money is in whole units of the route currency; KPI tiles are compact. */
 
 export const WINDOW_DAYS = 60;
 
@@ -25,6 +25,11 @@ export function bucketLabel(bucket: DaysOutBucket): string {
 
 export function money(minor: number, currency: string): string {
   return formatWholeMoney(minor, currency);
+}
+
+/** A fare figure for a KPI tile: compact, like every headline tile ("₹4.8K"). */
+export function tileMoney(minor: number, currency: string): string {
+  return formatMoneyCompact({ amount_minor: minor, currency });
 }
 
 export function routeName(origin: string, destination: string): string {

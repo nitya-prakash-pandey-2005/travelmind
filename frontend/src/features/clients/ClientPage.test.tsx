@@ -35,7 +35,7 @@ test("the record shows the header, contact card, figures, enquiries, quotes and 
   const figures = within(main).getByRole("region", { name: "Client figures" });
   expect(within(figures).getByRole("group", { name: /^Enquiries: 2/ })).toBeInTheDocument();
   expect(within(figures).getByRole("group", { name: /^Quotes: 2/ })).toBeInTheDocument();
-  expect(within(figures).getByRole("group", { name: /^Won value: ₹45,200/ })).toBeInTheDocument();
+  expect(within(figures).getByRole("group", { name: /^Won value: ₹45\.2K/ })).toBeInTheDocument();
   expect(within(figures).getByRole("group", { name: /^Last trip: DEL → BOM/ })).toBeInTheDocument();
   expect(within(figures).getByRole("group", { name: /^Next trip: DEL → GOI/ })).toBeInTheDocument();
 

@@ -7,6 +7,7 @@ import { clientActivityQueryOptions, clientQueryOptions, useDeleteClient, type C
 import { enquiriesQueryOptions, type EnquiryOut } from "../../api/enquiries";
 import { quotesQueryOptions, type QuoteSummary } from "../../api/quotes";
 import { formatDate, formatNumber, formatRelativeTime } from "../../lib/format";
+import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
 import { useClock } from "../../shell/useClock";
 import { Avatar } from "../../ui/Avatar";
 import { Badge } from "../../ui/Badge";
@@ -23,7 +24,7 @@ import { useToast } from "../../ui/toast/useToast";
 import { NewEnquiryDialog } from "../command/NewEnquiryDialog";
 import { PanelError } from "../command/PanelError";
 import { TimelinePanel } from "../enquiries/EnquiryTimeline";
-import { formatWholeMoney, routeLabel, travellersLabel, tripDates } from "../pipeline/enquiryFacts";
+import { routeLabel, travellersLabel, tripDates } from "../pipeline/enquiryFacts";
 import { ClientFormDrawer } from "./ClientFormDrawer";
 import { airportPlace, kindLabel, mailtoHref, telHref, tripRoute, tripWhen, useAirport } from "./clientFacts";
 
@@ -143,7 +144,7 @@ function ClientFigures({ client, enquiries, quotes }: { client: ClientOut; enqui
       />
       <KpiTile
         label="Won value"
-        value={formatWholeMoney(client.won_value_minor, client.currency)}
+        value={formatMoneyCompact({ amount_minor: client.won_value_minor, currency: client.currency })}
         hint={accepted > 0 ? `From ${accepted} accepted quote${accepted === 1 ? "" : "s"}` : "No accepted quotes yet"}
       />
       <KpiTile
@@ -505,7 +506,7 @@ function ClientView({ client }: { client: ClientOut }) {
                 className={buttonClasses({ variant: "secondary", size: "sm" })}
               >
                 <Plane size={14} aria-hidden="true" />
-                Search fares
+                Scan fares
               </Link>
             )}
             <Button size="sm" onClick={() => setEnquiring(true)}>

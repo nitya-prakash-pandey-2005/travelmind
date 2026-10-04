@@ -7,7 +7,7 @@ import { teamQueryOptions } from "../../api/queries";
 import { quotesQueryOptions, type QuoteSummary } from "../../api/quotes";
 import { useCurrentUser } from "../../auth/useCurrentUser";
 import { formatNumber } from "../../lib/format";
-import { formatMoneyCompact } from "../../lib/money";
+import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useClock } from "../../shell/useClock";
 import { Avatar } from "../../ui/Avatar";
@@ -27,7 +27,6 @@ import {
   ageDescription,
   ageLabel,
   canMove,
-  formatWholeMoney,
   latestQuotes,
   quotedValue,
   routeLabel,

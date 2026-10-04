@@ -53,7 +53,7 @@ export function TrendPanel({ range, className }: { range: DashboardRange; classN
           icon={ChartLine}
           title="No activity in this range"
           description="Enquiries, quotes and fare searches are counted here day by day."
-          action={{ label: "Search fares", to: "/app/fares" }}
+          action={{ label: "Scan fares", to: "/app/fares" }}
         />
       ) : (
         <AreaTrend label="Enquiries, quotes sent and searches per day" series={series} valueFormat={formatNumber} height={208} />

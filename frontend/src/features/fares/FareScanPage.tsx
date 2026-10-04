@@ -33,13 +33,15 @@ function tripDay(date: string): string {
   return DAY.format(new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)))));
 }
 
-/** "DEL → BOM · Fri 20 Nov – Sun 22 Nov · 2 adults · Economy" */
+/** "DEL → BOM · Fri 20 Nov – Sun 22 Nov · 2 adults · 1 child · Economy" */
 function tripSummary(request: FlightSearchRequest): string {
   const dates = request.return_date
     ? `${tripDay(request.departure_date)} – ${tripDay(request.return_date)}`
     : `${tripDay(request.departure_date)} · one way`;
   const cabin = CABINS.find((c) => c.value === request.cabin)?.label ?? request.cabin;
-  return `${request.origin} → ${request.destination} · ${dates} · ${request.adults} adult${request.adults === 1 ? "" : "s"} · ${cabin}`;
+  const children = request.children_ages.length;
+  const party = `${request.adults} adult${request.adults === 1 ? "" : "s"}${children ? ` · ${children} child${children === 1 ? "" : "ren"}` : ""}`;
+  return `${request.origin} → ${request.destination} · ${dates} · ${party} · ${cabin}`;
 }
 
 /** The best value each sort would put first, shown beside its label (e.g. "Fastest 2h 10m"). */
@@ -161,10 +163,16 @@ export function FareScanPage() {
       />
       <div className="flex flex-col gap-4">
         <FareSearchForm
-          key={`${prefill.depart ?? ""}|${prefill.adults ?? ""}|${prefill.cabin ?? ""}`}
+          key={[prefill.depart, prefill.return, prefill.adults, prefill.children?.join(","), prefill.cabin].map((part) => part ?? "").join("|")}
           busy={search.isFetching}
           onSearch={submit}
-          initial={{ depart: prefill.depart, adults: prefill.adults, cabin: prefill.cabin }}
+          initial={{
+            depart: prefill.depart,
+            returning: prefill.return,
+            adults: prefill.adults,
+            children: prefill.children,
+            cabin: prefill.cabin,
+          }}
         />
 
         {data?.baseline && !search.isError && (

@@ -1,11 +1,11 @@
 import { FileClock } from "lucide-react";
 import type { QuoteDetail, QuoteVersion } from "../../api/quotes";
 import { formatRelativeTime } from "../../lib/format";
+import { formatWholeMoney } from "../../lib/money";
 import { Badge } from "../../ui/Badge";
 import { cn } from "../../ui/cn";
 import { EmptyState } from "../../ui/EmptyState";
 import { Panel } from "../../ui/Panel";
-import { formatWholeMoney } from "../pipeline/enquiryFacts";
 
 const STAMP = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 

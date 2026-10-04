@@ -227,7 +227,7 @@ export function QuoteBuilder({ quote, picks, onPicksChange, lockedReason, onSave
             <EmptyState
               icon={ListPlus}
               title="No options selected"
-              description="Search fares and tick Add to quote on up to three offers."
+              description="Scan fares and tick Add to quote on up to three offers."
               className="py-5"
             />
             {latest && !lockedReason && (

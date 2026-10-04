@@ -73,7 +73,7 @@ function TripSearchForm({ trip, enquiry, busy, onSearch }: { trip: FlightSearchR
     <FareSearchForm
       busy={busy}
       onSearch={onSearch}
-      initial={{ depart, returning: trip?.return_date ?? undefined, adults: enquiry?.adults, cabin }}
+      initial={{ depart, returning: trip?.return_date ?? undefined, adults: enquiry?.adults, children: enquiry?.children_ages, cabin }}
     />
   );
 }
@@ -201,10 +201,11 @@ export function OfferPicker({ quote, enquiry, pickedIds, lockedReason, frozen = 
                 Change search
               </Button>
             )}
-            {trip && (
+            {/* While the form is open its own Scan fares runs the changed search. */}
+            {trip && !formOpen && (
               <Button size="sm" onClick={() => run(trip)} loading={search.isFetching} className="max-sm:flex-1">
                 {!search.isFetching && <Search size={14} aria-hidden="true" />}
-                Search fares
+                Scan fares
               </Button>
             )}
           </div>

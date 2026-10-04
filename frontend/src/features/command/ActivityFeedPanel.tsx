@@ -140,7 +140,7 @@ export function ActivityFeedPanel({ className }: { className?: string }) {
           icon={Activity}
           title="No activity yet"
           description="Searches, enquiries and quotes from your team appear here as they happen."
-          action={{ label: "Search fares", to: "/app/fares" }}
+          action={{ label: "Scan fares", to: "/app/fares" }}
         />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col border-t border-line">

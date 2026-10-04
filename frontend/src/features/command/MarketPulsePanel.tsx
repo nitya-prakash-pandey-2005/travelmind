@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, TrendingUp } from "lucide-react";
 import { marketPulseQueryOptions, type MarketPulseRoute, type Provenance } from "../../api/dashboard";
 import { formatNumber } from "../../lib/format";
-import { formatMoney } from "../../lib/money";
+import { formatWholeMoney } from "../../lib/money";
 import { Badge, type BadgeTone } from "../../ui/Badge";
 import { Sparkline, type SparklineTone } from "../../ui/charts";
 import { DataTable, type DataTableColumn } from "../../ui/DataTable";
@@ -99,7 +99,7 @@ export function MarketPulsePanel({ className }: { className?: string }) {
       header: "Fare / traveller",
       align: "right",
       sortValue: (row) => row.current_minor,
-      cell: (row) => <span className="whitespace-nowrap">{formatMoney({ amount_minor: row.current_minor, currency })}</span>,
+      cell: (row) => <span className="whitespace-nowrap">{formatWholeMoney(row.current_minor, currency)}</span>,
     },
     {
       key: "change",
@@ -152,8 +152,8 @@ export function MarketPulsePanel({ className }: { className?: string }) {
           <EmptyState
             icon={TrendingUp}
             title="No fare trends yet"
-            description="Search fares on your routes; trends appear after two weeks of searches."
-            action={{ label: "Search fares", to: "/app/fares" }}
+            description="Scan fares on your routes; trends appear after two weeks of searches."
+            action={{ label: "Scan fares", to: "/app/fares" }}
           />
         }
       />

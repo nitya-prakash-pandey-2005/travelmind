@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { FilePlus2, FileText, Pencil, Plane, SearchX } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { asApiError } from "../../api/client";
 import { enquiryQueryOptions, type EnquiryOut } from "../../api/enquiries";
 import { quotesQueryOptions, type QuoteSummary } from "../../api/quotes";
 import { isoDateFromNow } from "../../lib/dates";
 import { formatDate, formatNumber, formatRelativeTime } from "../../lib/format";
+import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
 import { useClock } from "../../shell/useClock";
 import { Avatar } from "../../ui/Avatar";
 import { Button, buttonClasses } from "../../ui/Button";
@@ -23,7 +24,6 @@ import {
   ageDescription,
   ageLabel,
   cabinLabel,
-  formatWholeMoney,
   latestQuotes,
   routeLabel,
   travellersLabel,
@@ -38,16 +38,34 @@ import { EnquiryTimeline } from "./EnquiryTimeline";
 const CRUMBS = [{ label: "Pipeline", to: "/app/pipeline" as const }];
 const SOURCE_LABEL: Record<string, string> = { manual: "Entered by hand", pasted: "Pasted message", copilot: "Copilot" };
 
-/** Fare search's address for this trip; only the parts the enquiry has. */
+/**
+ * Fare search's address for this trip, like the quote editor's search: only the parts the enquiry has,
+ * each checked the way Fare search reads it, so the link never carries a part the page would drop.
+ */
 function fareSearch(enquiry: EnquiryOut): FareSearchParams {
-  const cabin = validateFareSearch({ cabin: enquiry.cabin }).cabin;
+  const trip = validateFareSearch({
+    depart: enquiry.depart_date ?? undefined,
+    return: enquiry.return_date ?? undefined,
+    adults: enquiry.adults,
+    children: enquiry.children_ages,
+    cabin: enquiry.cabin,
+  });
   return {
     ...(enquiry.origin ? { origin: enquiry.origin } : {}),
     ...(enquiry.destination ? { destination: enquiry.destination } : {}),
     ...(enquiry.depart_date ? { depart: enquiry.depart_date } : {}),
+    ...(trip.return ? { return: trip.return } : {}),
     adults: enquiry.adults,
-    ...(cabin ? { cabin } : {}),
+    ...(trip.children ? { children: trip.children } : {}),
+    ...(trip.cabin ? { cabin: trip.cabin } : {}),
   };
+}
+
+/** Why a new quote can't be started: a won or lost enquiry is closed. Null while it is open. */
+function quoteBlockedReason(enquiry: EnquiryOut): string | null {
+  if (enquiry.status === "lost") return "Reopen the enquiry to quote again.";
+  if (enquiry.status === "won") return "This enquiry is won. Add a new enquiry to quote another trip.";
+  return null;
 }
 
 /** One labelled fact in a definition grid; `muted` for a value that isn't set. */
@@ -108,7 +126,16 @@ function TripPanel({ enquiry }: { enquiry: EnquiryOut }) {
   );
 }
 
-function QuotesPanel({ enquiry, onCreate }: { enquiry: EnquiryOut; onCreate: () => void }) {
+function QuotesPanel({
+  enquiry,
+  onCreate,
+  blocked,
+}: {
+  enquiry: EnquiryOut;
+  onCreate: () => void;
+  /** Why no quote can be started, and the id of the element that says so; null while one can. */
+  blocked: { reason: string; hintId: string } | null;
+}) {
   const navigate = useNavigate();
   const quotes = useQuery(quotesQueryOptions({ enquiry_id: enquiry.id, limit: 50 }));
   const rows = quotes.data?.items ?? [];
@@ -147,7 +174,7 @@ function QuotesPanel({ enquiry, onCreate }: { enquiry: EnquiryOut; onCreate: () 
       flush
       actions={
         rows.length > 0 && (
-          <Button variant="secondary" size="sm" onClick={onCreate}>
+          <Button variant="secondary" size="sm" onClick={onCreate} disabled={blocked !== null} aria-describedby={blocked?.hintId}>
             <FilePlus2 size={14} aria-hidden="true" />
             New quote
           </Button>
@@ -170,8 +197,8 @@ function QuotesPanel({ enquiry, onCreate }: { enquiry: EnquiryOut; onCreate: () 
             <EmptyState
               icon={FileText}
               title="No quotes yet"
-              description="Search fares for this trip, then build a quote with up to three options and your markup."
-              action={{ label: "Create quote", onClick: onCreate }}
+              description="Scan fares for this trip, then build a quote with up to three options and your markup."
+              action={{ label: "Create quote", onClick: onCreate, disabledReason: blocked?.reason }}
               className="py-6"
             />
           }
@@ -248,8 +275,8 @@ function EnquiryFigures({ enquiry, now }: { enquiry: EnquiryOut; now: Date }) {
       />
       <KpiTile
         label="Latest quote"
-        value={latest && latest.min_sell_minor !== null ? formatWholeMoney(latest.min_sell_minor, latest.currency) : "—"}
-        hint={latest ? "Cheapest option" : enquiry.budget ? `Budget ${formatWholeMoney(enquiry.budget.amount_minor, enquiry.budget.currency)}` : "No budget given"}
+        value={latest && latest.min_sell_minor !== null ? formatMoneyCompact({ amount_minor: latest.min_sell_minor, currency: latest.currency }) : "—"}
+        hint={latest ? "Cheapest option" : enquiry.budget ? `Budget ${formatMoneyCompact(enquiry.budget)}` : "No budget given"}
         loading={loading}
       />
       <KpiTile
@@ -289,6 +316,9 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
   const [editing, setEditing] = useState(false);
   const [quoting, setQuoting] = useState(false);
   const dates = tripDates(enquiry);
+  const hintId = useId();
+  const blockedReason = quoteBlockedReason(enquiry);
+  const blocked = blockedReason ? { reason: blockedReason, hintId } : null;
 
   const startQuote = () => setQuoting(true);
 
@@ -337,7 +367,12 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
               <Plane size={14} aria-hidden="true" />
               Scan fares
             </Link>
-            <Button size="sm" onClick={startQuote}>
+            {blocked && (
+              <p id={hintId} className="max-w-60 text-xs leading-4 text-dim">
+                {blocked.reason}
+              </p>
+            )}
+            <Button size="sm" onClick={startQuote} disabled={blocked !== null} aria-describedby={blocked?.hintId}>
               <FilePlus2 size={14} aria-hidden="true" />
               Create quote
             </Button>
@@ -348,7 +383,7 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
           <TripPanel enquiry={enquiry} />
-          <QuotesPanel enquiry={enquiry} onCreate={startQuote} />
+          <QuotesPanel enquiry={enquiry} onCreate={startQuote} blocked={blocked} />
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           <DetailsPanel enquiry={enquiry} now={now} />
@@ -357,12 +392,12 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
       </div>
       {dialog}
       <EditEnquiryDrawer enquiry={enquiry} open={editing} onClose={() => setEditing(false)} />
-      {quoting && <NewQuoteDialog enquiry={enquiry} onClose={() => setQuoting(false)} />}
+      {quoting && !blocked && <NewQuoteDialog enquiry={enquiry} onClose={() => setQuoting(false)} />}
     </>
   );
 }
 
-/** One enquiry: trip, quotes and history, with every next step (move, edit, search fares, quote). */
+/** One enquiry: trip, quotes and history, with every next step (move, edit, scan fares, quote). */
 export function EnquiryPage() {
   const { enquiryId } = useParams({ from: "/app/enquiries/$enquiryId" });
   const enquiry = useQuery(enquiryQueryOptions(enquiryId));

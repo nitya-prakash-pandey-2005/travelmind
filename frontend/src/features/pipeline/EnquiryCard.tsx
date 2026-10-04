@@ -3,6 +3,7 @@ import { CalendarDays, FileText, MessageSquareOff, UsersRound } from "lucide-rea
 import { useEffect, useRef, type DragEvent } from "react";
 import type { EnquiryOut, EnquiryStatus } from "../../api/enquiries";
 import type { QuoteSummary } from "../../api/quotes";
+import { formatWholeMoney } from "../../lib/money";
 import { Avatar } from "../../ui/Avatar";
 import { cn } from "../../ui/cn";
 import { STATUS_PILL } from "../../ui/StatusPill";
@@ -11,7 +12,6 @@ import {
   ageLabel,
   cabinLabel,
   enquiryName,
-  formatWholeMoney,
   routeLabel,
   travellersLabel,
   tripDates,
