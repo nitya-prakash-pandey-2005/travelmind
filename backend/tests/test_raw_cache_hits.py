@@ -63,7 +63,6 @@ def test_the_schema_tag_follows_the_shape():
     assert len(schema_tag(SummaryOut)) == 8
 
 
-
 def _plain() -> type[BaseModel]:
     class Out(BaseModel):
         a: int

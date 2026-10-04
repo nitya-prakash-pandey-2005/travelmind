@@ -3,7 +3,8 @@ request, whatever the number of rows (no per-row queries), and the hot-path inde
 
 Statements are counted with a `before_cursor_execute` listener on the engine's sync side, so the
 count covers everything the request sends: the tenant binding, lazy quote expiry and the reads
-themselves. The session lookup is answered by the (warmed) per-process session cache.
+themselves. The session lookup is answered by the (warmed) per-process session cache, except in
+the cold-path budget, which starts each request from an empty cache.
 """
 
 from collections.abc import Iterator
@@ -16,6 +17,7 @@ from sqlalchemy import event
 from tests.dashboard.fixtures import view
 from tests.helpers import run_as_owner, signup
 from travelmind.db import bind_tenant, get_engine, get_sessionmaker
+from travelmind.identity.sessioncache import session_cache
 from travelmind.workspace.clients import ClientCreate, create_client
 from travelmind.workspace.enquiries import EnquiryCreate, create_enquiry
 from travelmind.workspace.quotes import (
@@ -31,6 +33,8 @@ CLIENTS_BUDGET = 6
 ENQUIRIES_BUDGET = 6
 QUOTES_BUDGET = 6
 SUMMARY_BUDGET = 25
+# A cold session lookup (empty session cache) adds one statement: the session-and-user read.
+SESSION_LOOKUP_BUDGET = 1
 
 
 @pytest.fixture
@@ -91,7 +95,9 @@ async def seed_workspace(agency_id: UUID, user_id: UUID, *, first: int, count: i
 
 async def _owner(client) -> tuple[UUID, UUID]:  # type: ignore[no-untyped-def]
     me = (await signup(client)).json()
-    # Warm the session cache: measured requests then see the steady state (no session lookup).
+    # Warm the session cache, as a process whose eviction listener is subscribed keeps it (30 s
+    # entries): measured requests then see the steady state (no session lookup).
+    session_cache().listening = True
     assert (await client.get("/api/v1/auth/me")).status_code == 200
     return UUID(me["agency"]["id"]), UUID(me["user"]["id"])
 
@@ -110,6 +116,24 @@ async def _counts_for_3_and_30(client, statements: list[str], path: str) -> tupl
     await seed_workspace(agency_id, user_id, first=4, count=27)
     large = await _count(client, statements, path)
     return small, large
+
+
+async def _cold_count(client, statements: list[str], path: str) -> int:  # type: ignore[no-untyped-def]
+    session_cache().clear()
+    return await _count(client, statements, path)
+
+
+async def test_cold_session_lookup_query_budget(client, airports, statements):
+    """With the session cache empty (a new process, a listener that just resubscribed), a
+    request also looks its session up: one statement more, whatever the rows."""
+    agency_id, user_id = await _owner(client)
+    await seed_workspace(agency_id, user_id, first=1, count=3)
+    warm = await _count(client, statements, "/api/v1/clients")
+    small = await _cold_count(client, statements, "/api/v1/clients")
+    await seed_workspace(agency_id, user_id, first=4, count=27)
+    large = await _cold_count(client, statements, "/api/v1/clients")
+    assert small == large <= warm + SESSION_LOOKUP_BUDGET, (warm, small, large)
+    assert large <= CLIENTS_BUDGET + SESSION_LOOKUP_BUDGET, large
 
 
 async def test_clients_list_query_budget(client, airports, statements):

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from travelmind.cache import get_shared_redis
 from travelmind.db import get_sessionmaker, utcnow
 from travelmind.identity import service as identity_service
-from travelmind.identity.sessioncache import evict_and_publish
+from travelmind.identity.sessioncache import publish_eviction, session_cache
 
 log = structlog.get_logger()
 
@@ -24,8 +24,11 @@ async def delete_expired_demos(db: AsyncSession, *, now: datetime) -> int:
     """Delete demo agencies that expired before `now`, with all their data (foreign keys
     cascade), in batches of CLEANUP_BATCH_SIZE, committing after each batch, for at most
     CLEANUP_MAX_BATCHES batches. Returns how many were deleted. After each commit, the deleted
-    agencies' sessions are evicted from the session cache here and in every API process."""
+    agencies' sessions are evicted from the session cache here and, with one published message
+    per batch, in every API process. After a failed publish the run only evicts here: Redis
+    being down then costs one publish timeout, not one per batch."""
     total = 0
+    publishing = True
     for _ in range(CLEANUP_MAX_BATCHES):
         deleted = await identity_service.delete_expired_demo_agencies(
             db, now=now, limit=CLEANUP_BATCH_SIZE
@@ -33,9 +36,11 @@ async def delete_expired_demos(db: AsyncSession, *, now: datetime) -> int:
         if not deleted:
             break
         await db.commit()
-        redis = get_shared_redis()
-        for agency_id in deleted:  # their users' cached sessions must stop working now
-            await evict_and_publish(redis, "agency", str(agency_id))
+        # Their users' cached sessions must stop working now.
+        agencies = ",".join(str(agency_id) for agency_id in deleted)
+        session_cache().apply(f"agency:{agencies}")
+        if publishing:
+            publishing = await publish_eviction(get_shared_redis(), "agency", agencies)
         total += len(deleted)
         if len(deleted) < CLEANUP_BATCH_SIZE:
             break

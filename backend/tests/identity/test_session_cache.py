@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 from redis.asyncio import Redis
 from sqlalchemy import event
+from structlog.testing import capture_logs
 
 from tests.helpers import make_client, run_as_owner, signup
 from travelmind.cache import get_shared_redis
@@ -57,6 +58,7 @@ def far_future() -> datetime:
 def test_entry_lapses_after_the_ttl():
     clock = Clock()
     cache: SessionCache[str] = SessionCache(ttl_s=30, max_entries=10, clock=clock)
+    cache.listening = True
     agency, user = uuid4(), uuid4()
     cache.put(
         "h",
@@ -75,6 +77,7 @@ def test_entry_lapses_after_the_ttl():
 def test_entry_never_outlives_its_session():
     clock = Clock()
     cache: SessionCache[str] = SessionCache(ttl_s=30, max_entries=10, clock=clock)
+    cache.listening = True
     soon = datetime.now(UTC) + timedelta(seconds=5)
     cache.put(
         "h",
@@ -88,6 +91,34 @@ def test_entry_never_outlives_its_session():
     assert cache.get("h") == "alice"
     clock.now += 2
     assert cache.get("h") is None
+
+
+def test_entries_are_short_lived_while_evictions_may_be_missed():
+    """While the listener isn't subscribed, another process's revocation can't reach this one,
+    so new entries live only the short TTL."""
+    clock = Clock()
+    cache: SessionCache[str] = SessionCache(
+        ttl_s=30, unsubscribed_ttl_s=5, max_entries=10, clock=clock
+    )
+    assert cache.listening is False
+
+    def store(token: str) -> None:
+        cache.put(
+            token,
+            token,
+            user_id=uuid4(),
+            agency_id=uuid4(),
+            expires_at=far_future(),
+            generation=cache.generation,
+        )
+
+    store("while-away")
+    cache.listening = True
+    store("while-listening")
+    clock.now += 5.1
+    assert cache.get("while-away") is None
+    assert cache.get("while-listening") == "while-listening"
+    assert sessioncache.SESSION_CACHE_UNSUBSCRIBED_TTL_SECONDS == 5.0
 
 
 def test_an_already_expired_session_is_not_stored():
@@ -198,6 +229,22 @@ def test_eviction_messages_are_applied():
     cache.apply("nonsense")  # ignored
     cache.apply("user:not-a-uuid")  # ignored
     assert cache.get("t3") == "z"
+
+
+def test_one_message_can_evict_several_agencies():
+    cache: SessionCache[str] = SessionCache(ttl_s=30, max_entries=10)
+    a, b, c = uuid4(), uuid4(), uuid4()
+    for token, agency in (("ta", a), ("tb", b), ("tc", c)):
+        cache.put(
+            token,
+            token,
+            user_id=uuid4(),
+            agency_id=agency,
+            expires_at=far_future(),
+            generation=cache.generation,
+        )
+    cache.apply(f"agency:{a},{b}")
+    assert (cache.get("ta"), cache.get("tb"), cache.get("tc")) == (None, None, "tc")
 
 
 # --- through the API ------------------------------------------------------------------------
@@ -352,3 +399,104 @@ async def test_the_app_listens_for_evictions_while_it_runs(client, app):
         assert cache.get(token_hash) is not None
         await sessioncache.publish_eviction(get_shared_redis(), "token", token_hash)
         assert await evicted()
+
+
+async def _stop(task: asyncio.Task[None]) -> None:
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_the_cache_knows_while_the_listener_is_subscribed():
+    ready = asyncio.Event()
+    listener = asyncio.create_task(sessioncache.listen_for_evictions(ready=ready))
+    try:
+        await asyncio.wait_for(ready.wait(), 5)
+        assert sessioncache.session_cache().listening is True
+    finally:
+        await _stop(listener)
+    assert sessioncache.session_cache().listening is False
+
+
+async def test_the_listener_survives_an_unexpected_error(monkeypatch):
+    """Any error (not only a Redis one) is logged, and the listener backs off and subscribes
+    again instead of dying for the rest of the process's life."""
+    applied: list[str] = []
+    real_apply = SessionCache.apply
+
+    def flaky_apply(self, message: str) -> None:  # type: ignore[no-untyped-def]
+        if message == "token:boom":
+            raise RuntimeError("unexpected")
+        applied.append(message)
+        real_apply(self, message)
+
+    monkeypatch.setattr(SessionCache, "apply", flaky_apply)
+    monkeypatch.setattr(sessioncache, "LISTENER_BACKOFF_FIRST_S", 0.01)
+    ready = asyncio.Event()
+    redis = get_shared_redis()
+    with capture_logs() as logs:
+        listener = asyncio.create_task(sessioncache.listen_for_evictions(ready=ready))
+        try:
+            await asyncio.wait_for(ready.wait(), 5)
+            await sessioncache.publish_eviction(redis, "token", "boom")
+            for _ in range(100):
+                await sessioncache.publish_eviction(redis, "token", "after")
+                if applied:
+                    break
+                await asyncio.sleep(0.05)
+            assert not listener.done()
+        finally:
+            await _stop(listener)
+    assert applied and applied[0] == "token:after"
+    down = [e for e in logs if e["event"] == "session_eviction_listener_down"]
+    assert down and down[0]["error_type"] == "RuntimeError"
+
+
+def test_the_listener_backs_off_exponentially_up_to_about_five_seconds():
+    delays = [sessioncache.listener_backoff(attempt) for attempt in range(8)]
+    assert delays == sorted(delays) and delays[0] < delays[1] < delays[2]
+    assert delays[-1] == sessioncache.LISTENER_BACKOFF_MAX_S == 5.0
+
+
+async def test_the_listener_pauses_before_subscribing_again_when_its_subscription_ends(
+    monkeypatch,
+):
+    """A subscription that ends without an error (say, the server dropped it) is not retried in
+    a tight loop."""
+    from redis.asyncio.client import PubSub
+
+    subscriptions = 0
+    real_clear = SessionCache.clear
+
+    def counting_clear(self) -> None:  # type: ignore[no-untyped-def]
+        nonlocal subscriptions
+        subscriptions += 1
+        real_clear(self)
+
+    monkeypatch.setattr(PubSub, "subscribed", property(lambda self: False))
+    monkeypatch.setattr(SessionCache, "clear", counting_clear)
+    monkeypatch.setattr(sessioncache, "LISTENER_BACKOFF_FIRST_S", 0.05)
+    with capture_logs() as logs:
+        listener = asyncio.create_task(sessioncache.listen_for_evictions())
+        await asyncio.sleep(0.5)
+        await _stop(listener)
+    assert 1 <= subscriptions <= 6, subscriptions
+    assert any(e["event"] == "session_eviction_listener_down" for e in logs)
+
+
+async def test_shutdown_closes_the_clients_even_if_the_listener_failed(app, monkeypatch):
+    from travelmind import main
+
+    closed: list[str] = []
+
+    async def broken_listener() -> None:
+        raise RuntimeError("listener bug")
+
+    async def close_redis() -> None:
+        closed.append("redis")
+
+    monkeypatch.setattr(main, "listen_for_evictions", broken_listener)
+    monkeypatch.setattr(main, "close_redis", close_redis)
+    async with main.lifespan(app):
+        await asyncio.sleep(0.01)  # the listener task has failed by now
+    assert closed == ["redis"]

@@ -62,7 +62,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         for task in (cleanup, evictions):
             if task is not None:
                 task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
+                # A task that failed must not stop the clients below from closing.
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
         # Each close runs even if an earlier one fails.
         try:
