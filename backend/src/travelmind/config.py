@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     supplier_breaker_threshold: int = 5
     supplier_breaker_reset_s: float = 30.0
     search_max_per_minute: int = 30
+    # Offers kept per agency for price checks and quote versions (offers.cache); past it, the
+    # soonest to expire go first.
+    offer_store_max_per_agency: int = 2000
     reprice_max_per_minute: int = 60  # price checks call the supplier too; a separate budget
     public_quote_max_per_minute: int = 60  # client quote page: per network and per link
     log_level: str = "INFO"
