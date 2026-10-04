@@ -13,7 +13,7 @@ from sqlalchemy import func, select, text
 
 from tests.agent.conftest import agent_settings, make_agency
 from tests.helpers import exec_as_tenant, run_as_owner
-from travelmind.agent import budget, service
+from travelmind.agent import budget, events, service
 from travelmind.agent.fake import FakeProvider
 from travelmind.agent.models import AgentRun, AgentStep
 from travelmind.agent.prompts import PROMPT_VERSION
@@ -951,3 +951,69 @@ async def test_traveller_runs_are_not_listed_or_answered_as_agency_runs(agency):
             )
         with pytest.raises(service.RunNotFound):
             await service.cancel(db, get_shared_redis(), agency_id=agency[0], run_id=run_id)
+
+
+# --- the stuck-run sweeper ----------------------------------------------------------------------
+
+
+async def _sweep(at: datetime, **settings) -> int:
+    return await service.sweep_stuck_runs(settings=agent_settings(**settings), clock=lambda: at)
+
+
+async def test_the_sweeper_fails_a_queued_run_whose_job_never_started(agency):
+    provider = FakeProvider([gen("Hi.")])
+    run_id = await start(agency, provider)
+    now = datetime.now(UTC)
+    assert await _sweep(now + timedelta(seconds=60)) == 0  # still within the queue wait
+    assert await slot_holders(agency[0]) == [str(run_id)]
+    before = AGENT_RUNS.labels(status="failed")._value.get()
+    assert await _sweep(now + timedelta(seconds=200)) == 1  # slot TTL 300 - run timeout 120
+    run, _ = await load(agency, run_id)
+    assert run.status == "failed" and run.error == "The plan was interrupted. Try again."
+    assert run.finished_at is not None
+    assert await slot_holders(agency[0]) == []
+    assert AGENT_RUNS.labels(status="failed")._value.get() - before == 1
+    assert await _sweep(now + timedelta(seconds=200)) == 0  # once only
+    assert await drive(agency, run_id, provider) == "failed"  # a late job leaves it be
+    assert provider.requests == []
+
+
+async def _running(agency, run_id, started: datetime) -> None:
+    await exec_as_tenant(
+        agency[0],
+        "UPDATE agent_runs SET status = 'running', started_at = :at WHERE id = :id",
+        {"at": started, "id": run_id},
+    )
+
+
+async def test_the_sweeper_fails_a_running_run_whose_job_died(agency):
+    run_id = await start(agency, FakeProvider([]))
+    now = datetime.now(UTC)
+    await _running(agency, run_id, now)
+    assert await _sweep(now + timedelta(seconds=170)) == 0  # run timeout 120 + margin 60
+    assert await _sweep(now + timedelta(seconds=190)) == 1
+    run, _ = await load(agency, run_id)
+    assert run.status == "failed" and run.error == "The plan was interrupted. Try again."
+    assert await slot_holders(agency[0]) == []
+
+
+async def test_the_sweeper_counts_a_running_runs_newest_step_as_activity(agency):
+    run_id = await start(agency, FakeProvider([]))
+    now = datetime.now(UTC)
+    await _running(agency, run_id, now - timedelta(hours=1))
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency[0])
+        writer = await events.StepWriter.open(db, get_shared_redis(), run_id, agency[0])
+        await writer.emit("thinking", {"text": "Still going.", "unverified": False})
+    assert await _sweep(datetime.now(UTC) + timedelta(seconds=60)) == 0
+    run, _ = await load(agency, run_id)
+    assert run.status == "running"
+
+
+async def test_the_sweeper_leaves_other_agencies_and_finished_runs_alone(agency):
+    other = await make_agency("Beta")
+    done_run = (await run_script(agency, [gen("Hi.")]))[1].id
+    fresh = await start(other, FakeProvider([]))
+    assert await _sweep(datetime.now(UTC) + timedelta(seconds=30)) == 0
+    assert (await load(agency, done_run))[0].status == "done"
+    assert (await load(other, fresh))[0].status == "queued"

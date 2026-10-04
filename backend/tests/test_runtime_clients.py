@@ -153,15 +153,21 @@ async def test_lifespan_starts_the_scheduler_only_when_enabled(monkeypatch, run_
 
     settings = Settings(_env_file=None, environment="development", run_scheduler=run_scheduler)  # type: ignore[call-arg]
     started: list[float] = []
+    swept: list[float] = []
 
     async def fake_cleanup_loop(interval_seconds: float) -> None:
         started.append(interval_seconds)
 
+    async def fake_sweep_loop(interval_seconds: float) -> None:
+        swept.append(interval_seconds)
+
     monkeypatch.setattr(main, "get_settings", lambda: settings)
     monkeypatch.setattr(main, "demo_cleanup_loop", fake_cleanup_loop)
+    monkeypatch.setattr(main, "stuck_agent_runs_loop", fake_sweep_loop)
     async with main.lifespan(main.create_app()):
         await asyncio.sleep(0)
     assert started == ([3600] if run_scheduler else [])
+    assert swept == ([60] if run_scheduler else [])  # the worker's minute sweep, in dev
 
 
 async def test_shared_http_client_keeps_no_cookies(respx_mock):

@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from travelmind.agent import service as agent_service
 from travelmind.agent.router import agent_router
+from travelmind.agent.service import stuck_runs_loop as stuck_agent_runs_loop
 from travelmind.agent.tools.external import warn_about_feed_settings
 from travelmind.cache import close_redis
 from travelmind.config import get_settings
@@ -48,6 +49,8 @@ from travelmind.workspace.public_quotes import public_quotes_router
 from travelmind.workspace.quotes import quotes_router
 from travelmind.workspace.timelines import timelines_router
 
+STUCK_RUNS_INTERVAL_SECONDS = 60  # as the worker's cron
+
 
 async def close_model_clients() -> None:
     """Close the Gemini SDK clients, if anything in this process opened one."""
@@ -61,20 +64,22 @@ async def close_model_clients() -> None:
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Run the demo cleanup at startup and then every interval (not under tests, and not where a
-    worker owns the schedules), listen for session evictions, and close the process-wide clients
-    on shutdown."""
+    """Run the demo cleanup at startup and then every interval, and the stuck agent run sweep
+    every minute (not under tests, and not where a worker owns the schedules), listen for
+    session evictions, and close the process-wide clients on shutdown."""
     settings = get_settings()
     warn_about_feed_settings(settings)
     cleanup: asyncio.Task[None] | None = None
+    sweep: asyncio.Task[None] | None = None
     if settings.environment != "test" and settings.run_scheduler:
         cleanup = asyncio.create_task(demo_cleanup_loop(settings.demo_cleanup_interval_seconds))
+        sweep = asyncio.create_task(stuck_agent_runs_loop(STUCK_RUNS_INTERVAL_SECONDS))
     # Other processes' logouts reach this process's session cache through Redis.
     evictions = asyncio.create_task(listen_for_evictions())
     try:
         yield
     finally:
-        for task in (cleanup, evictions):
+        for task in (cleanup, sweep, evictions):
             if task is not None:
                 task.cancel()
                 # A task that failed must not stop the clients below from closing.

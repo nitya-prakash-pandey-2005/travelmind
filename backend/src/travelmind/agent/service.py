@@ -24,20 +24,30 @@ fails the run ("waited too long") instead of running without a slot.
 The job (`drive_run`) claims a queued run, rebuilds its context and memory from the stored
 state, applies the user's reply or decision, runs the loop, then stores the outcome and the
 state and publishes the status (`agent.events`).
+
+Stuck runs (`sweep_stuck_runs`, the worker's minute cron, and `stuck_runs_loop` in a dev API
+that runs the schedules): a job killed hard leaves its run running or queued. The sweep fails
+("The plan was interrupted. Try again.") a running run whose last activity (started, claimed by
+a job, or its newest step) is older than `agent_run_timeout_s` + SWEEP_MARGIN_S (a live job is
+cancelled by then: its arq timeout is the run timeout plus a margin), and a queued run waiting
+longer than the slot TTL minus the run timeout (a job starting later would refuse it anyway).
+Each with a conditional UPDATE on the same condition, then its slot is released and the status
+published; a job that wakes up later finds the run moved and leaves it be.
 """
 
 import asyncio
 import contextlib
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
-from sqlalchemy import select, update
+from sqlalchemy import DateTime, and_, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from travelmind import jobs
 from travelmind.agent import budget, events
@@ -72,6 +82,8 @@ __all__ = [
     "list_runs",
     "list_steps",
     "reply",
+    "stuck_runs_loop",
+    "sweep_stuck_runs",
 ]
 
 log = structlog.get_logger()
@@ -83,6 +95,7 @@ WAITED_TOO_LONG = "The plan waited too long to start. Try again."
 INTERRUPTED = "The plan was interrupted. Try again."
 FAILED = "Something went wrong while planning. Try again."
 NO_USER = "The person who started this plan no longer has an account."
+SWEEP_MARGIN_S = 60  # past a running run's time budget before the sweep calls it stuck
 
 Clock = Callable[[], datetime]
 
@@ -565,3 +578,101 @@ async def cancel(
     await _release(redis, agency_id, run.id)
     await _publish(db, redis, run)
     return run
+
+
+# --- stuck runs -------------------------------------------------------------------------------
+
+
+def _stuck(running_before: datetime, queued_before: datetime) -> ColumnElement[bool]:
+    """The sweep's condition (as `agencies_with_stuck_agent_runs`, migration 0015)."""
+    ts = DateTime(timezone=True)
+    newest_step = (
+        select(func.max(AgentStep.created_at))
+        .where(AgentStep.run_id == AgentRun.id, AgentStep.agency_id == AgentRun.agency_id)
+        .scalar_subquery()
+    )
+    running_at = AgentRun.state["running_at"].astext.cast(ts)
+    queued_at = AgentRun.state["queued_at"].astext.cast(ts)
+    return or_(
+        and_(
+            AgentRun.status == "running",
+            func.greatest(AgentRun.started_at, running_at, newest_step) < running_before,
+        ),
+        and_(
+            AgentRun.status == "queued",
+            func.coalesce(queued_at, AgentRun.created_at) < queued_before,
+        ),
+    )
+
+
+async def sweep_stuck_runs(*, settings: Settings | None = None, clock: Clock = utcnow) -> int:
+    """Fail the runs whose job is gone (see the module docstring); returns how many. Never
+    raises (except on cancellation): an agency that fails is logged and the next sweep retries."""
+    settings = settings or get_settings()
+    now = clock()
+    running_before = now - timedelta(seconds=settings.agent_run_timeout_s + SWEEP_MARGIN_S)
+    queue_wait = max(0.0, settings.agent_run_slot_ttl_s - settings.agent_run_timeout_s)
+    queued_before = now - timedelta(seconds=queue_wait)
+    try:
+        async with get_sessionmaker()() as db:
+            rows = await db.scalars(
+                text("SELECT agencies_with_stuck_agent_runs(:running, :queued)"),
+                {"running": running_before, "queued": queued_before},
+            )
+            agencies = list(rows.all())
+            await db.commit()
+    except Exception as exc:
+        log.exception("agent_sweep_failed", error_type=type(exc).__name__)
+        return 0
+    redis = get_shared_redis()
+    swept = 0
+    for agency_id in agencies:
+        try:
+            swept += await _sweep_agency(redis, agency_id, running_before, queued_before, now)
+        except Exception as exc:
+            log.exception(
+                "agent_sweep_agency_failed", agency_id=str(agency_id), error_type=type(exc).__name__
+            )
+    if swept:
+        log.warning("agent_stuck_runs_failed", count=swept, agencies=len(agencies))
+    return swept
+
+
+async def _sweep_agency(
+    redis: Redis,
+    agency_id: UUID,
+    running_before: datetime,
+    queued_before: datetime,
+    now: datetime,
+) -> int:
+    stuck = _stuck(running_before, queued_before)
+    swept = 0
+    async with get_sessionmaker()() as db:
+        await bind_tenant(db, agency_id)
+        found = await db.scalars(select(AgentRun.id).where(AgentRun.agency_id == agency_id, stuck))
+        run_ids = list(found.all())
+        await db.commit()
+        for run_id in run_ids:
+            result = await db.execute(
+                update(AgentRun)
+                .where(AgentRun.id == run_id, stuck)
+                .values(status="failed", error=INTERRUPTED, finished_at=now)
+                .execution_options(synchronize_session=False)
+            )
+            await db.commit()
+            if not getattr(result, "rowcount", 0):  # it moved on meanwhile
+                continue
+            swept += 1
+            await _release(redis, agency_id, run_id)
+            run = await db.get(AgentRun, run_id)
+            if run is not None:
+                await _publish(db, redis, run)
+    return swept
+
+
+async def stuck_runs_loop(interval_seconds: float) -> None:
+    """Sweep now and then every `interval_seconds`, until cancelled (an API process that runs
+    the schedules: development)."""
+    while True:
+        await sweep_stuck_runs()
+        await asyncio.sleep(interval_seconds)

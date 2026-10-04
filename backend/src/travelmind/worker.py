@@ -7,6 +7,8 @@ jobs are unique by default):
 - `expire_overdue_quotes_all`: every 5 minutes. Marks sent and viewed quotes whose share link
   has lapsed as expired, visiting only agencies that have such quotes (in random order, so a
   timeout never starves the same ones), and invalidates each changed agency's read cache.
+- `sweep_stuck_agent_runs`: every minute at :30. Fails agent runs whose job died without a
+  trace (`agent.service.sweep_stuck_runs`) and frees their slots.
 
 Queued jobs: `generate_demo_job` (one demo workspace; for the traveller app in a later step) and
 `run_agent_job` (one agent run, until it answers, waits for the user or stops: `agent.service`;
@@ -58,6 +60,7 @@ WORKER_STATEMENT_TIMEOUT = "60s"
 _SET_STATEMENT_TIMEOUT = text(f"SET LOCAL statement_timeout = '{WORKER_STATEMENT_TIMEOUT}'")
 DEMO_BUSY_RETRY_SECONDS = 15
 SWEEP_TIMEOUT_SECONDS = 240  # inside the 5-minute interval, so runs never overlap
+STUCK_RUNS_TIMEOUT_SECONDS = 50  # inside the minute
 CLEANUP_TIMEOUT_SECONDS = 900
 
 
@@ -189,6 +192,11 @@ async def _expire_until_broken(
     return []
 
 
+async def sweep_stuck_agent_runs(ctx: dict[str, Any]) -> int:
+    """Fail the agent runs whose job is gone; returns how many."""
+    return await agent_service.sweep_stuck_runs()
+
+
 async def generate_demo_job(ctx: dict[str, Any]) -> str:
     """Build one demo workspace; returns its agency id. When every generation slot is taken it
     retries later. The owner session it opens is never handed out and simply expires."""
@@ -251,6 +259,7 @@ class WorkerSettings:
             second=0,
             timeout=SWEEP_TIMEOUT_SECONDS,
         ),
+        cron(sweep_stuck_agent_runs, second=30, timeout=STUCK_RUNS_TIMEOUT_SECONDS),
     ]
     on_startup = startup
     on_shutdown = shutdown

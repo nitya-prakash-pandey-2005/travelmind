@@ -72,6 +72,13 @@ class AgentRun(Base):
         CheckConstraint("input_tokens >= 0 AND output_tokens >= 0", name="ck_agent_runs_tokens"),
         UniqueConstraint("id", "agency_id", name="uq_agent_runs_id_agency"),
         Index("ix_agent_runs_agency_created", "agency_id", text("created_at DESC")),
+        # The stuck-run sweep's active runs (migration 0015_agent_stuck_runs).
+        Index(
+            "ix_agent_runs_active",
+            "agency_id",
+            "status",
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
