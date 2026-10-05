@@ -35,6 +35,7 @@ export function LoginPage() {
 
   return (
     <AuthFrame
+      kicker="Workspace access"
       title="Sign in to TravelMind"
       subtitle="Use the email and password for your agency's workspace."
       footer={

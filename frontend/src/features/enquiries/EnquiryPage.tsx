@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { FilePlus2, FileText, Pencil, Plane, SearchX, Waypoints } from "lucide-react";
+import { FilePlus2, FileText, Info, Pencil, Plane, PlaneTakeoff, SearchX, Waypoints } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 import { asApiError } from "../../api/client";
 import { enquiryQueryOptions, type EnquiryOut } from "../../api/enquiries";
@@ -11,9 +11,11 @@ import { formatMoneyCompact, formatWholeMoney } from "../../lib/money";
 import { useClock } from "../../shell/useClock";
 import { Avatar } from "../../ui/Avatar";
 import { Button, buttonClasses } from "../../ui/Button";
+import { Badge } from "../../kit";
 import { KpiStrip, KpiTile } from "../../ui/charts";
 import { DataTable, type DataTableColumn } from "../../ui/DataTable";
 import { EmptyState } from "../../ui/EmptyState";
+import { MetaLine } from "../../ui/MetaLine";
 import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { Skeleton } from "../../ui/Skeleton";
@@ -82,7 +84,7 @@ function Fact({ label, children, muted = false, wide = false }: { label: string;
 function TripPanel({ enquiry }: { enquiry: EnquiryOut }) {
   const children = enquiry.children_ages;
   return (
-    <Panel title="Trip" description="What the client asked for">
+    <Panel title="Trip" icon={PlaneTakeoff} description="What the client asked for">
       <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
         <Fact label="From" muted={!enquiry.origin}>
           <span className="font-mono font-semibold">{enquiry.origin ?? "Not set"}</span>
@@ -114,7 +116,7 @@ function TripPanel({ enquiry }: { enquiry: EnquiryOut }) {
         </Fact>
         {enquiry.raw_text && (
           <Fact label="Original message" wide>
-            <span className="block whitespace-pre-wrap rounded-md border border-line bg-surface-2 px-3 py-2 text-dim">{enquiry.raw_text}</span>
+            <span className="block whitespace-pre-wrap rounded-[14px] border border-line bg-card-2 px-3.5 py-2.5 text-dim">{enquiry.raw_text}</span>
           </Fact>
         )}
         {enquiry.status === "lost" && (
@@ -131,9 +133,11 @@ function QuotesPanel({
   enquiry,
   onCreate,
   blocked,
+  className,
 }: {
   enquiry: EnquiryOut;
   onCreate: () => void;
+  className?: string;
   /** Why no quote can be started, and the id of the element that says so; null while one can. */
   blocked: { reason: string; hintId: string } | null;
 }) {
@@ -171,8 +175,10 @@ function QuotesPanel({
   return (
     <Panel
       title="Quotes"
+      icon={FileText}
       description={quotes.data ? `${formatNumber(quotes.data.total)} for this enquiry` : "Built and sent for this enquiry"}
       flush
+      className={className}
       actions={
         rows.length > 0 && (
           <Button variant="secondary" size="sm" onClick={onCreate} disabled={blocked !== null} aria-describedby={blocked?.hintId}>
@@ -211,9 +217,9 @@ function QuotesPanel({
 
 function DetailsPanel({ enquiry, now }: { enquiry: EnquiryOut; now: Date }) {
   return (
-    <Panel title="Details">
-      <dl className="flex flex-col gap-3.5">
-        <Fact label="Client" muted={!enquiry.client}>
+    <Panel title="Details" icon={Info}>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
+        <Fact label="Client" muted={!enquiry.client} wide>
           {enquiry.client ? (
             <Link
               to="/app/clients/$clientId"
@@ -226,7 +232,7 @@ function DetailsPanel({ enquiry, now }: { enquiry: EnquiryOut; now: Date }) {
             "No client linked"
           )}
         </Fact>
-        <Fact label="Assignee" muted={!enquiry.assignee}>
+        <Fact label="Assignee" muted={!enquiry.assignee} wide>
           {enquiry.assignee ? (
             <span className="flex items-center gap-2">
               <Avatar name={enquiry.assignee.full_name} size="sm" />
@@ -236,7 +242,7 @@ function DetailsPanel({ enquiry, now }: { enquiry: EnquiryOut; now: Date }) {
             "Unassigned"
           )}
         </Fact>
-        <Fact label="Created">
+        <Fact label="Created" wide>
           {formatDate(enquiry.created_at)} <span className="text-dim">· {ageDescription(enquiry.created_at, now)}</span>
         </Fact>
         <Fact label="Last updated">{formatRelativeTime(enquiry.updated_at, now)}</Fact>
@@ -265,7 +271,7 @@ function EnquiryFigures({ enquiry, now }: { enquiry: EnquiryOut; now: Date }) {
   const latest = latestQuotes(quotes.data?.items ?? []).get(enquiry.id);
   const loading = quotes.isPending;
   return (
-    <KpiStrip label="Enquiry figures" columns={4} className="mb-4">
+    <KpiStrip label="Enquiry figures" columns={4} className="mb-4 [&>div]:gap-4 max-sm:[&>div]:gap-3">
       <KpiTile
         label="Departs"
         value={enquiry.depart_date ? departsIn(enquiry.depart_date) : "—"}
@@ -303,20 +309,26 @@ function EnquiryFigures({ enquiry, now }: { enquiry: EnquiryOut; now: Date }) {
 function LoadingEnquiry() {
   return (
     <>
-      <PageHeader breadcrumb={[...CRUMBS, { label: "Enquiry" }]} title="Enquiry" description={<Skeleton className="mt-1 h-3.5 w-72" />} />
-      <div aria-busy="true" className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+      <PageHeader
+        breadcrumb={[...CRUMBS, { label: "Enquiry" }]}
+        title="Enquiry"
+        description={<span aria-hidden="true" className="tm-shimmer mt-1 inline-block h-3.5 w-72 max-w-full rounded-[8px] align-middle" />}
+      />
+      <div aria-busy="true" className="grid g-12">
         <span className="sr-only">Loading enquiry…</span>
-        <div className="flex flex-col gap-4">
-          <Panel title="Trip">
+        <div className="span-7 flex min-w-0 flex-col gap-4">
+          <Panel title="Trip" icon={PlaneTakeoff}>
             <Skeleton lines={4} />
           </Panel>
-          <Panel title="Quotes">
+          <Panel title="Quotes" icon={FileText}>
             <Skeleton lines={3} />
           </Panel>
         </div>
-        <Panel title="Details">
-          <Skeleton lines={5} />
-        </Panel>
+        <div className="span-5 flex min-w-0 flex-col gap-4">
+          <Panel title="Details" icon={Info}>
+            <Skeleton lines={5} />
+          </Panel>
+        </div>
       </div>
     </>
   );
@@ -334,39 +346,36 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
 
   const startQuote = () => setQuoting(true);
 
-  const summary = [routeLabel(enquiry), dates ?? "Dates not set", travellersLabel(enquiry), cabinLabel(enquiry.cabin)].join(" · ");
+  // The cabin is a badge beside the title.
+  const summary = [routeLabel(enquiry), dates ?? "Dates not set", travellersLabel(enquiry)].join(" · ");
 
   return (
     <>
       <PageHeader
         breadcrumb={[...CRUMBS, { label: enquiry.number }]}
         title={enquiry.number}
-        meta={<StatusPill status={enquiry.status} />}
+        meta={
+          <>
+            <StatusPill status={enquiry.status} />
+            <Badge tone="cyan">{cabinLabel(enquiry.cabin)}</Badge>
+            {enquiry.source === "copilot" && <Badge tone="violet">{SOURCE_LABEL.copilot}</Badge>}
+          </>
+        }
         description={
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <MetaLine>
             <span className="font-mono text-ink">{summary}</span>
             {enquiry.client && (
-              <>
-                <span aria-hidden="true" className="text-faint">
-                  ·
-                </span>
-                <Link to="/app/clients/$clientId" params={{ clientId: enquiry.client.id }} className="text-primary underline-offset-2 hover:underline">
-                  {enquiry.client.name}
-                </Link>
-              </>
+              <Link to="/app/clients/$clientId" params={{ clientId: enquiry.client.id }} className="text-primary underline-offset-2 hover:underline">
+                {enquiry.client.name}
+              </Link>
             )}
             {enquiry.assignee && (
-              <>
-                <span aria-hidden="true" className="text-faint">
-                  ·
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Avatar name={enquiry.assignee.full_name} size="sm" className="h-5 w-5 text-[9px]" />
-                  {enquiry.assignee.full_name}
-                </span>
-              </>
+              <span className="inline-flex items-center gap-1.5">
+                <Avatar name={enquiry.assignee.full_name} size="sm" className="h-5 w-5 text-[9px]" />
+                {enquiry.assignee.full_name}
+              </span>
             )}
-          </span>
+          </MetaLine>
         }
         actions={
           <>
@@ -396,14 +405,17 @@ function EnquiryView({ enquiry }: { enquiry: EnquiryOut }) {
         }
       />
       <EnquiryFigures enquiry={enquiry} now={now} />
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-        <div className="flex min-w-0 flex-col gap-4">
+      {/* The kit's list + detail: trip and quotes on the left, details and history on the right (below on phones). */}
+      <div className="grid g-12">
+        <div className="span-7 flex min-w-0 flex-col gap-4">
           <TripPanel enquiry={enquiry} />
-          <QuotesPanel enquiry={enquiry} onCreate={startQuote} blocked={blocked} />
+          <QuotesPanel enquiry={enquiry} onCreate={startQuote} blocked={blocked} className="min-[1181px]:flex-1" />
         </div>
-        <div className="flex min-w-0 flex-col gap-4">
+        {/* Above the kit grid's 1180 px collapse the left column sets the row height (at least 38rem), and the
+            timeline scrolls inside its card instead of leaving a gap under the quotes. */}
+        <div className="span-5 flex min-w-0 flex-col gap-4 min-[1181px]:min-h-[38rem] min-[1181px]:[contain:size]">
           <DetailsPanel enquiry={enquiry} now={now} />
-          <EnquiryTimeline enquiryId={enquiry.id} />
+          <EnquiryTimeline enquiryId={enquiry.id} fill className="min-[1181px]:flex-1" />
         </div>
       </div>
       {dialog}
@@ -425,7 +437,7 @@ export function EnquiryPage() {
       <>
         <PageHeader breadcrumb={[...CRUMBS, { label: "Enquiry" }]} title="Enquiry" />
         {error.status === 404 ? (
-          <div className="rounded-lg border border-line bg-surface">
+          <div className="card p-0">
             <EmptyState
               icon={SearchX}
               title="Enquiry not found"

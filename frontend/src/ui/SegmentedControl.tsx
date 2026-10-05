@@ -17,8 +17,8 @@ type SegmentedControlProps<T extends string> = {
 };
 
 /**
- * A compact single-choice switch (e.g. 7d / 30d / 90d). Built on native radios, so the group is one
- * Tab stop and arrow keys move the selection exactly as the platform does.
+ * A compact single-choice switch (e.g. 7d / 30d / 90d), drawn as the kit's `.seg`. Built on native radios, so the
+ * group is one Tab stop and arrow keys move the selection exactly as the platform does.
  */
 export function SegmentedControl<T extends string>({
   options,
@@ -37,7 +37,7 @@ export function SegmentedControl<T extends string>({
       aria-describedby={describedBy}
       aria-disabled={disabled || undefined}
       className={cn(
-        "inline-flex h-8 max-w-full items-center rounded-md border border-line-strong bg-surface-2 p-0.5",
+        "seg h-9 flex-nowrap items-center gap-0.5 p-[3px]",
         disabled && "opacity-50",
         className,
       )}
@@ -48,13 +48,11 @@ export function SegmentedControl<T extends string>({
           <label
             key={option.value}
             className={cn(
-              "relative inline-flex h-full min-w-9 items-center justify-center rounded-[4px] px-2.5",
+              "relative inline-flex h-full min-w-9 items-center justify-center rounded-[9px] px-3 py-0",
               disabled ? "cursor-not-allowed" : "cursor-pointer",
-              "text-xs font-medium tabular-nums transition-colors duration-150 ease-tm",
+              "text-[13px] font-semibold tabular-nums transition-colors duration-150 ease-tm",
               "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-primary",
-              checked
-                ? "border border-line-strong bg-surface text-ink shadow-raise"
-                : cn("border border-transparent text-dim", !disabled && "hover:text-ink"),
+              checked ? "on text-ink" : cn("text-dim", !disabled && "hover:text-ink"),
             )}
           >
             <input

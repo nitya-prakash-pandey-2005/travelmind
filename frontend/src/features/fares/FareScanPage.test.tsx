@@ -457,7 +457,7 @@ test("an enquiry's trip in the address fills the search form", async () => {
   expect(await screen.findByRole("button", { name: "Change From" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Change To" })).toBeInTheDocument();
   expect(screen.getByLabelText("Adults")).toHaveValue(2);
-  expect(screen.getByLabelText("Cabin")).toHaveValue("business");
+  expect(screen.getByRole("radio", { name: "Business" })).toBeChecked();
   expect(screen.getByLabelText("Depart")).toHaveValue(depart);
   expect(screen.getByLabelText("Return (optional)")).toHaveValue(returning);
   expect(screen.getByText("2 (ages 4, 11)")).toBeInTheDocument();
@@ -495,7 +495,7 @@ test("a malformed trip in the address is ignored", async () => {
   mockApi(withSession(ME_OWNER, { "GET /api/v1/reference/airports": { status: 200, body: [] } }));
   renderApp("/app/fares?origin=../x&adults=99&cabin=luxury&depart=soon&return=later&children=lots");
   expect(await screen.findByLabelText("Adults")).toHaveValue(1);
-  expect(screen.getByLabelText("Cabin")).toHaveValue("economy");
+  expect(screen.getByRole("radio", { name: "Economy" })).toBeChecked();
   expect(screen.getByLabelText("Depart")).toHaveValue(isoDateFromNow(14));
   expect(screen.getByLabelText("Return (optional)")).toHaveValue("");
   expect(screen.queryByText("Children")).not.toBeInTheDocument();

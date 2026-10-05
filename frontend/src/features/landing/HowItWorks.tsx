@@ -4,6 +4,7 @@ import { cn } from "../../ui/cn";
 import { PROVENANCE } from "../../ui/provenance";
 import { StatusPill } from "../../ui/StatusPill";
 import { SAMPLE_FARES } from "./ConsolePreview";
+import { Kicker } from "./Kicker";
 import { ANCHOR, CONTAINER, SECTION_LEAD, SECTION_TITLE, SECTION_Y } from "./layout";
 
 /** Small sample-data sketches, one per step. Decorative: the step text says the same thing. */
@@ -19,7 +20,7 @@ function EnquirySketch() {
         ["Route", "DEL → LHR"],
         ["Dates", "12–19 Dec · 4 travellers"],
       ].map(([label, value]) => (
-        <div key={label} className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-2 rounded border border-line bg-surface-2 px-2 py-1">
+        <div key={label} className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-2 rounded-[8px] border border-line bg-card-2 px-2 py-1">
           <span className="text-faint">{label}</span>
           <span className="truncate text-ink">{value}</span>
         </div>
@@ -41,7 +42,7 @@ function ResultsSketch() {
       {SAMPLE_FARES.slice(1).map((fare) => (
         <li
           key={fare.code}
-          className="flex items-center justify-between gap-2 rounded border border-line bg-surface-2 px-2 py-1 text-[11px]"
+          className="flex items-center justify-between gap-2 rounded-[8px] border border-line bg-card-2 px-2 py-1 text-[11px]"
         >
           <span className="w-6 font-mono text-dim">{fare.code}</span>
           <span className="flex-1 text-right font-mono tabular-nums text-ink">{fare.price}</span>
@@ -61,11 +62,11 @@ function QuoteSketch() {
         <span className="font-mono text-dim">Q-0031</span>
         <StatusPill status="viewed" />
       </div>
-      <div className="flex items-center justify-between rounded border border-line bg-surface-2 px-2 py-1">
+      <div className="flex items-center justify-between rounded-[8px] border border-line bg-card-2 px-2 py-1">
         <span className="text-ink">3 flight options</span>
         <span className="text-faint">markup 8%</span>
       </div>
-      <div className="flex items-center justify-between rounded border border-dashed border-line-strong px-2 py-1">
+      <div className="flex items-center justify-between rounded-[8px] border border-dashed border-line-strong px-2 py-1">
         <span className="truncate text-dim">Link for the client</span>
         <span className="font-mono tabular-nums text-ink">₹3,53,800</span>
       </div>
@@ -95,12 +96,15 @@ const STEPS: Step[] = [
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" aria-labelledby="how-it-works-title" className={cn(ANCHOR, "border-y border-line bg-surface")}>
+    <section id="how-it-works" aria-labelledby="how-it-works-title" className={cn(ANCHOR, "border-y border-line")}>
       <div className={cn(CONTAINER, SECTION_Y)}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
-          <h2 id="how-it-works-title" className={SECTION_TITLE}>
-            How it works
-          </h2>
+          <div className="min-w-0">
+            <Kicker>Workflow</Kicker>
+            <h2 id="how-it-works-title" className={SECTION_TITLE}>
+              How it works
+            </h2>
+          </div>
           <p className={cn(SECTION_LEAD, "lg:mt-0")}>From the first message to a quote in the client's inbox, in three steps.</p>
         </div>
         <ol className="mt-10 grid gap-4 lg:grid-cols-3 lg:gap-0">
@@ -110,13 +114,13 @@ export function HowItWorks() {
               <div className="flex items-center gap-3">
                 <span
                   aria-hidden="true"
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/60 bg-bg font-mono text-xs text-primary"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary bg-(image:--tm-grad) font-display text-[13px] font-bold text-primary-ink shadow-[0_6px_20px_-6px_var(--tm-glow)]"
                 >
                   {index + 1}
                 </span>
                 {index < STEPS.length - 1 && <span aria-hidden="true" className="hidden h-px flex-1 bg-line-strong lg:block" />}
               </div>
-              <div className="mt-4 flex flex-1 flex-col rounded-lg border border-line bg-bg p-5">
+              <div className="card mt-4 flex flex-1 flex-col p-5">
                 <div className="flex-1">
                   <h3 className="text-[15px] font-semibold text-ink">{step.title}</h3>
                   <p className="mt-1.5 text-[13px] leading-5 text-dim">{step.body}</p>

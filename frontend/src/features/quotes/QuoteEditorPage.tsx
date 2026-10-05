@@ -22,6 +22,7 @@ import { Button } from "../../ui/Button";
 import { KpiStrip, KpiTile } from "../../ui/charts";
 import { EmptyState } from "../../ui/EmptyState";
 import { Menu } from "../../ui/Menu";
+import { MetaLine } from "../../ui/MetaLine";
 import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { Skeleton } from "../../ui/Skeleton";
@@ -41,6 +42,10 @@ const CRUMBS = [{ label: "Quotes", to: "/app/quotes" as const }];
 const DAY_MS = 86_400_000;
 const CLOSED_QUOTE = new Set(["accepted", "declined"]);
 const SENT = new Set(["sent", "viewed"]);
+/** A column of the editor's 12-column grid; at 1180px and below (where the kit grid goes single column) it dissolves. */
+const COLUMN = "flex min-w-0 flex-col gap-4 max-[1180.98px]:contents";
+/** A card placed straight on the grid once its column dissolves: full width, ordered by the caller. */
+const STACKED = "max-[1180.98px]:col-span-full";
 
 /** Why the quote can't take a new version or be sent; null when it can. */
 function lockedReason(quote: QuoteDetail, enquiry: EnquiryOut | undefined): string | null {
@@ -206,7 +211,7 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
           </>
         }
         description={
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <MetaLine>
             {quote.client ? (
               <Link to="/app/clients/$clientId" params={{ clientId: quote.client.id }} className="text-primary underline-offset-2 hover:underline">
                 {quote.client.name}
@@ -214,9 +219,6 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
             ) : (
               <span className="text-faint">No client</span>
             )}
-            <span aria-hidden="true" className="text-faint">
-              ·
-            </span>
             <Link
               to="/app/enquiries/$enquiryId"
               params={{ enquiryId: quote.enquiry.id }}
@@ -224,19 +226,9 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
             >
               {quote.enquiry.number} {routeLabel(quote.enquiry)}
             </Link>
-            {trip && (
-              <>
-                <span aria-hidden="true" className="text-faint">
-                  ·
-                </span>
-                <span className="font-mono text-ink">{trip}</span>
-              </>
-            )}
-            <span aria-hidden="true" className="text-faint">
-              ·
-            </span>
+            {trip && <span className="font-mono text-ink">{trip}</span>}
             <span>Prices in {quote.currency}</span>
-          </span>
+          </MetaLine>
         }
         actions={
           <>
@@ -276,27 +268,11 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
 
       <QuoteFigures quote={quote} now={now} />
 
-      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] lg:items-start">
-        <div className="flex min-w-0 flex-col gap-4 max-lg:contents">
-          <VersionPreview
-            quote={quote}
-            version={previewed}
-            author={previewed?.created_by ? names.get(previewed.created_by) : undefined}
-            adultsOnly={enquiry.data ? enquiry.data.children_ages.length === 0 : false}
-            now={now}
-            className="max-lg:order-1"
-          />
-          <OfferPicker
-            quote={quote}
-            enquiry={enquiry.data}
-            pickedIds={pickedIds}
-            lockedReason={locked}
-            frozen={building}
-            onToggle={toggle}
-            className="max-lg:order-3"
-          />
-        </div>
-        <div className="flex min-w-0 flex-col gap-4 max-lg:contents">
+      {/* The kit's list + detail: building (builder, offers) in span-7, the record (versions, preview, trip,
+          timeline) in span-5. At 1180px and below the columns dissolve and the cards stack in reading order:
+          what the client sees, the builder, the offers, then the history. */}
+      <div className="grid g-12 items-start">
+        <div className={COLUMN + " span-7"}>
           <QuoteBuilder
             quote={quote}
             picks={picks}
@@ -307,22 +283,41 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
               setPreviewing(null);
             }}
             onBusyChange={setBuilding}
-            className="max-lg:order-2"
+            className={STACKED + " max-[1180.98px]:order-2"}
           />
+          <OfferPicker
+            quote={quote}
+            enquiry={enquiry.data}
+            pickedIds={pickedIds}
+            lockedReason={locked}
+            frozen={building}
+            onToggle={toggle}
+            className={STACKED + " max-[1180.98px]:order-3"}
+          />
+        </div>
+        <div className={COLUMN + " span-5"}>
           <VersionHistory
             quote={quote}
             previewing={previewed?.version ?? null}
             onPreview={setPreviewing}
             names={names}
             now={now}
-            className="max-lg:order-4"
+            className={STACKED + " max-[1180.98px]:order-4"}
           />
-          <TripPanel quote={quote} enquiry={enquiry.data} loading={enquiry.isPending} className="max-lg:order-5" />
+          <VersionPreview
+            quote={quote}
+            version={previewed}
+            author={previewed?.created_by ? names.get(previewed.created_by) : undefined}
+            adultsOnly={enquiry.data ? enquiry.data.children_ages.length === 0 : false}
+            now={now}
+            className={STACKED + " max-[1180.98px]:order-1"}
+          />
+          <TripPanel quote={quote} enquiry={enquiry.data} loading={enquiry.isPending} className={STACKED + " max-[1180.98px]:order-5"} />
           <TimelinePanel
             timeline={activity}
             intro="Versions, sends and client views"
             emptyDescription="Versions, sends and client views will be listed here as they happen."
-            className="max-lg:order-6"
+            className={STACKED + " max-[1180.98px]:order-6"}
           />
         </div>
       </div>
@@ -343,23 +338,23 @@ function QuoteEditor({ quote }: { quote: QuoteDetail }) {
 function LoadingQuote() {
   return (
     <>
-      <PageHeader breadcrumb={[...CRUMBS, { label: "Quote" }]} title="Quote" description={<Skeleton className="mt-1 h-3.5 w-80" />} />
-      <div aria-busy="true" className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
+      <PageHeader breadcrumb={[...CRUMBS, { label: "Quote" }]} title="Quote" description={<span aria-hidden="true" className="tm-shimmer mt-1 inline-block h-3.5 w-80 max-w-full rounded-[8px] align-middle" />} />
+      <div aria-busy="true" className="grid g-12 items-start">
         <span className="sr-only">Loading quote…</span>
-        <div className="flex flex-col gap-4">
-          <Panel title="Preview">
-            <Skeleton lines={5} />
+        <div className="span-7 flex flex-col gap-4">
+          <Panel title="Build version">
+            <Skeleton lines={4} />
           </Panel>
           <Panel title="Find offers">
             <Skeleton lines={3} />
           </Panel>
         </div>
-        <div className="flex flex-col gap-4">
-          <Panel title="Build version">
-            <Skeleton lines={4} />
-          </Panel>
+        <div className="span-5 flex flex-col gap-4">
           <Panel title="Versions">
             <Skeleton lines={3} />
+          </Panel>
+          <Panel title="Preview">
+            <Skeleton lines={5} />
           </Panel>
         </div>
       </div>
@@ -379,7 +374,7 @@ export function QuoteEditorPage() {
       <>
         <PageHeader breadcrumb={[...CRUMBS, { label: "Quote" }]} title="Quote" />
         {error.status === 404 ? (
-          <div className="rounded-lg border border-line bg-surface">
+          <div className="card p-0">
             <EmptyState
               icon={SearchX}
               title="Quote not found"

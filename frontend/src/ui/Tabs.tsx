@@ -18,8 +18,8 @@ type TabsProps = {
 };
 
 /**
- * Controlled tab list (automatic activation): Left/Right move and select, Home/End jump, focus follows.
- * Only the selected tab is in the Tab order.
+ * Controlled tab list (automatic activation), drawn as the kit's `.tabs-line`: Left/Right move and select,
+ * Home/End jump, focus follows. Only the selected tab is in the Tab order.
  */
 export function Tabs({ tabs, value, onChange, label, className }: TabsProps) {
   const refs = useRef(new Map<string, HTMLButtonElement>());
@@ -50,7 +50,7 @@ export function Tabs({ tabs, value, onChange, label, className }: TabsProps) {
       role="tablist"
       aria-label={label}
       onKeyDown={onKeyDown}
-      className={cn("flex max-w-full gap-3 overflow-x-auto overflow-y-hidden border-b border-line", className)}
+      className={cn("flex max-w-full gap-1 overflow-x-auto overflow-y-hidden border-b border-line [scrollbar-width:none]", className)}
     >
       {tabs.map((tab) => {
         const selected = tab.id === value;
@@ -69,12 +69,12 @@ export function Tabs({ tabs, value, onChange, label, className }: TabsProps) {
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.id)}
             className={cn(
-              "relative inline-flex h-10 shrink-0 items-center px-1 text-[13px] font-medium",
+              "relative inline-flex h-10 shrink-0 items-center px-3 text-[13.5px] font-semibold",
               "transition-colors duration-150 ease-tm focus-visible:outline-offset-[-2px]",
               // The selected underline is painted inside the tab (not over the list's border) so the
               // horizontally scrolling list never overflows vertically.
               "after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors",
-              selected ? "text-ink after:bg-primary" : "text-dim after:bg-transparent hover:text-ink",
+              selected ? "text-ink after:bg-primary after:shadow-[0_0_10px_var(--tm-glow)]" : "text-dim after:bg-transparent hover:text-ink",
             )}
           >
             {tab.label}

@@ -17,6 +17,7 @@ import { EmptyState } from "../../ui/EmptyState";
 import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { PanelError } from "../command/PanelError";
+import { TABLE_INSET } from "../quotes/kitClasses";
 import { ClientFormDrawer } from "./ClientFormDrawer";
 import { kindLabel, tagCounts, tripRoute, tripWhen } from "./clientFacts";
 
@@ -24,10 +25,8 @@ import { kindLabel, tagCounts, tripRoute, tripWhen } from "./clientFacts";
 const LIST_LIMIT = 200;
 const SHOWN_TAGS = 3;
 
-const TOOLBAR_CONTROL = cn(
-  "h-8 w-full rounded-md border border-line-strong bg-surface-2 text-[13px] text-ink placeholder:text-faint",
-  "transition-colors duration-150 ease-tm hover:border-faint focus:border-primary",
-);
+/** The kit's `.input`, compact for the list card's tool row. */
+const TOOLBAR_CONTROL = "input h-9 py-0 text-[13px] placeholder:text-faint";
 
 function TagList({ tags, max = SHOWN_TAGS }: { tags: readonly string[]; max?: number }) {
   if (tags.length === 0) return <span className="text-faint">—</span>;
@@ -35,7 +34,7 @@ function TagList({ tags, max = SHOWN_TAGS }: { tags: readonly string[]; max?: nu
   return (
     <span className="flex items-center gap-1 whitespace-nowrap">
       {shown.map((tag) => (
-        <span key={tag} className="inline-flex h-5 items-center rounded-[4px] border border-line bg-surface-2 px-1.5 text-[11px] leading-none text-dim">
+        <span key={tag} className="badge px-2 py-0 text-[11px] font-medium leading-[18px]">
           {tag}
         </span>
       ))}
@@ -48,11 +47,10 @@ function NextTrip({ client }: { client: ClientOut }) {
   const trip = client.next_trip;
   if (!trip) return <span className="whitespace-nowrap text-faint">None booked</span>;
   return (
-    <span className="flex flex-col whitespace-nowrap leading-4">
-      <span className="font-mono text-[13px] font-medium text-ink">{tripRoute(trip)}</span>
-      <span className="text-[11px] text-dim">
-        {tripWhen(trip)}
-      </span>
+    <span className="flex min-w-[6.5rem] flex-col leading-4">
+      <span className="whitespace-nowrap font-mono text-[13px] font-medium text-ink">{tripRoute(trip)}</span>
+      {/* The date and countdown may wrap, so the whole table fits the card at desktop widths. */}
+      <span className="text-[11px] text-dim">{tripWhen(trip)}</span>
     </span>
   );
 }
@@ -149,7 +147,7 @@ function RecordParts() {
       <ul className="grid gap-4 sm:grid-cols-3">
         {RECORD_PARTS.map(({ icon: Icon, title, text }) => (
           <li key={title} className="flex gap-3">
-            <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-line bg-surface-2 text-dim">
+            <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-card-2 text-dim">
               <Icon size={15} strokeWidth={1.75} />
             </span>
             <div className="min-w-0">
@@ -163,17 +161,13 @@ function RecordParts() {
   );
 }
 
-/** Phones: each client as a three-line row instead of the wide table. */
+/** Phones: each client as a kit list row (`.list > .li`) instead of the wide table. */
 function ClientRows({ rows }: { rows: readonly ClientOut[] }) {
   return (
-    <ul aria-label="Clients" className="flex flex-col sm:hidden">
+    <ul aria-label="Clients" className="list px-2 py-1 sm:hidden">
       {rows.map((c) => (
-        <li key={c.id} className="border-b border-line last:border-b-0">
-          <Link
-            to="/app/clients/$clientId"
-            params={{ clientId: c.id }}
-            className="flex gap-3 px-3 py-2.5 transition-colors duration-150 ease-tm hover:bg-hover"
-          >
+        <li key={c.id}>
+          <Link to="/app/clients/$clientId" params={{ clientId: c.id }} className="li items-start gap-3">
             <Avatar name={c.name} size="md" className="mt-0.5 shrink-0" />
             <span className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="flex items-center gap-2">
@@ -270,7 +264,7 @@ export function ClientsPage() {
       header: "Email",
       cell: (c) =>
         c.email ? (
-          <span title={c.email} className="block max-w-56 truncate text-dim">
+          <span title={c.email} className="block max-w-44 truncate text-dim">
             {c.email}
           </span>
         ) : (
@@ -342,7 +336,7 @@ export function ClientsPage() {
         <PanelError error={all.error} onRetry={() => void all.refetch()} retrying={all.isFetching} />
       ) : nothingYet ? (
         <div className="flex flex-col gap-4">
-          <div className="rounded-lg border border-line bg-surface">
+          <div className="card p-0">
             <EmptyState
               icon={UserRound}
               title="No clients yet"
@@ -353,8 +347,8 @@ export function ClientsPage() {
           <RecordParts />
         </div>
       ) : (
-        <section aria-label="Client list" className="rounded-lg border border-line bg-surface">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-3 py-2">
+        <section aria-label="Client list" className="card flush">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-[18px] py-3.5">
             <div className="relative w-full sm:w-72">
               <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
               <input
@@ -394,14 +388,14 @@ export function ClientsPage() {
             </p>
           </div>
           {source.isError ? (
-            <div className="p-3">
+            <div className="p-[18px]">
               <PanelError error={source.error} onRetry={() => void source.refetch()} retrying={source.isFetching} />
             </div>
           ) : (
             <>
               {!source.isPending && rows.length > 0 && <ClientRows rows={rows} />}
               <DataTable
-                className={rows.length > 0 ? "max-sm:hidden" : undefined}
+                className={cn(TABLE_INSET, rows.length > 0 && "max-sm:hidden")}
                 caption="Clients"
                 columns={columns}
                 rows={rows}
@@ -413,12 +407,12 @@ export function ClientsPage() {
             </>
           )}
           {total > allItems.length && (
-            <p className="border-t border-line px-3 py-2 text-xs text-dim">
+            <p className="border-t border-line px-[18px] py-2.5 text-xs text-dim">
               Showing the {formatNumber(allItems.length)} most recently updated of {formatNumber(total)} clients. Search to find
               others.
             </p>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-3 py-2 text-xs text-dim">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-[18px] py-2.5 text-xs text-dim">
             <span>Won value is the sum of each client's accepted quotes, in whole {currency}.</span>
             {figures.upcoming.length > 0 && (
               <span className="inline-flex items-center gap-1.5">

@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 import { resolvePalette } from "../../theme";
 import { AreaTrend, type TrendBand, type TrendSeries } from "./AreaTrend";
 
-const ORBITAL_DARK = resolvePalette({ theme: "orbital", mode: "dark", contrast: false });
+const AURORA_DARK = resolvePalette({ theme: "aurora", mode: "dark", contrast: false });
 
 const MEDIAN: TrendSeries = {
   key: "median",
@@ -33,7 +33,7 @@ test("a band draws one shaded range between its low and high points", () => {
   const bands = container.querySelectorAll("[data-band]");
   expect(bands).toHaveLength(1);
   const band = bands[0] as SVGPathElement;
-  expect(band.getAttribute("fill")).toBe(ORBITAL_DARK.chart1);
+  expect(band.getAttribute("fill")).toBe(AURORA_DARK.chart1);
   expect(band.getAttribute("d")).toMatch(/^M.+Z$/);
   expect(band.getAttribute("d")).not.toMatch(/NaN/);
   // The series asked for no area of its own: only its line is drawn.

@@ -14,6 +14,8 @@ import { ErrorPanel } from "./PanelError";
 import { FooterLink, LoadingPanel } from "./panelParts";
 
 const TITLE = "Market pulse";
+/** Icon chip in the card head. */
+const ICON = TrendingUp;
 const DESCRIPTION = "Median fare per traveller this week vs the previous four weeks";
 
 /** Where the fares behind a trend came from, in the same tones as offer provenance. Sandbox fares are test data. */
@@ -66,11 +68,12 @@ const weeklyOf = (route: MarketPulseRoute) =>
 export function MarketPulsePanel({ className }: { className?: string }) {
   const pulse = useQuery(marketPulseQueryOptions);
 
-  if (pulse.isPending) return <LoadingPanel title={TITLE} description={DESCRIPTION} className={className} />;
+  if (pulse.isPending) return <LoadingPanel title={TITLE} icon={ICON} description={DESCRIPTION} className={className} />;
   if (pulse.isError) {
     return (
       <ErrorPanel
         title={TITLE}
+        icon={ICON}
         description={DESCRIPTION}
         error={pulse.error}
         onRetry={() => void pulse.refetch()}
@@ -137,6 +140,7 @@ export function MarketPulsePanel({ className }: { className?: string }) {
   return (
     <Panel
       title={TITLE}
+      icon={ICON}
       description={DESCRIPTION}
       flush
       className={cn("flex flex-col", className)}

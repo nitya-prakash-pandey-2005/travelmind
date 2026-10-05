@@ -22,8 +22,8 @@ export function HelpMenu() {
       <Menu
         label="Help"
         triggerVariant="ghost"
-        triggerClassName="w-8 justify-center"
-        trigger={<CircleHelp size={16} strokeWidth={1.75} aria-hidden="true" />}
+        triggerClassName="h-9 w-9 justify-center"
+        trigger={<CircleHelp size={17} strokeWidth={1.75} aria-hidden="true" />}
         items={[
           { id: "shortcuts", label: "Keyboard shortcuts", icon: Keyboard, onSelect: () => setShortcutsOpen(true) },
           { id: "suppliers", label: "Supplier status", icon: PlugZap, onSelect: () => void navigate({ to: "/app/suppliers" }) },

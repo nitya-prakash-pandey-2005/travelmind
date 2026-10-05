@@ -86,7 +86,7 @@ function Searching() {
         Searching suppliers…
       </p>
       {[0, 1, 2].map((index) => (
-        <div key={index} aria-hidden="true" className="rounded-lg border border-line bg-surface p-4">
+        <div key={index} aria-hidden="true" className="rounded-[16px] border border-line bg-card-2 p-4">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-6 md:grid-cols-[11rem_minmax(0,1fr)_9rem]">
             <Skeleton lines={2} />
             <Skeleton className="h-10 max-md:hidden" />
@@ -220,7 +220,7 @@ export function OfferPicker({ quote, enquiry, pickedIds, lockedReason, frozen = 
         ) : search.isError ? (
           <p
             role="alert"
-            className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/5 px-3 py-2.5 text-[13px] leading-5 text-danger"
+            className="card alert tight flex items-start gap-2 rounded-[14px] text-[13px] leading-5 text-danger"
           >
             <CircleAlert size={15} aria-hidden="true" className="mt-0.5 shrink-0" />
             {asApiError(search.error).message}

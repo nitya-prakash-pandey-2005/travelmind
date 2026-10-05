@@ -12,12 +12,12 @@ const LINE_WIDTHS = ["w-full", "w-11/12", "w-4/6", "w-5/6", "w-3/5", "w-2/3"];
  */
 export function Skeleton({ className, lines }: { className?: string; lines?: number }) {
   if (lines === undefined) {
-    return <div data-skeleton="" aria-hidden="true" className={cn("tm-shimmer h-4 rounded", className)} />;
+    return <div data-skeleton="" aria-hidden="true" className={cn("tm-shimmer h-4 rounded-[8px]", className)} />;
   }
   return (
     <div data-skeleton="" aria-hidden="true" className={cn("flex flex-col gap-2.5", className)}>
       {Array.from({ length: lines }, (_, index) => (
-        <div key={index} className={cn("tm-shimmer h-3 rounded", LINE_WIDTHS[index % LINE_WIDTHS.length])} />
+        <div key={index} className={cn("tm-shimmer h-3 rounded-[6px]", LINE_WIDTHS[index % LINE_WIDTHS.length])} />
       ))}
     </div>
   );

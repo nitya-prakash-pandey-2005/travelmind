@@ -13,6 +13,8 @@ import { ErrorPanel } from "./PanelError";
 import { LoadingPanel } from "./panelParts";
 
 const TITLE = "Upcoming departures";
+/** Icon chip in the card head. */
+const ICON = PlaneTakeoff;
 const DESCRIPTION = "Won trips by departure date, agency time";
 
 function countdown(days: number): string {
@@ -27,11 +29,12 @@ export function DeparturesPanel({ onNewEnquiry, className }: { onNewEnquiry: () 
   const now = useClock(60_000);
   const today = localDateIn(now, me?.agency.timezone ?? "UTC");
 
-  if (departures.isPending) return <LoadingPanel title={TITLE} description={DESCRIPTION} rows={3} className={className} />;
+  if (departures.isPending) return <LoadingPanel title={TITLE} icon={ICON} description={DESCRIPTION} rows={3} className={className} />;
   if (departures.isError) {
     return (
       <ErrorPanel
         title={TITLE}
+        icon={ICON}
         description={DESCRIPTION}
         error={departures.error}
         onRetry={() => void departures.refetch()}
@@ -85,14 +88,14 @@ export function DeparturesPanel({ onNewEnquiry, className }: { onNewEnquiry: () 
   ];
 
   return (
-    <Panel title={TITLE} description={DESCRIPTION} flush className={cn("flex flex-col", className)}>
+    <Panel title={TITLE} icon={ICON} description={DESCRIPTION} flush className={cn("flex flex-col", className)}>
       <DataTable
         caption={TITLE}
         columns={columns}
         rows={departures.data.items}
         getRowId={(row) => row.enquiry_id}
         initialSort={{ key: "departs", direction: "asc" }}
-        className="max-h-96 border-t border-line"
+        className="max-h-96 min-h-0 flex-1 border-t border-line"
         emptyState={
           <EmptyState
             icon={PlaneTakeoff}

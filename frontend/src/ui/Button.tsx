@@ -3,15 +3,16 @@ import type { ComponentProps } from "react";
 import { cn } from "./cn";
 
 /**
- * primary: the one main action (accent fill) · secondary: everything else (surface + border) ·
- * ghost: text-only, for toolbars and low-emphasis actions · danger: destructive actions.
+ * The kit's buttons. primary: the one main action, on the accent gradient with a soft glow · secondary: the kit
+ * `.btn` (raised glass and a hairline) · ghost: text-only, for toolbars and low-emphasis actions · danger:
+ * destructive actions, tinted in the alert tone.
  */
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md";
 
 type ButtonProps = ComponentProps<"button"> & {
   variant?: ButtonVariant;
-  /** sm = 32px, md = 36px. */
+  /** sm = 34px, md = 40px. */
   size?: ButtonSize;
   /** Square button holding only an icon; give it an aria-label. */
   iconOnly?: boolean;
@@ -19,20 +20,22 @@ type ButtonProps = ComponentProps<"button"> & {
 };
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-primary text-primary-ink hover:bg-primary-hover active:bg-primary-active",
-  secondary: "border border-line-strong bg-surface-2 text-ink hover:border-faint hover:bg-hover",
-  ghost: "text-dim hover:bg-hover hover:text-ink",
-  danger: "border border-danger/40 bg-surface-2 text-danger hover:border-danger/70 hover:bg-danger/10",
+  // The solid primary under the gradient keeps the label readable if the gradient is ever dropped.
+  primary:
+    "bg-primary bg-(image:--tm-grad) font-semibold text-primary-ink shadow-[0_8px_30px_-8px_var(--tm-glow)] hover:shadow-[0_10px_36px_-4px_var(--tm-glow)]",
+  secondary: "border border-line-soft bg-card-2 text-ink hover:border-line-strong hover:bg-hover",
+  ghost: "text-dim hover:bg-card-2 hover:text-ink",
+  danger: "tone-fill border text-danger hover:border-danger",
 };
 
 const SIZES: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-[13px]",
-  md: "h-9 px-3.5 text-sm",
+  sm: "h-[34px] rounded-[10px] px-3 text-[13px]",
+  md: "h-10 rounded-md px-4 text-sm",
 };
 
 const ICON_SIZES: Record<ButtonSize, string> = {
-  sm: "h-8 w-8",
-  md: "h-9 w-9",
+  sm: "h-[34px] w-[34px] rounded-[10px]",
+  md: "h-10 w-10 rounded-md",
 };
 
 /** Shared by Button and link-styled buttons so both read the same. */
@@ -43,9 +46,9 @@ export function buttonClasses({
   className,
 }: { variant?: ButtonVariant; size?: ButtonSize; iconOnly?: boolean; className?: string } = {}): string {
   return cn(
-    "inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium",
-    "transition-colors duration-150 ease-tm",
-    "disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50",
+    "inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap font-medium",
+    "transition-[color,background-color,border-color,box-shadow,scale] duration-150 ease-tm active:scale-[0.98]",
+    "disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 aria-disabled:cursor-not-allowed aria-disabled:opacity-50",
     "[&_svg]:shrink-0",
     iconOnly ? ICON_SIZES[size] : SIZES[size],
     VARIANTS[variant],

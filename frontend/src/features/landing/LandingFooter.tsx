@@ -10,7 +10,7 @@ const SECTION_LINK = "rounded-sm text-[13px] text-dim transition-colors duration
 function Column({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-[13px] font-medium text-ink">{title}</h2>
+      <h2 className="hud">{title}</h2>
       <ul className="flex flex-col gap-2.5">{children}</ul>
     </div>
   );
@@ -19,7 +19,7 @@ function Column({ title, children }: { title: string; children: ReactNode }) {
 /** Only links that go somewhere real: in-page sections and the three ways in. */
 export function LandingFooter() {
   return (
-    <footer className="border-t border-line">
+    <footer className="border-t border-line bg-chrome backdrop-blur-[20px]">
       <div className={cn(CONTAINER, "grid gap-10 py-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]")}>
         <div className="flex flex-col gap-3">
           <Wordmark />

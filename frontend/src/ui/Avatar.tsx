@@ -2,20 +2,21 @@ import { cn } from "./cn";
 
 type AvatarSize = "sm" | "md" | "lg";
 
-// Spelled out so the class scanner sees every colour; chart colours double as avatar hues.
+// The kit's hue avatar: a two-stop gradient from one chart colour into the next (the kit picks an HSL hue; here
+// the hues are theme tokens, so avatars follow the theme). Spelled out so the class scanner sees every pair.
 const COLOURS: ReadonlyArray<{ id: string; className: string }> = [
-  { id: "chart-1", className: "text-chart-1" },
-  { id: "chart-2", className: "text-chart-2" },
-  { id: "chart-3", className: "text-chart-3" },
-  { id: "chart-4", className: "text-chart-4" },
-  { id: "chart-5", className: "text-chart-5" },
-  { id: "chart-6", className: "text-chart-6" },
+  { id: "chart-1", className: "from-chart-1 to-chart-2" },
+  { id: "chart-2", className: "from-chart-2 to-chart-3" },
+  { id: "chart-3", className: "from-chart-3 to-chart-4" },
+  { id: "chart-4", className: "from-chart-4 to-chart-5" },
+  { id: "chart-5", className: "from-chart-5 to-chart-6" },
+  { id: "chart-6", className: "from-chart-6 to-chart-1" },
 ];
 
 const SIZES: Record<AvatarSize, string> = {
-  sm: "h-6 w-6 text-[10px]",
-  md: "h-8 w-8 text-[11px]",
-  lg: "h-10 w-10 text-sm",
+  sm: "h-6 w-6 rounded-[7px] text-[10px]",
+  md: "h-8 w-8 rounded-[10px] text-[11.5px]",
+  lg: "h-10 w-10 rounded-[12px] text-sm",
 };
 
 /** First letter of the first and last words: "Arjun Kumar Rao" → "AR". */
@@ -50,7 +51,7 @@ export function Avatar({ name, size = "md", className }: { name: string; size?: 
       title={label}
       data-colour={colour.id}
       className={cn(
-        "tm-tint inline-grid shrink-0 select-none place-items-center rounded-full border font-semibold leading-none tracking-[0.02em]",
+        "inline-grid shrink-0 select-none place-items-center bg-linear-135 font-display font-bold leading-none text-primary-ink",
         SIZES[size],
         colour.className,
         className,
@@ -78,7 +79,7 @@ export function AvatarStack({
   return (
     <ul className={cn("flex items-center -space-x-1.5", className)}>
       {shown.map((name, index) => (
-        <li key={`${name}-${index}`} className="rounded-full bg-surface ring-2 ring-surface">
+        <li key={`${name}-${index}`} className="rounded-[10px] ring-2 ring-bg">
           <Avatar name={name} size={size} />
         </li>
       ))}
@@ -86,7 +87,7 @@ export function AvatarStack({
         <li
           title={hidden.join(", ")}
           className={cn(
-            "inline-grid place-items-center rounded-full border border-line bg-surface-2 font-medium tabular-nums text-dim ring-2 ring-surface",
+            "inline-grid place-items-center border border-line bg-surface-2 font-medium tabular-nums text-dim ring-2 ring-bg",
             SIZES[size],
           )}
         >

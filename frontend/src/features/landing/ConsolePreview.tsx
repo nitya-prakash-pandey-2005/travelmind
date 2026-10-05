@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { Provenance } from "../../api/offers";
 import { Badge } from "../../ui/Badge";
 import { cn } from "../../ui/cn";
+import { PROVENANCE } from "../../ui/provenance";
 import { ProvenanceBadge } from "../../ui/ProvenanceBadge";
 import { STATUS_PILL, type EnquiryStatus } from "../../ui/StatusPill";
 import { BrandMark } from "./Wordmark";
@@ -153,8 +154,8 @@ export function PreviewWindow({
   className?: string;
 }) {
   return (
-    <div className={cn("overflow-hidden rounded-lg border border-line-strong bg-bg", className)}>
-      <div className="flex h-10 items-center gap-3 border-b border-line bg-surface px-3">
+    <div className={cn("card flush rounded-[22px] border-line-soft", className)}>
+      <div className="flex h-10 items-center gap-3 border-b border-line bg-chrome px-3">
         <span className="flex gap-1.5" aria-hidden="true">
           <span className="h-2.5 w-2.5 rounded-full bg-line-strong" />
           <span className="h-2.5 w-2.5 rounded-full bg-line-strong" />
@@ -164,7 +165,7 @@ export function PreviewWindow({
           <BrandMark className="h-4 w-4" />
           <span className="text-[13px] font-medium text-ink">Example Travels</span>
         </span>
-        <span className="ml-3 hidden h-7 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-surface-2 px-2.5 text-xs text-faint md:flex md:max-w-72">
+        <span className="ml-3 hidden h-7 min-w-0 flex-1 items-center gap-2 rounded-[10px] border border-line bg-card-2 px-2.5 text-xs text-faint md:flex md:max-w-72">
           <Search size={13} />
           <span className="truncate">Search clients, enquiries, quotes…</span>
           <span className="ml-auto shrink-0 whitespace-nowrap rounded-[4px] border border-line px-1 font-mono text-[10px]">Ctrl K</span>
@@ -175,19 +176,19 @@ export function PreviewWindow({
       </div>
       <div className="flex">
         {sidebar && (
-          <div className={cn("hidden w-44 shrink-0 flex-col gap-3 border-r border-line bg-surface px-2 py-3", SIDEBAR_FROM[sidebar])}>
+          <div className={cn("hidden w-44 shrink-0 flex-col gap-3 border-r border-line bg-card-2 px-2 py-3", SIDEBAR_FROM[sidebar])}>
             {NAV.map(({ group, items }) => (
               <div key={group} className="flex flex-col gap-0.5">
-                <span className="tm-micro px-2 pb-1">{group}</span>
+                <span className="hud px-2 pb-1">{group}</span>
                 {items.map(({ label, icon: Icon }) => (
                   <span
                     key={label}
                     className={cn(
                       "relative flex h-7 items-center gap-2 whitespace-nowrap rounded-md px-2 text-xs",
-                      label === active ? "bg-surface-2 text-ink" : "text-dim",
+                      label === active ? "bg-(image:--tm-grad-soft) text-ink" : "text-dim",
                     )}
                   >
-                    {label === active && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary" />}
+                    {label === active && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-(image:--tm-grad)" />}
                     <Icon size={13} strokeWidth={1.75} className={cn("shrink-0", label === active ? "text-primary" : "text-faint")} />
                     <span className="min-w-0 truncate">{label}</span>
                   </span>
@@ -198,7 +199,7 @@ export function PreviewWindow({
         )}
         <div className="min-w-0 flex-1 p-3 sm:p-4">{children}</div>
       </div>
-      <div className="flex h-7 items-center gap-4 border-t border-line bg-surface px-3 font-mono text-[10px] text-faint">
+      <div className="flex h-7 items-center gap-4 border-t border-line bg-chrome px-3 font-mono text-[10px] text-faint">
         <span className="flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-ok" />
           API 38 ms
@@ -215,12 +216,14 @@ export function ScreenHeader({ crumb, title, meta, action }: { crumb: string; ti
   return (
     <div className="flex flex-wrap items-end justify-between gap-2">
       <div className="min-w-0">
-        <p className="text-[11px] text-faint">{crumb}</p>
-        <p className="mt-0.5 text-base font-semibold tracking-[-0.01em] text-ink">{title}</p>
+        <p className="hud text-[9.5px] leading-4">{crumb}</p>
+        <p className="mt-0.5 font-display text-base font-semibold tracking-[-0.01em] text-ink">{title}</p>
         {meta && <p className="text-[11px] text-dim">{meta}</p>}
       </div>
       {action && (
-        <span className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-ink">{action}</span>
+        <span className="inline-flex h-7 items-center rounded-[10px] bg-primary bg-(image:--tm-grad) px-2.5 text-xs font-semibold text-primary-ink shadow-[0_6px_20px_-6px_var(--tm-glow)]">
+          {action}
+        </span>
       )}
     </div>
   );
@@ -239,9 +242,9 @@ export function MiniPanel({
   className?: string;
 }) {
   return (
-    <div className={cn("min-w-0 rounded-md border border-line bg-surface p-3", className)}>
+    <div className={cn("min-w-0 rounded-[14px] border border-line bg-card-2 p-3", className)}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="truncate text-xs font-semibold text-ink">{title}</p>
+        <p className="truncate font-display text-xs font-semibold text-ink">{title}</p>
         {aside}
       </div>
       {children}
@@ -306,14 +309,17 @@ const KPI_COLUMNS = {
   5: "grid-cols-2 sm:grid-cols-5",
 } as const;
 
-/** KPI tiles in one bordered strip with hairline dividers, like the Command Center's key figures. */
+/** Compact kit Stat tiles, like the Command Center's key figures. */
 export function KpiStrip({ count = 4, className }: { count?: keyof typeof KPI_COLUMNS; className?: string }) {
   return (
-    <div className={cn("grid gap-px overflow-hidden rounded-md border border-line bg-line", KPI_COLUMNS[count], className)}>
+    <div className={cn("grid gap-2", KPI_COLUMNS[count], className)}>
       {SAMPLE_KPIS.slice(0, count).map((kpi, index) => (
-        <div key={kpi.label} className={cn("min-w-0 bg-surface px-3 py-2.5", count === 5 && index === 4 && "max-sm:hidden")}>
-          <p className="truncate text-[10px] font-medium uppercase tracking-[0.06em] text-faint">{kpi.label}</p>
-          <p className="mt-1 font-mono text-lg font-medium leading-6 tabular-nums text-ink">{kpi.value}</p>
+        <div
+          key={kpi.label}
+          className={cn("min-w-0 rounded-[14px] border border-line bg-card-2 px-3 py-2.5", count === 5 && index === 4 && "max-sm:hidden")}
+        >
+          <p className="hud truncate text-[9.5px] leading-4">{kpi.label}</p>
+          <p className="num mt-1 text-lg font-semibold leading-6 text-ink">{kpi.value}</p>
           <div className="mt-1 flex items-center justify-between gap-2">
             <span className="whitespace-nowrap font-mono text-[10px] text-ok">{kpi.delta}</span>
             <Spark points={kpi.points} className="h-4 w-12 shrink-0 max-sm:hidden" />
@@ -385,6 +391,8 @@ const FARE_COLUMNS: Record<FareTableVariant, string> = {
   compact: "grid-cols-[minmax(0,1fr)_auto_auto]",
 };
 
+const SHORT_PROVENANCE: Record<Provenance, string> = { LIVE: "Live", CACHED: "Cached", SANDBOX: "Sandbox" };
+
 /** The results table, with the product's provenance pills. */
 export function FareTable({
   variant = "full",
@@ -400,8 +408,8 @@ export function FareTable({
   const full = variant === "full";
   const co2 = variant !== "compact";
   return (
-    <div className="overflow-hidden rounded-md border border-line bg-surface">
-      <div className={cn("grid items-center gap-3 border-b border-line px-3 py-2 tm-micro", FARE_COLUMNS[variant])}>
+    <div className="overflow-hidden rounded-[14px] border border-line bg-card-2">
+      <div className={cn("hud grid items-center gap-3 border-b border-line px-3 py-2 text-[9.5px]", FARE_COLUMNS[variant])}>
         <span>Airline</span>
         {full && <span className="hidden sm:block">Depart – arrive</span>}
         {co2 && <span className="hidden text-right sm:block">CO₂ / pax</span>}
@@ -415,11 +423,11 @@ export function FareTable({
             className={cn(
               "grid h-10 items-center gap-3 border-b border-line px-3 text-[13px] last:border-b-0",
               FARE_COLUMNS[variant],
-              index === highlight && "bg-surface-2",
+              index === highlight && "bg-selected",
             )}
           >
             <span className="flex min-w-0 items-center gap-2">
-              <span className="inline-flex h-5 w-7 shrink-0 items-center justify-center rounded-[4px] border border-line-strong font-mono text-[10px] text-dim">
+              <span className="inline-flex h-5 w-7 shrink-0 items-center justify-center rounded-[6px] border border-line-strong bg-card-2 font-mono text-[10px] text-dim">
                 {fare.code}
               </span>
               <span className="truncate text-ink">{fare.airline}</span>
@@ -431,7 +439,14 @@ export function FareTable({
             )}
             {co2 && <span className="hidden text-right font-mono text-xs text-dim sm:block">{fare.co2}</span>}
             <span className="text-right font-mono text-[13px] tabular-nums text-ink">{fare.price}</span>
-            <ProvenanceBadge provenance={fare.provenance} className="justify-self-start" />
+            <span className="justify-self-start">
+              <ProvenanceBadge provenance={fare.provenance} className="max-sm:hidden" />
+              {/* Phones: the label's first word, so the row keeps room for the airline and the fare. */}
+              <Badge tone={PROVENANCE[fare.provenance].tone} className="sm:hidden">
+                <span aria-hidden="true" className="dot h-1.5! w-1.5!" />
+                {SHORT_PROVENANCE[fare.provenance]}
+              </Badge>
+            </span>
           </li>
         ))}
       </ul>
@@ -442,9 +457,9 @@ export function FareTable({
 /** Where the sample fare sits on the route's low–typical–high band. */
 export function FareInsightCard({ className }: { className?: string }) {
   return (
-    <div className={cn("rounded-md border border-line bg-surface p-3", className)}>
+    <div className={cn("rounded-[16px] border border-line bg-card-2 p-3", className)}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[13px] font-semibold text-ink">Fare insight</p>
+        <p className="font-display text-[13px] font-semibold text-ink">Fare insight</p>
         <Badge tone="ok">Good</Badge>
       </div>
       <p className="mt-1 text-xs leading-4 text-dim">₹16,990 per traveller sits below the typical range for DEL → DXB in November.</p>
@@ -469,9 +484,9 @@ const SUPPLIERS = [
 
 export function SupplierStatusCard({ className }: { className?: string }) {
   return (
-    <div className={cn("rounded-md border border-line bg-surface p-3", className)}>
+    <div className={cn("rounded-[16px] border border-line bg-card-2 p-3", className)}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[13px] font-semibold text-ink">Supplier status</p>
+        <p className="font-display text-[13px] font-semibold text-ink">Supplier status</p>
         <span className="font-mono text-[10px] text-faint">last search</span>
       </div>
       <ul className="mt-2 flex flex-col gap-2">
@@ -497,7 +512,7 @@ export function SourceChips() {
       {SUPPLIERS.filter((s) => s.kind !== "Hotels").map((supplier) => (
         <li
           key={supplier.name}
-          className="inline-flex h-6 items-center gap-1.5 rounded-full border border-line bg-surface px-2 text-[11px] text-dim"
+          className="inline-flex h-6 items-center gap-1.5 rounded-full border border-line bg-card-2 px-2 text-[11px] text-dim"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-ok" />
           <span className="text-ink">{supplier.name}</span>
@@ -505,7 +520,7 @@ export function SourceChips() {
           <span className="font-mono text-faint">{supplier.latency}</span>
         </li>
       ))}
-      <li className="inline-flex h-6 items-center gap-1.5 rounded-full border border-line bg-surface px-2 text-[11px] text-dim">
+      <li className="inline-flex h-6 items-center gap-1.5 rounded-full border border-line bg-card-2 px-2 text-[11px] text-dim">
         <span className="h-1.5 w-1.5 rounded-full bg-warn" />
         <span className="text-ink">Sandbox</span>
         <span className="font-mono">2 fares</span>
@@ -521,7 +536,7 @@ export function RouteArc({ className }: { className?: string }) {
       {[14, 28, 42].map((gridY) => (
         <line key={gridY} x1="0" x2="240" y1={gridY} y2={gridY} stroke="var(--tm-chart-grid)" strokeDasharray="2 6" />
       ))}
-      <path d="M 12 46 Q 120 -6 228 46" fill="none" stroke="var(--tm-line-strong)" strokeWidth="1.25" />
+      <path d="M 12 46 Q 120 -6 228 46" fill="none" stroke="var(--tm-border-strong)" strokeWidth="1.25" />
       <path d="M 12 46 Q 120 -6 228 46" fill="none" stroke="var(--tm-primary)" strokeWidth="1.75" strokeLinecap="round" className="tm-arc-flow" />
       {[12, 228].map((cx) => (
         <g key={cx}>
@@ -539,9 +554,9 @@ export function RouteArc({ className }: { className?: string }) {
  */
 export function FareConsole({ rows = 3, className }: { rows?: number; className?: string }) {
   return (
-    <div className={cn("overflow-hidden rounded-lg border border-line-strong bg-bg", className)}>
-      <div className="flex h-9 items-center gap-3 border-b border-line bg-surface px-3">
-        <span className="tm-micro">Fare search</span>
+    <div className={cn("card flush rounded-[22px] border-line-soft", className)}>
+      <div className="flex h-9 items-center gap-3 border-b border-line bg-chrome px-3">
+        <span className="hud">Fare search</span>
         <span className="flex items-center gap-1.5 font-mono text-[10px] text-ok">
           <span className="tm-live relative h-1.5 w-1.5 rounded-full bg-ok" />3 sources
         </span>
@@ -552,7 +567,7 @@ export function FareConsole({ rows = 3, className }: { rows?: number; className?
       <div className="grid gap-3 p-3">
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
           <div>
-            <p className="font-mono text-xl font-medium leading-6 text-ink">DEL</p>
+            <p className="num text-xl font-semibold leading-6 text-ink">DEL</p>
             <p className="text-[10px] text-faint">New Delhi</p>
           </div>
           <div className="min-w-0 text-center">
@@ -560,18 +575,18 @@ export function FareConsole({ rows = 3, className }: { rows?: number; className?
             <p className="-mt-1 font-mono text-[10px] text-faint">2,192 km · 3h 40m nonstop</p>
           </div>
           <div className="text-right">
-            <p className="font-mono text-xl font-medium leading-6 text-ink">DXB</p>
+            <p className="num text-xl font-semibold leading-6 text-ink">DXB</p>
             <p className="text-[10px] text-faint">Dubai</p>
           </div>
         </div>
         <p className="-mt-1 text-[11px] text-dim">Fri 14 Nov · 1 adult · Economy · 4 results, cheapest first</p>
         <FareTable variant="compact" rows={rows} />
         <div className="grid gap-3 sm:grid-cols-2">
-          <FareInsightCard className="bg-surface" />
+          <FareInsightCard />
           <SupplierStatusCard />
         </div>
       </div>
-      <div className="flex h-7 items-center gap-4 border-t border-line bg-surface px-3 font-mono text-[10px] text-faint">
+      <div className="flex h-7 items-center gap-4 border-t border-line bg-chrome px-3 font-mono text-[10px] text-faint">
         <span className="flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-ok" />
           Search 1.2 s

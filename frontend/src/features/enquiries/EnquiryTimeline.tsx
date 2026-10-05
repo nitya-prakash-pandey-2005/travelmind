@@ -17,12 +17,13 @@ const CLIENT_KINDS = new Set(["quote.viewed", "quote.accepted", "quote.declined"
 const STAMP = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** Everything that happened to the enquiry and its quotes, newest first (the last 50 events). */
-export function EnquiryTimeline({ enquiryId, className }: { enquiryId: string; className?: string }) {
+export function EnquiryTimeline({ enquiryId, className, fill }: { enquiryId: string; className?: string; fill?: boolean }) {
   const timeline = useQuery(enquiryActivityQueryOptions(enquiryId));
   return (
     <TimelinePanel
       timeline={timeline}
       className={className}
+      fill={fill}
       intro="Status changes, quotes and client views"
       emptyDescription="Moves, quotes and client views will be listed here as they happen."
     />
@@ -35,12 +36,15 @@ export function TimelinePanel({
   intro,
   emptyDescription,
   className,
+  fill = false,
 }: {
   timeline: UseQueryResult<Timeline>;
   /** The description while the timeline loads. */
   intro: string;
   emptyDescription: string;
   className?: string;
+  /** Fill a height set by the layout: the events scroll inside the card. */
+  fill?: boolean;
 }) {
   const now = useClock(30_000);
   const count = timeline.data?.items.length ?? 0;
@@ -48,9 +52,10 @@ export function TimelinePanel({
   return (
     <Panel
       title={TITLE}
+      icon={History}
       description={timeline.data ? `${count} event${count === 1 ? "" : "s"} · newest first` : intro}
       busy={timeline.isPending}
-      className={className}
+      className={cn(fill && "flex min-h-0 flex-col", className)}
     >
       {timeline.isPending ? (
         <div aria-hidden="true" className="flex flex-col gap-4 py-1">
@@ -75,7 +80,11 @@ export function TimelinePanel({
           className="py-6"
         />
       ) : (
-        <ol className="relative flex flex-col">
+        <ol
+          className={cn("relative flex flex-col", fill && "-mr-2 min-h-0 flex-1 overflow-y-auto pr-2 focus-visible:-outline-offset-2")}
+          aria-label={fill ? "Timeline events" : undefined}
+          tabIndex={fill ? 0 : undefined}
+        >
           {timeline.data.items.map((item, index) => {
             const { icon: Icon, tone } = activityKindStyle(item.kind);
             const last = index === count - 1;

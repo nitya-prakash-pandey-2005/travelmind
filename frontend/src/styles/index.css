@@ -1,11 +1,15 @@
 @import "tailwindcss";
 @import "./theme.css";
+/* The UI kit: its variable names as aliases of the theme tokens, then its element styles, components and shell
+   layout in Tailwind's base and components layers, so utilities on an element still win. */
+@import "./kit/tokens.css";
+@import "./kit/base.css" layer(base);
+@import "./kit/components.css" layer(components);
+@import "./kit/layout.css" layer(components);
 
 @layer base {
   html {
     /* color-scheme comes with each theme block (themes.generated.css). */
-    /* Reserve the scrollbar's space so locking scroll under an open dialog doesn't shift the layout. */
-    scrollbar-gutter: stable;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
@@ -24,7 +28,7 @@
   h4 {
     text-wrap: balance;
   }
-  /* Titles use the theme's display face (Fraunces in Ember, the UI face elsewhere). */
+  /* Titles use the theme's display face (Space Grotesk). */
   h1 {
     font-family: var(--tm-font-display);
   }
@@ -35,6 +39,14 @@
   /* In-page links on the landing page glide (reduced motion turns this off below). */
   html:has(.tm-landing) {
     scroll-behavior: smooth;
+  }
+  /* Reserve the scrollbar's space so locking scroll under an open dialog doesn't shift the layout. Not on phones:
+     their scrollbars overlay the page, and on a page that doesn't scroll (sign-in, 404) the empty gutter showed as
+     a flat strip beside the ambient glow. */
+  @media (min-width: 640px) {
+    html {
+      scrollbar-gutter: stable;
+    }
   }
   /* A modal dialog or drawer is open: the page behind it must not scroll. */
   html:has(dialog[open]) {
@@ -64,23 +76,27 @@
 
 /* ---- Type roles (design direction v2 scale) ---------------------------------------------------- */
 
-/* 11/16 medium, uppercase, tracked: section labels in the sidebar, table headers, KPI labels. */
+/* The kit's HUD label: mono 10.5px, uppercase, wide tracking. Section labels, table headers, KPI labels. */
 @utility tm-micro {
-  font-size: 0.6875rem;
+  font-family: var(--tm-font-mono);
+  font-size: 0.65625rem;
   line-height: 1rem;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
   color: var(--tm-text-3);
 }
 
-/* 22/28 semibold page title. */
+/* Page title: Space Grotesk 28px semibold (23px on phones), as the kit's page head. */
 @utility tm-page-title {
   font-family: var(--tm-font-display);
-  font-size: 1.375rem;
-  line-height: 1.75rem;
+  font-size: 1.75rem;
+  line-height: 1.15;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+  @media (max-width: 900px) {
+    font-size: 1.4375rem;
+  }
 }
 
 /* Numbers that line up in columns. */
@@ -103,9 +119,11 @@
   background-size: 24px 24px;
 }
 
-/* v1 "glass": now a plain opaque surface (no blur, no glow). */
+/* Kit glass: the translucent card fill over the ambient background (opaque in Contrast and high contrast). */
 @utility tm-glass {
-  background-color: var(--tm-surface);
+  background-color: var(--tm-card);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
 }
 
 /* v1 gradient hairline: now a plain 1px border drawn on ::before (the element must be positioned). */
@@ -200,29 +218,37 @@
   animation: tm-sweep 1.4s var(--ease-tm) infinite;
 }
 
-/* Modal surfaces (<dialog>): themed backdrop and a short pop-in. */
+/* Modal surfaces (<dialog>): the kit sheet over a blurred scrim, with a short pop-in. */
 @utility tm-modal {
   box-shadow: var(--tm-shadow-pop);
   animation: tm-pop 160ms var(--ease-tm) both;
   &::backdrop {
     background: var(--tm-backdrop);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
     animation: tm-fade 160ms var(--ease-tm) both;
   }
 }
 
+/* Side sheet: slides in from the right on desktop; on phones it rises from the bottom (see Dialog). */
 @utility tm-modal-side {
   box-shadow: var(--tm-shadow-pop);
   animation: tm-slide 180ms var(--ease-tm) both;
   &::backdrop {
     background: var(--tm-backdrop);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
     animation: tm-fade 160ms var(--ease-tm) both;
+  }
+  @media (max-width: 760px) {
+    animation-name: tm-rise-sheet;
   }
 }
 
-/* Popovers (menus, notifications, tooltips): opaque surface, hairline, the one elevation. */
+/* Popovers (menus, notifications, tooltips): the kit's solid sheet surface, soft hairline, one elevation. */
 @utility tm-popover {
   background-color: var(--tm-surface);
-  border: 1px solid var(--tm-border-strong);
+  border: 1px solid var(--tm-border-soft);
   box-shadow: var(--tm-shadow-pop);
 }
 
@@ -275,6 +301,13 @@
   }
 }
 
+@keyframes tm-rise-sheet {
+  from {
+    opacity: 0.6;
+    transform: translateY(24px);
+  }
+}
+
 @keyframes tm-draw {
   from {
     stroke-dashoffset: 1;
@@ -311,48 +344,7 @@
   animation: tm-dash 1.6s linear infinite;
 }
 
-/* ---- Theme extras (v3 spec section 2). Unlayered on purpose: they restyle utilities per theme. ---------- */
-
-/* Orbital and Nebula: page titles carry a soft accent glow (--tm-glow is transparent in light and high contrast). */
-:root:is([data-theme="orbital"], [data-theme="nebula"]) :is(h1, .tm-page-title) {
-  text-shadow: 0 0 18px var(--tm-glow);
-}
-
-/* Ember: titles run saffron -> ink -> green, and the top bar picks up a faint warm tint. */
-:root[data-theme="ember"][data-contrast="normal"] :is(h1, .tm-page-title) {
-  /* Size the box to the text so the gradient spans the glyphs, not the empty width of the row. */
-  width: fit-content;
-  background-image: linear-gradient(90deg, var(--tm-primary), var(--tm-text) 55%, var(--tm-accent-2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-:root[data-theme="ember"][data-contrast="normal"] .tm-topbar {
-  background-image: linear-gradient(90deg, color-mix(in oklab, var(--tm-primary) 7%, transparent), transparent 60%);
-}
-
-/*
- * Terminal: static scanlines and a light vignette over everything, with a slow faint flicker. Their strengths are
- * the --tm-scanline / --tm-vignette tokens; contrast.test.ts checks text darkened by both at the darkest corner.
- */
-:root[data-theme="terminal"] body::before,
-:root[data-theme="terminal"] body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 2147483000;
-  pointer-events: none;
-}
-:root[data-theme="terminal"] body::before {
-  background: repeating-linear-gradient(to bottom, transparent 0 2px, var(--tm-scanline) 2px 3px);
-  animation: tm-flicker 5s steps(1, end) infinite;
-}
-:root[data-theme="terminal"] body::after {
-  background: radial-gradient(ellipse farthest-corner at 50% 50%, transparent 62%, var(--tm-vignette));
-}
-:root[data-theme="terminal"] :is(h1, .tm-page-title) {
-  text-shadow: 0 0 8px color-mix(in srgb, var(--tm-text) 35%, transparent);
-}
+/* ---- Theme extras. Unlayered on purpose: they restyle utilities per theme. ---------------------------- */
 
 /*
  * Contrast theme and any high-contrast look: thicker focus ring, no decorative gradients, glow or blur.
@@ -370,35 +362,17 @@
 :root:is([data-theme="contrast"], [data-contrast="high"]) .decor-gradient {
   background: none !important;
 }
+:root:is([data-theme="contrast"], [data-contrast="high"]) .tm-glass {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 :root:is([data-theme="contrast"], [data-contrast="high"]) [class*="backdrop-blur"] {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   background-color: var(--tm-bg);
 }
 
-@keyframes tm-flicker {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  47% {
-    opacity: 0.85;
-  }
-  48% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.92;
-  }
-  51% {
-    opacity: 1;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  :root[data-theme="terminal"] body::before {
-    animation: none;
-  }
   *,
   *::before,
   *::after {
@@ -425,7 +399,9 @@
   .tm-modal,
   .tm-modal-side,
   .tm-modal::backdrop,
-  .tm-modal-side::backdrop {
+  .tm-modal-side::backdrop,
+  .pulse-dot,
+  .scan::after {
     animation: none !important;
   }
 }

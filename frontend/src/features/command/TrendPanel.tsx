@@ -10,6 +10,8 @@ import { ErrorPanel } from "./PanelError";
 import { LoadingPanel } from "./panelParts";
 
 const TITLE = "Activity trend";
+/** Icon chip in the card head. */
+const ICON = ChartLine;
 const RANGE_LABEL: Record<DashboardRange, string> = { "7d": "last 7 days", "30d": "last 30 days", "90d": "last 90 days" };
 
 /** Daily counts on one axis: all three are counts of things the team did. Colours follow the series, fixed. */
@@ -23,11 +25,12 @@ export function TrendPanel({ range, className }: { range: DashboardRange; classN
   const summary = useQuery(summaryQueryOptions(range));
   const description = `Enquiries, quotes sent and fare searches per day, ${RANGE_LABEL[summary.data?.range ?? range] ?? RANGE_LABEL[range]}`;
 
-  if (summary.isPending) return <LoadingPanel title={TITLE} description={description} rows={6} className={className} />;
+  if (summary.isPending) return <LoadingPanel title={TITLE} icon={ICON} description={description} rows={6} className={className} />;
   if (summary.isError && !summary.data) {
     return (
       <ErrorPanel
         title={TITLE}
+        icon={ICON}
         description={description}
         error={summary.error}
         onRetry={() => void summary.refetch()}
@@ -47,7 +50,7 @@ export function TrendPanel({ range, className }: { range: DashboardRange; classN
   const empty = series.every((s) => s.points.every((p) => !p.value));
 
   return (
-    <Panel title={TITLE} description={description} busy={summary.isPlaceholderData} className={className}>
+    <Panel title={TITLE} icon={ICON} description={description} busy={summary.isPlaceholderData} className={className}>
       {empty ? (
         <EmptyState
           icon={ChartLine}
@@ -56,7 +59,7 @@ export function TrendPanel({ range, className }: { range: DashboardRange; classN
           action={{ label: "Scan fares", to: "/app/fares" }}
         />
       ) : (
-        <AreaTrend label="Enquiries, quotes sent and searches per day" series={series} valueFormat={formatNumber} height={208} />
+        <AreaTrend label="Enquiries, quotes sent and searches per day" series={series} valueFormat={formatNumber} height={248} />
       )}
     </Panel>
   );

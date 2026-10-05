@@ -1,7 +1,7 @@
 /*
  * Theme tokens (v3 theme system). Colour values live in src/theme/palettes.ts; themes.generated.css is built
  * from it and holds one block of --tm-* properties per look, keyed off <html data-theme data-mode data-contrast>
- * (set before first paint by the inline script in index.html). Its bare :root block, Orbital dark, is the
+ * (set before first paint by the inline script in index.html). Its bare :root block, Aurora dark, is the
  * fallback when scripts are off. This file only maps those properties onto the Tailwind names components use.
  *
  * Contrast: every look is checked by src/theme/__tests__/contrast.test.ts (text >= 4.5:1 on bg, surface and
@@ -47,6 +47,11 @@
   --color-ai: var(--tm-ai);
   --color-hover: var(--tm-hover);
   --color-selected: var(--tm-selected);
+  /* UI kit surfaces: glass card fills, translucent chrome and the soft hairline */
+  --color-card: var(--tm-card);
+  --color-card-2: var(--tm-card-2);
+  --color-chrome: var(--tm-chrome);
+  --color-line-soft: var(--tm-border-soft);
   /* v1 names (aliases of the above) */
   --color-void: var(--tm-bg);
   --color-deck: var(--tm-surface);
@@ -78,7 +83,7 @@
 
   --ease-tm: cubic-bezier(0.2, 0.8, 0.2, 1);
   --font-sans: var(--tm-font-sans);
-  /* Titles: the theme's display face (Fraunces in Ember, the UI face elsewhere). */
+  /* Titles and big numbers: the kit's display face (Space Grotesk). */
   --font-display: var(--tm-font-display);
   --font-mono: var(--tm-font-mono);
 }

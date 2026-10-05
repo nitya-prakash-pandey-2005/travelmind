@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "@tanstack/react-router";
-import { CircleAlert, Plane } from "lucide-react";
+import { CircleAlert, ListOrdered, Plane } from "lucide-react";
 import { useId, useState } from "react";
 import { asApiError } from "../../api/client";
 import type { FlightOffer, FlightSearchRequest, FlightSearchResponse } from "../../api/offers";
@@ -70,11 +70,7 @@ function SortTabs({ value, onChange, data }: { value: SortMode; onChange: (mode:
   const id = useId();
   const best = bestOf(data.offers, data.display_currency);
   return (
-    <div
-      role="group"
-      aria-label="Sort offers"
-      className="inline-flex max-w-full items-stretch rounded-md border border-line-strong bg-surface-2 p-0.5"
-    >
+    <div role="group" aria-label="Sort offers" className="seg max-w-full flex-nowrap items-stretch">
       {SORTS.map(({ mode, label }) => {
         const selected = value === mode;
         const hint = best[mode];
@@ -86,13 +82,11 @@ function SortTabs({ value, onChange, data }: { value: SortMode; onChange: (mode:
             aria-describedby={hint ? `${id}-${mode}` : undefined}
             onClick={() => onChange(mode)}
             className={cn(
-              "flex min-w-0 flex-1 flex-col items-start rounded-[4px] border px-3 py-1 text-left transition-colors duration-150 ease-tm sm:min-w-28",
-              selected
-                ? "border-line-strong bg-surface text-ink shadow-raise"
-                : "border-transparent text-dim hover:text-ink",
+              "flex min-w-0 flex-1 flex-col items-start rounded-[9px] px-3 py-1 text-left transition-colors duration-150 ease-tm sm:min-w-28",
+              selected ? "bg-raised text-ink shadow-raise" : "text-dim hover:text-ink",
             )}
           >
-            <span className="text-xs font-medium leading-4">{label}</span>
+            <span className="text-[13px] font-semibold leading-5">{label}</span>
             {hint && (
               <span id={`${id}-${mode}`} aria-hidden="true" className="tm-num truncate text-[11px] leading-4 text-dim">
                 {hint}
@@ -113,7 +107,7 @@ function Searching() {
         Searching suppliers…
       </p>
       {[0, 1, 2].map((index) => (
-        <div key={index} aria-hidden="true" className="rounded-lg border border-line bg-surface p-4">
+        <div key={index} aria-hidden="true" className="card">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-6 md:grid-cols-[11rem_minmax(0,1fr)_9rem]">
             <Skeleton lines={2} />
             <Skeleton className="h-10 max-md:hidden" />
@@ -180,14 +174,14 @@ export function FareScanPage() {
         )}
 
         {request === null ? (
-          // Wide screens: quick routes over the guide, supplier status beside both. Laptops: quick routes across
-          // the top (their chips need the width), guide and supplier status side by side. Phones: one column.
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1400px]:grid-cols-[minmax(0,1fr)_22rem]">
-            <div className="min-w-0 lg:max-[1400px]:col-span-2">
+          // The kit's 12-column grid: quick routes over the guide (span 8), supplier status beside both (span 4).
+          // One column under 1180 px.
+          <div className="grid g-12 items-start">
+            <div className="span-8 flex min-w-0 flex-col gap-4">
               <QuickRoutes recent={recent.routes} />
+              <ReadingGuide sections={FARE_GUIDE} note={FARE_NOTE} />
             </div>
-            <ReadingGuide sections={FARE_GUIDE} note={FARE_NOTE} />
-            <div className="min-w-0 min-[1400px]:col-start-2 min-[1400px]:row-span-2 min-[1400px]:row-start-1">
+            <div className="span-4 min-w-0">
               <SupplierStatusCard
                 booking="flights"
                 bookingTitle="Flight suppliers"
@@ -197,9 +191,13 @@ export function FareScanPage() {
           </div>
         ) : (
           <section aria-labelledby="fare-results" className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div className="min-w-0">
-                <h2 id="fare-results" className="text-base font-semibold leading-6 text-ink">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-card-2 text-dim">
+                  <ListOrdered size={17} strokeWidth={1.75} />
+                </span>
+                <div className="min-w-0">
+                <h2 id="fare-results" className="font-display text-base font-semibold leading-6 text-ink">
                   Results
                   {showResults && (
                     <span className="tm-num ml-2 text-[13px] font-normal text-dim">
@@ -208,6 +206,7 @@ export function FareScanPage() {
                   )}
                 </h2>
                 {request && <p className="mt-0.5 font-mono text-xs leading-4 text-dim">{tripSummary(request)}</p>}
+                </div>
               </div>
               {showResults && data.offers.length > 0 && <SortTabs value={sort} onChange={setSort} data={data} />}
             </div>
@@ -217,7 +216,7 @@ export function FareScanPage() {
             ) : search.isError ? (
               <p
                 role="alert"
-                className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/5 px-4 py-3 text-[13px] leading-5 text-danger"
+                className="card alert flex items-start gap-2 px-4 py-3 text-[13px] leading-5 text-danger"
               >
                 <CircleAlert size={15} aria-hidden="true" className="mt-0.5 shrink-0" />
                 {asApiError(search.error).message}
@@ -226,7 +225,7 @@ export function FareScanPage() {
               <>
                 <SourceStrip sources={data.sources} />
                 {data.offers.length === 0 ? (
-                  <div className="rounded-lg border border-line bg-surface">
+                  <div className="card p-0">
                     <EmptyState
                       icon={Plane}
                       title="No offers for this route and date."
@@ -236,7 +235,7 @@ export function FareScanPage() {
                   </div>
                 ) : (
                   <>
-                    <ol aria-label="Flight offers" className="flex flex-col gap-2">
+                    <ol aria-label="Flight offers" className="flex flex-col gap-3">
                       {sortOffers(data.offers, sort).map((offer) => (
                         <li key={offer.id}>
                           <OfferCard offer={offer} />

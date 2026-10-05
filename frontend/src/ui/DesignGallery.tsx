@@ -1,4 +1,5 @@
-import { Copy, Download, Inbox, Pencil, Plus, Send, Trash2 } from "lucide-react";
+import { Activity, Copy, Download, Inbox, Pencil, Plus, Radar, Send, Trash2 } from "lucide-react";
+import { Avatar as KitAvatar, Badge as KitBadge, Card, Gauge, Heatmap, Hud, LineChart, MiniRing, Seg, Sheet, Spark, StackedBars, Stat, Toggle } from "../kit";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { resolvePalette, THEMES, TOKEN_VARS, useThemeChoice, type PaletteToken, type ThemeMeta } from "../theme";
 import { ThemeSwatch } from "../theme/ThemeSwitcher";
@@ -31,14 +32,14 @@ const STATUS_TOKENS = ["--tm-ok", "--tm-warn", "--tm-danger", "--tm-info", "--tm
 const CHART_TOKENS = ["--tm-chart-1", "--tm-chart-2", "--tm-chart-3", "--tm-chart-4", "--tm-chart-5", "--tm-chart-6"];
 
 const TYPE_SCALE: ReadonlyArray<{ name: string; spec: string; className: string; sample: string }> = [
-  { name: "Page title", spec: "22/28 semibold", className: "tm-page-title", sample: "Pipeline" },
-  { name: "Section title", spec: "18/26 semibold", className: "text-lg font-semibold leading-[26px]", sample: "Open quotes" },
+  { name: "Page title", spec: "28 Space Grotesk", className: "tm-page-title", sample: "Pipeline" },
+  { name: "Section title", spec: "18/26 Space Grotesk", className: "font-display text-lg font-semibold leading-[26px]", sample: "Open quotes" },
   { name: "Emphasis", spec: "16/24", className: "text-base", sample: "Quote faster with every fare explained" },
   { name: "Body", spec: "14/20", className: "text-sm", sample: "Every price is labelled with where it came from." },
   { name: "Body small", spec: "13/20", className: "text-[13px] leading-5", sample: "Tables, the sidebar and dense lists." },
   { name: "Caption", spec: "12/16", className: "text-xs text-dim", sample: "Updated 5 min ago" },
-  { name: "Micro label", spec: "11/16 medium", className: "tm-micro", sample: "Suppliers" },
-  { name: "KPI value", spec: "28/34 mono", className: "font-mono text-[28px] font-medium leading-[34px] tracking-tight", sample: "₹6.2L" },
+  { name: "HUD label", spec: "10.5 mono caps", className: "tm-micro", sample: "Suppliers" },
+  { name: "KPI value", spec: "30 Space Grotesk", className: "num text-[30px] font-semibold leading-[38px]", sample: "₹6.2L" },
   { name: "Data", spec: "13/20 mono", className: "font-mono text-[13px] leading-5", sample: "DEL → BOM · AI 865 · Q-0004 · 14:05 IST" },
 ];
 
@@ -168,7 +169,7 @@ const MODES_NOTE: Record<ThemeMeta["modes"], string> = {
   "fixed-dark": "Dark only",
 };
 
-/** One card per theme, drawn in that theme's own tokens, with a button that applies it. */
+/** One card per theme, drawn in that theme's own tokens (glass, gradient and glow included), with a button that applies it. */
 function ThemePreviews() {
   const [choice, setChoice] = useThemeChoice();
   return (
@@ -176,18 +177,24 @@ function ThemePreviews() {
       {THEMES.map((theme) => {
         const current = theme.id === choice.theme;
         return (
-          <li key={theme.id} style={themeScope(theme)} className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-bg font-sans text-ink">
-            <div className="flex items-center gap-3 border-b border-line bg-surface px-3 py-2.5">
+          <li
+            key={theme.id}
+            data-theme-scope=""
+            style={themeScope(theme)}
+            className="relative isolate flex min-w-0 flex-col overflow-hidden rounded-[22px] border border-line bg-bg font-sans text-ink"
+          >
+            <div aria-hidden="true" className="tm-ambient -z-10" />
+            <div className="flex items-center gap-3 border-b border-line bg-chrome px-3.5 py-3">
               <ThemeSwatch theme={theme} />
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate font-display text-sm font-semibold">{theme.name}</span>
                 <span className="truncate text-xs text-dim">{theme.tagline}</span>
               </div>
             </div>
-            <div className="flex flex-col gap-3 p-3">
-              <div className="flex flex-col gap-1 rounded-lg border border-line bg-surface p-3">
+            <div className="flex flex-col gap-3 p-3.5">
+              <div className="card tight flex flex-col gap-1">
                 <span className="tm-micro">Open quotes</span>
-                <span className="font-mono text-xl font-medium">₹6.2L</span>
+                <span className="num text-2xl font-semibold">₹6.2L</span>
                 <span className="text-xs text-dim">12 quotes · updated 5 min ago</span>
                 <div aria-hidden="true" className="mt-1 flex h-1.5 overflow-hidden rounded-full">
                   <span className="w-[38%] bg-chart-1" />
@@ -198,8 +205,10 @@ function ThemePreviews() {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="tm-tint inline-flex h-5 items-center rounded-full border px-2 font-mono text-[10px] font-medium uppercase tracking-[0.06em] text-ok">Live</span>
-                <span className="tm-tint inline-flex h-5 items-center rounded-full border px-2 font-mono text-[10px] font-medium uppercase tracking-[0.06em] text-warn">Cached</span>
+                <KitBadge tone="green" dot>
+                  Live
+                </KitBadge>
+                <KitBadge tone="amber">Cached</KitBadge>
                 <span className="text-xs text-faint">{current ? "Current theme" : MODES_NOTE[theme.modes]}</span>
               </div>
               <div className="flex items-center gap-2">
@@ -215,6 +224,105 @@ function ThemePreviews() {
         );
       })}
     </ul>
+  );
+}
+
+// Kit specimens: illustrative shapes for the showcase only; never product data.
+const KIT_DAYS = Array.from({ length: 10 }, (_, i) => `2026-09-${String(i + 1).padStart(2, "0")}`);
+const KIT_LINE = KIT_DAYS.map((date, i) => ({ date, a: 4 + ((i * 5) % 7) + i / 2, b: 2 + ((i * 3) % 5) }));
+const KIT_BARS = KIT_DAYS.slice(0, 7).map((date, i) => ({
+  date,
+  label: date.slice(8),
+  total: 3 + ((i * 4) % 6) + 2,
+  bySeries: { "Series A": 3 + ((i * 4) % 6), "Series B": 2 },
+}));
+const KIT_HEAT = [
+  { id: "r1", name: "Row one", cells: KIT_DAYS.map((_, i) => (i * 3) % 13) },
+  { id: "r2", name: "Row two", cells: KIT_DAYS.map((_, i) => (i === 4 ? null : (i * 5) % 11)) },
+];
+
+function KitShowcase() {
+  const [seg, setSeg] = useState<"day" | "week" | "month">("week");
+  const [on, setOn] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid g4 keep-2">
+        <Card variant="tight">
+          <Stat value="38" label="Stat" />
+        </Card>
+        <Card variant="tight">
+          <Stat value="63.6" unit="%" label="Stat with unit" tone="green" />
+        </Card>
+        <Card variant="tight">
+          <div className="flex items-center justify-between gap-2">
+            <Stat value="12" label="With a spark" />
+            <Spark values={[3, 5, 4, 6, 8, 7, 9]} color="var(--tm-primary)" width={80} />
+          </div>
+        </Card>
+        <Card variant="tight">
+          <div className="flex items-center gap-3">
+            <MiniRing value={0.72} label="72%" />
+            <Hud>Mini ring</Hud>
+          </div>
+        </Card>
+      </div>
+      <div className="grid g2">
+        <Card title="Card with an icon chip" icon={Radar} right={<KitBadge tone="green" dot>Live</KitBadge>} variant="glow">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              <KitBadge tone="pink">Pink</KitBadge>
+              <KitBadge tone="green">Green</KitBadge>
+              <KitBadge tone="amber">Amber</KitBadge>
+              <KitBadge tone="rose">Rose</KitBadge>
+              <KitBadge tone="cyan">Cyan</KitBadge>
+              <KitBadge tone="violet">Violet</KitBadge>
+              <KitBadge>Muted</KitBadge>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Hud>HUD label</Hud>
+              <Hud tone="pink">Accent</Hud>
+              <Hud tone="cyan">Info</Hud>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Seg label="Specimen period" options={["day", "week", "month"] as const} value={seg} onChange={setSeg} />
+              <Toggle on={on} onChange={setOn} label="Specimen toggle" />
+            </div>
+            <div className="flex items-center gap-2">
+              <KitAvatar name="Asha Verma" size="sm" />
+              <KitAvatar name="Rohan Iyer" />
+              <KitAvatar name="Lena Park" size="lg" status="var(--tm-ok)" />
+              <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setSheetOpen(true)}>
+                Open kit sheet
+              </Button>
+            </div>
+          </div>
+        </Card>
+        <Card title="Gauge" icon={Activity}>
+          <Gauge score={72} label="Ready" sub="Specimen score" size={190} />
+        </Card>
+        <Card title="Line chart">
+          <LineChart
+            label="Specimen line chart"
+            data={KIT_LINE}
+            lines={[
+              { key: "a", label: "Series A", color: "var(--tm-chart-1)", fill: true },
+              { key: "b", label: "Series B", color: "var(--tm-chart-2)", dashed: true },
+            ]}
+            band={{ from: 4, to: 8, label: "Band" }}
+          />
+        </Card>
+        <Card title="Stacked bars and heatmap">
+          <div className="flex flex-col gap-4">
+            <StackedBars label="Specimen stacked bars" days={KIT_BARS} limit={9} limitLabel="Limit" height={120} />
+            <Heatmap label="Specimen heatmap" rows={KIT_HEAT} days={KIT_DAYS} max={12} />
+          </div>
+        </Card>
+      </div>
+      <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Kit sheet" description="A panel on desktop, a bottom sheet on phones.">
+        <p className="text-[13px] text-dim">Sheets trap focus, close on Escape or the scrim, and hand focus back.</p>
+      </Sheet>
+    </div>
   );
 }
 
@@ -252,11 +360,14 @@ export function DesignGallery() {
         }
       />
 
-      <Section title="Themes" description="Six looks built from the same tokens. Each card is drawn in its own theme; choose one to apply it.">
+      <Section
+        title="Themes"
+        description="The UI kit's Aurora, Ocean, Ember and Forest (each with light and high-contrast looks), plus Clearsky and Contrast for accessibility. Each card is drawn in its own theme; choose one to apply it."
+      >
         <ThemePreviews />
       </Section>
 
-      <Section title="Colour tokens" description="Graphite surfaces, one cyan accent, status hues always paired with a label.">
+      <Section title="Colour tokens" description="Deep glass surfaces, one accent gradient, status hues always paired with a label.">
         <Swatches tokens={SURFACE_TOKENS} />
         <Swatches tokens={TEXT_TOKENS} />
         <Swatches tokens={STATUS_TOKENS} />
@@ -266,7 +377,10 @@ export function DesignGallery() {
         <Swatches tokens={CHART_TOKENS} />
       </Section>
 
-      <Section title="Typography" description="Inter for the interface, JetBrains Mono for prices, codes, times and KPIs. Sentence case.">
+      <Section
+        title="Typography"
+        description="Space Grotesk for titles and big numbers, Inter for the interface, JetBrains Mono for HUD labels, prices, codes and times. Sentence case."
+      >
         <dl className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
           {TYPE_SCALE.map((row) => (
             <div key={row.name} className="grid items-baseline gap-1 px-4 py-3 sm:grid-cols-[9rem_7rem_minmax(0,1fr)] sm:gap-4">
@@ -278,7 +392,7 @@ export function DesignGallery() {
         </dl>
       </Section>
 
-      <Section title="Charts" description="Key figures sit in one strip with hairline dividers; charts keep a table view for screen readers.">
+      <Section title="Charts" description="Key figures are compact glass Stat cards in one row; charts keep a table view for screen readers.">
         <KpiStrip label="Specimen key figures" columns={3}>
           <KpiTile label="Metric A" value="24" delta={{ pct: 12, direction: "up", good: true }} series={SPECIMEN_SPARK} hint="vs previous 30 days" />
           <KpiTile label="Metric B" value="—" delta={{ pct: null, direction: "flat", good: true }} hint="No comparison yet" />
@@ -327,7 +441,7 @@ export function DesignGallery() {
         </div>
       </Section>
 
-      <Section title="Controls" description="Primary for the one main action; secondary for the rest; ghost in toolbars.">
+      <Section title="Controls" description="Primary (the accent gradient) for the one main action; secondary for the rest; ghost in toolbars.">
         <div className="flex flex-wrap items-center gap-2">
           <Button>Send quote</Button>
           <Button variant="secondary">Save draft</Button>
@@ -350,7 +464,7 @@ export function DesignGallery() {
         </div>
       </Section>
 
-      <Section title="Fields" description="Label above, 36px control, helper or error text below.">
+      <Section title="Fields" description="Label above, 40px control, helper or error text below.">
         <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
           <TextField label="Email" placeholder="you@agency.com" />
           <TextField label="Password" type="password" hint="At least 10 characters" />
@@ -410,10 +524,11 @@ export function DesignGallery() {
         </dl>
       </Section>
 
-      <Section title="Panels" description="Card: header row, body, optional footer. 16px padding, 8px radius, no glow.">
+      <Section title="Panels" description="The kit's glass card: header row with an optional icon chip, body, optional footer. 18px padding, 22px radius.">
         <div className="grid gap-4 lg:grid-cols-2">
           <Panel
             title="Open quotes"
+            icon={Inbox}
             description="Sent in the last 30 days"
             actions={<Button size="sm" variant="ghost">Export</Button>}
             footer={
@@ -439,11 +554,11 @@ export function DesignGallery() {
         </p>
       </Section>
 
-      <Section title="Overlays" description="Dialogs, drawers, menus and toasts share one elevation.">
+      <Section title="Overlays" description="Dialogs and drawers are kit sheets (a bottom sheet on phones); menus and toasts share one elevation.">
         <OverlayDemo />
       </Section>
 
-      <Section title="Data table" description="36px rows, 13px text, right-aligned mono numbers, actions on hover or focus.">
+      <Section title="Data table" description="HUD headers, 44px rows on glass, right-aligned mono numbers, actions on hover or focus.">
         <Panel
           flush
           title="Enquiries"
@@ -490,6 +605,10 @@ export function DesignGallery() {
           </Panel>
           <Skeleton className="h-8 w-40" />
         </div>
+      </Section>
+
+      <Section title="UI kit" description="The kit's own components (src/kit), on the same tokens: cards, HUD labels, badges, segmented switches, toggles, avatars, stats, the sheet and its charts.">
+        <KitShowcase />
       </Section>
 
       <Section title="Keyboard">

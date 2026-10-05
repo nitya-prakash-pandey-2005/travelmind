@@ -20,10 +20,10 @@ const FALLBACK_ICON = { icon: Bell, className: "text-dim" };
 function NotificationRow({ item }: { item: NotificationItem }) {
   const { icon: Icon, className } = KIND_ICONS[item.kind] ?? FALLBACK_ICON;
   return (
-    <li className="flex gap-3 rounded-md px-2.5 py-2 transition-colors duration-100 ease-tm hover:bg-hover">
+    <li className="flex gap-3 rounded-[12px] px-2.5 py-2 transition-colors duration-100 ease-tm hover:bg-card-2">
       <span
         aria-hidden="true"
-        className={cn("mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-line bg-surface-2", className)}
+        className={cn("mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-card-2", className)}
       >
         <Icon size={14} strokeWidth={1.9} />
       </span>
@@ -104,16 +104,16 @@ export function NotificationsBell() {
         aria-controls={open ? panelId : undefined}
         onClick={toggle}
         className={cn(
-          "relative inline-flex h-8 w-8 items-center justify-center rounded-md text-dim",
-          "transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink",
-          open && "bg-hover text-ink",
+          "relative inline-flex h-9 w-9 items-center justify-center rounded-md text-dim",
+          "transition-colors duration-150 ease-tm hover:bg-card-2 hover:text-ink",
+          open && "bg-card-2 text-ink",
         )}
       >
-        <Bell size={16} strokeWidth={1.75} aria-hidden="true" />
+        <Bell size={17} strokeWidth={1.75} aria-hidden="true" />
         {unread > 0 && (
           <span
             aria-hidden="true"
-            className="absolute right-0.5 top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-primary px-0.5 font-mono text-[9px] font-semibold leading-none text-primary-ink ring-2 ring-surface"
+            className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-(image:--tm-grad) px-1 font-mono text-[9px] font-semibold leading-none text-primary-ink ring-2 ring-bg"
           >
             {unread > 9 ? "9+" : unread}
           </span>
@@ -124,12 +124,13 @@ export function NotificationsBell() {
           id={panelId}
           aria-labelledby={headingId}
           className={cn(
-            "tm-enter tm-popover z-40 flex flex-col rounded-lg",
-            "fixed inset-x-3 top-12 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-1.5 sm:w-[22rem]",
+            "tm-enter tm-popover z-40 flex flex-col overflow-hidden rounded-[18px]",
+            // Phones: full width under the top bar (its own blurred box is the containing block, or the viewport).
+            "fixed inset-x-3 top-[calc(var(--topbar)+6px)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-1.5 sm:w-[22rem]",
           )}
         >
-          <header className="flex h-11 items-center justify-between border-b border-line px-4">
-            <h2 id={headingId} className="text-[13px] font-semibold text-ink">
+          <header className="flex h-12 items-center justify-between border-b border-line px-4">
+            <h2 id={headingId} className="font-display text-[15px] font-semibold text-ink">
               Notifications
             </h2>
             {unread > 0 && <span className="font-mono text-[11px] text-primary">{unread} new</span>}

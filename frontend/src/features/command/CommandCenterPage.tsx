@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Plus, Waypoints } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { DASHBOARD_RANGES, DEFAULT_RANGE, isDashboardRange, type DashboardRange } from "../../api/dashboard";
 import { useCurrentUser } from "../../auth/useCurrentUser";
@@ -24,6 +24,7 @@ import { RouteMapPanel } from "./RouteMapPanel";
 import { SupplierHealthPanel } from "./SupplierHealthPanel";
 import { TeamPanel } from "./TeamPanel";
 import { TrendPanel } from "./TrendPanel";
+import { WinRatePanel } from "./WinRatePanel";
 
 const RANGE_OPTIONS = DASHBOARD_RANGES.map((value) => ({ value, label: value }));
 
@@ -35,16 +36,23 @@ function safeFormat(date: Date, timeZone: string, options: Intl.DateTimeFormatOp
   }
 }
 
-/** One card slot of the 12-column grid (one column below 1280 px). Cards stretch to their row's height. */
+/** One card slot of the kit's 12-column grid (full width under 1180 px). Its card stretches to the row's height. */
 function Cell({ span, children }: { span: string; children: ReactNode }) {
   return <div className={cn("grid min-w-0", span)}>{children}</div>;
 }
 
+// Above the kit grid's 1180 px collapse. Size containment lets the neighbouring cards set the row height.
+/** Takes its row's height from the card beside it. */
+const WIDE_MATCH = "min-[1181px]:[contain:size] min-[1181px]:min-h-[20rem]";
+/** Two rows tall. */
+const WIDE_TALL = "min-[1181px]:row-span-2 min-[1181px]:[contain:size] min-[1181px]:min-h-[30rem]";
+
 /**
- * The Command Center: page header, setup checklist (until done or dismissed), the key-figure strip, then
- * cards on a 12-column grid, from the day's numbers down to the detail:
- *   trend 8 · pipeline 4 / route map 8 · route planner 4 / market pulse 7 + supplier health 7 · live activity 5
- *   (two rows tall) / departures 7 · team 5.
+ * The Command Center as a kit dashboard: page head (range and New enquiry on the right), the setup checklist
+ * (until done or dismissed), the KPI row, a hero row with the win-rate gauge beside the activity trend, then the
+ * detail cards on the 12-column grid:
+ *   win rate 5 · trend 7 / route map 8 · (pipeline + route planner) 4 / market pulse 7 + supplier health 7 ·
+ *   live activity 5 (two rows tall) / team 6 · departures 6.
  */
 export function CommandCenterPage() {
   const me = useCurrentUser();
@@ -66,7 +74,7 @@ export function CommandCenterPage() {
   const time = safeFormat(now, agency.timezone, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
   return (
-    <div className="mx-auto flex w-full max-w-[112rem] flex-col">
+    <div className="flex w-full min-w-0 flex-col">
       <PageHeader
         dotGrid
         breadcrumb={[{ label: "Workspace" }, { label: "Command Center" }]}
@@ -98,43 +106,45 @@ export function CommandCenterPage() {
 
         <KpiRow range={range} />
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-          <Cell span="xl:col-span-8">
-            <TrendPanel range={range} />
+        <div className="grid g-12">
+          <Cell span="span-5">
+            <WinRatePanel range={range} />
           </Cell>
-          <Cell span="xl:col-span-4">
-            <PipelinePanel onNewEnquiry={openEnquiry} />
+          <Cell span="span-7">
+            <TrendPanel range={range} className="flex flex-col" />
           </Cell>
 
-          <Cell span="xl:col-span-8">
+          <Cell span="span-8">
             <RouteMapPanel onNewEnquiry={openEnquiry} />
           </Cell>
-          <Cell span="xl:col-span-4">
-            <RouteScanner onRouteReady={record} onScanFares={() => void navigate({ to: "/app/fares" })}>
+          <div className="span-4 flex min-w-0 flex-col gap-4">
+            <PipelinePanel onNewEnquiry={openEnquiry} />
+            <RouteScanner className="flex-1" icon={Waypoints} onRouteReady={record} onScanFares={() => void navigate({ to: "/app/fares" })}>
               <RecentRoutes
                 routes={routes}
                 onSelect={(route) => routeStore.set({ origin: route.origin, destination: route.destination })}
               />
             </RouteScanner>
-          </Cell>
+          </div>
 
-          <Cell span="xl:col-span-7">
+          <Cell span="span-7">
             <MarketPulsePanel />
           </Cell>
           {/* Two rows tall beside market pulse and supplier health. Size containment lets those two set the
               height, and the feed scrolls inside it rather than stretching the rows. */}
-          <Cell span="xl:col-span-5 xl:row-span-2 xl:[contain:size] xl:min-h-[30rem]">
-            <ActivityFeedPanel className="h-full" />
+          <Cell span={cn("span-5", WIDE_TALL)}>
+            <ActivityFeedPanel className="h-full min-h-0" />
           </Cell>
-          <Cell span="xl:col-span-7">
+          <Cell span="span-7">
             <SupplierHealthPanel />
           </Cell>
 
-          <Cell span="xl:col-span-7">
-            <DeparturesPanel onNewEnquiry={openEnquiry} />
-          </Cell>
-          <Cell span="xl:col-span-5">
+          <Cell span="span-6">
             <TeamPanel range={range} />
+          </Cell>
+          {/* As tall as the team card beside it; the departures table scrolls inside. */}
+          <Cell span={cn("span-6", WIDE_MATCH)}>
+            <DeparturesPanel onNewEnquiry={openEnquiry} className="h-full min-h-0" />
           </Cell>
         </div>
       </div>

@@ -27,9 +27,16 @@ const FOCUSABLE = "button:not([disabled]), [href], input:not([disabled]), select
 
 export type ModalSurfaceProps = Omit<DialogProps, "open"> & { placement: "center" | "side" };
 
+// The kit sheet: a solid sheet surface with a soft hairline. Desktop: a centred dialog, or a panel inset 12px from
+// the right edge. Phones (760px and below): both rise from the bottom as a sheet, up to 88% of the screen.
+const PHONE_SHEET =
+  "max-[760px]:mx-0 max-[760px]:mb-0 max-[760px]:mt-auto max-[760px]:h-auto max-[760px]:max-h-[88dvh] max-[760px]:w-full max-[760px]:rounded-b-none max-[760px]:rounded-t-[24px] max-[760px]:border-x-0 max-[760px]:border-b-0";
 const PLACEMENT = {
-  center: "tm-modal m-auto max-h-[min(44rem,calc(100dvh-2rem))] w-[min(34rem,calc(100vw-2rem))] max-w-none rounded-lg",
-  side: "tm-modal-side my-0 ml-auto mr-0 h-dvh max-h-dvh w-[min(28rem,100vw)] max-w-none rounded-l-lg",
+  center: cn("tm-modal m-auto max-h-[min(44rem,calc(100dvh-2rem))] w-[min(34rem,calc(100vw-2rem))] max-w-none rounded-[24px]", PHONE_SHEET),
+  side: cn(
+    "tm-modal-side my-3 ml-auto mr-3 h-[calc(100dvh-24px)] max-h-[calc(100dvh-24px)] w-[min(440px,calc(100vw-24px))] max-w-none rounded-[28px]",
+    PHONE_SHEET,
+  ),
 };
 
 /**
@@ -114,15 +121,17 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
       onPointerDown={onPointerDown}
       onClick={onClick}
       className={cn(
-        "border border-line-strong bg-surface p-0 text-ink",
+        "border border-line-soft bg-surface p-0 text-ink",
         "open:flex open:flex-col",
         PLACEMENT[placement],
         className,
       )}
     >
-      <header className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+      {/* The phone sheet's grab handle (decorative: Escape, the scrim and Close dismiss it). */}
+      <span aria-hidden="true" className="mx-auto mt-2 hidden h-1 w-10 shrink-0 rounded-full bg-line-soft max-[760px]:block" />
+      <header className="flex items-start justify-between gap-3 px-5 pb-3 pt-4 max-[760px]:pt-2">
         <div className="min-w-0">
-          <h2 id={titleId} className="text-base font-semibold leading-6 text-ink">
+          <h2 id={titleId} className="font-display text-lg font-semibold leading-6 tracking-[-0.01em] text-ink">
             {title}
           </h2>
           {description && (
@@ -136,18 +145,18 @@ export function ModalSurface({ onClose, title, description, children, footer, cl
           type="button"
           aria-label="Close"
           onClick={onClose}
-          className="-mr-1.5 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink"
+          className="-mr-1.5 -mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line text-dim transition-colors duration-150 ease-tm hover:bg-card-2 hover:text-ink"
         >
           <X size={16} aria-hidden="true" />
         </button>
       </header>
-      <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-2">
         {children}
       </div>
       {footer && (
         <footer
           ref={footerRef}
-          className="flex flex-wrap items-center justify-end gap-2 rounded-b-[inherit] border-t border-line bg-surface-2/50 px-5 py-3"
+          className="flex flex-wrap items-center justify-end gap-2 rounded-b-[inherit] border-t border-line bg-card-2 px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
         >
           {footer}
         </footer>

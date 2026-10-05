@@ -1,3 +1,4 @@
+import { BADGE_TONES } from "./Badge";
 import { cn } from "./cn";
 
 export type EnquiryStatus = "new" | "quoting" | "quoted" | "won" | "lost";
@@ -19,18 +20,8 @@ export const STATUS_PILL: Record<PillStatus, { label: string; tone: PillTone }> 
   expired: { label: "Expired", tone: "neutral" },
 };
 
-const TONE_TEXT: Record<PillTone, string> = {
-  neutral: "text-dim",
-  primary: "text-primary",
-  info: "text-info",
-  ok: "text-ok",
-  warn: "text-warn",
-  danger: "text-danger",
-  ai: "text-ai",
-};
-
 /**
- * Enquiry / quote lifecycle status as a tinted pill: colour plus label, never colour alone.
+ * Enquiry / quote lifecycle status as the kit's badge with its glowing dot: colour plus label, never colour alone.
  * Blue = new/sent, amber = work in progress, cyan = with the client, green = won, red = declined,
  * grey = closed without a result. Violet stays reserved for AI.
  */
@@ -39,14 +30,9 @@ export function StatusPill({ status, className }: { status: PillStatus; classNam
   return (
     <span
       data-tone={tone}
-      className={cn(
-        "tm-tint inline-flex h-5 items-center gap-1.5 whitespace-nowrap rounded-full border px-2",
-        "font-mono text-[10px] font-medium uppercase leading-none tracking-[0.06em]",
-        TONE_TEXT[tone],
-        className,
-      )}
+      className={cn("badge gap-1.5 px-2.5 py-0.5 text-[11.5px] leading-[18px]", BADGE_TONES[tone], className)}
     >
-      <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+      <span aria-hidden="true" className="dot h-1.5! w-1.5!" />
       {label}
     </span>
   );

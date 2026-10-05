@@ -146,7 +146,7 @@ test("a saved colour the client page can't use is never put into a style, and th
   settings(ME_OWNER, {}, profileOf(ME_OWNER, { brand_color: "teal; background: url(x)" }));
   const form = await profileForm();
   expect(within(form).getByLabelText("Brand colour hex")).toHaveValue("");
-  expect(within(form).getByLabelText("Brand colour picker")).toHaveValue("#3cc6f0");
+  expect(within(form).getByLabelText("Brand colour picker")).toHaveValue("#ff4d9d");
   expect(within(form).queryByRole("list", { name: "Contrast check" })).not.toBeInTheDocument();
   expect(document.body.innerHTML).not.toContain("url(x)");
   const preview = screen.getByRole("group", { name: "Client quote preview" });
@@ -240,7 +240,18 @@ test("the side panels show the workspace, the team, appearance and data handling
   expect(within(team).getByRole("link", { name: /Manage team/ })).toHaveAttribute("href", "/app/team");
 
   const appearance = screen.getByRole("region", { name: "Appearance" });
-  expect(within(appearance).getByRole("listbox")).toBeInTheDocument();
+  const themes = within(appearance).getByRole("radiogroup", { name: "Theme" });
+  expect(within(themes).getAllByRole("radio").map((radio) => radio.textContent)).toEqual([
+    expect.stringContaining("Aurora"),
+    expect.stringContaining("Ocean"),
+    expect.stringContaining("Ember"),
+    expect.stringContaining("Forest"),
+    expect.stringContaining("Clearsky"),
+    expect.stringContaining("Contrast"),
+  ]);
+  expect(within(themes).getByRole("radio", { name: /Aurora/ })).toBeChecked();
+  expect(within(appearance).getByRole("radiogroup", { name: "Mode" })).toBeInTheDocument();
+  expect(within(appearance).getByRole("switch", { name: "High contrast" })).toBeInTheDocument();
 
   const privacy = screen.getByRole("region", { name: "Data and privacy" });
   expect(within(privacy).getAllByRole("listitem").length).toBeGreaterThanOrEqual(3);

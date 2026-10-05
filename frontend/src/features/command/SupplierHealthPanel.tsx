@@ -15,6 +15,8 @@ import { ErrorPanel } from "./PanelError";
 import { FooterLink, LoadingPanel } from "./panelParts";
 
 const TITLE = "Supplier health";
+/** Icon chip in the card head. */
+const ICON = ServerCog;
 const RANGES = [
   { value: "24h", label: "24h" },
   { value: "7d", label: "7d" },
@@ -71,12 +73,13 @@ export function SupplierHealthPanel({ className }: { className?: string }) {
 
   // The range switch stays in every state, so a failing range can be switched away from.
   if (health.isPending) {
-    return <LoadingPanel title={TITLE} description={description} actions={rangeSwitch} rows={3} className={className} />;
+    return <LoadingPanel title={TITLE} icon={ICON} description={description} actions={rangeSwitch} rows={3} className={className} />;
   }
   if (health.isError && !health.data) {
     return (
       <ErrorPanel
         title={TITLE}
+        icon={ICON}
         description={description}
         error={health.error}
         onRetry={() => void health.refetch()}
@@ -146,6 +149,7 @@ export function SupplierHealthPanel({ className }: { className?: string }) {
   return (
     <Panel
       title={TITLE}
+      icon={ICON}
       description={description}
       actions={rangeSwitch}
       busy={health.isPlaceholderData}

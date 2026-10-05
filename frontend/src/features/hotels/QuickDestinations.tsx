@@ -1,3 +1,4 @@
+import { MapPin } from "lucide-react";
 import type { Airport } from "../../api/types";
 import { cn } from "../../ui/cn";
 import { Panel } from "../../ui/Panel";
@@ -16,8 +17,8 @@ function DestinationChip({ airport, active, onPick }: { airport: Airport; active
       aria-label={`Near ${airport.iata_code}, ${airport.city ?? airport.name}`}
       onClick={() => onPick(airport)}
       className={cn(
-        "flex w-full min-w-0 items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors duration-150 ease-tm",
-        active ? "border-primary/60 bg-primary/5" : "border-line bg-surface-2 hover:border-line-strong",
+        "flex w-full min-w-0 items-center gap-3 rounded-[14px] border px-3 py-2.5 text-left transition-colors duration-150 ease-tm",
+        active ? "border-primary bg-[image:var(--grad-soft)]" : "border-line bg-card-2 hover:border-line-strong",
       )}
     >
       <span className="font-mono text-[13px] font-medium text-ink">{airport.iata_code}</span>
@@ -49,7 +50,7 @@ export function QuickDestinations({
   const popular = POPULAR_DESTINATIONS.filter((a) => !taken.has(keyOf(a))).slice(0, SLOTS - mine.length);
   const chip = (a: Airport) => <DestinationChip airport={a} active={selected?.iata_code === a.iata_code} onPick={onPick} />;
   return (
-    <Panel title="Quick destinations" description="Pick one to fill Near, then scan." className="h-full">
+    <Panel title="Quick destinations" icon={MapPin} description="Pick one to fill Near, then scan." className="h-full">
       <div className="flex flex-col gap-4">
         <QuickGroup title="From your recent fare searches" items={mine} keyOf={keyOf} render={chip} />
         <QuickGroup

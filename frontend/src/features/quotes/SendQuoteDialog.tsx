@@ -3,7 +3,7 @@ import { useId, useState } from "react";
 import { asApiError } from "../../api/client";
 import { SHARE_TTL_DAYS, shareUrl, useSendQuote, type QuoteDetail, type QuoteSent } from "../../api/quotes";
 import { Button } from "../../ui/Button";
-import { Dialog } from "../../ui/Dialog";
+import { Drawer } from "../../ui/Drawer";
 import { FormError } from "../../ui/FormError";
 import { FIELD_CONTROL, FIELD_LABEL } from "../../ui/TextField";
 import { useToast } from "../../ui/toast/useToast";
@@ -79,7 +79,7 @@ export function SendQuoteDialog({
   }
 
   return (
-    <Dialog
+    <Drawer
       open
       onClose={requestClose}
       title={`Send ${quote.number} to the client`}
@@ -159,7 +159,7 @@ export function SendQuoteDialog({
             </div>
           </div>
           {confirmingClose && (
-            <div role="alert" className="flex gap-2.5 rounded-md border border-warn/40 bg-warn/5 px-3 py-2.5 text-[13px] leading-5 text-ink">
+            <div role="alert" className="card warn tight flex gap-2.5 rounded-[14px] text-[13px] leading-5 text-ink">
               <TriangleAlert size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-warn" />
               <p>
                 You haven't copied the link yet. It won't be shown again; to get a new one you would need to send the quote
@@ -175,7 +175,7 @@ export function SendQuoteDialog({
         <div className="flex flex-col gap-4">
           {send.isError && <FormError error={asApiError(send.error)} />}
           {resend && (
-            <div role="note" className="flex gap-2.5 rounded-md border border-warn/40 bg-warn/5 px-3 py-2.5 text-[13px] leading-5 text-ink">
+            <div role="note" className="card warn tight flex gap-2.5 rounded-[14px] text-[13px] leading-5 text-ink">
               <TriangleAlert size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-warn" />
               <div className="min-w-0">
                 <p className="font-medium">Re-sending creates a new link. The link you sent before stops working.</p>
@@ -190,7 +190,7 @@ export function SendQuoteDialog({
           {version && (
             <div className="flex flex-col gap-1.5">
               <p className="tm-micro">The client sees</p>
-              <ul className="flex flex-col gap-1 rounded-md border border-line bg-surface-2 px-3 py-2">
+              <ul className="callout flex-col gap-1">
                 {version.options.map((option, index) => (
                   <li key={`${option.offer.id}-${index}`} className="font-mono text-xs leading-5 text-ink">
                     {optionLine(option, index)}
@@ -206,6 +206,6 @@ export function SendQuoteDialog({
           </ul>
         </div>
       )}
-    </Dialog>
+    </Drawer>
   );
 }

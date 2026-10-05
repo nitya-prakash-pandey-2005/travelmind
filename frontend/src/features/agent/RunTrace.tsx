@@ -39,7 +39,7 @@ import {
   type ToolCallStep,
   type ToolResultStep,
 } from "../../api/agent";
-import { Badge } from "../../ui/Badge";
+import { Badge, type BadgeTone } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { cn } from "../../ui/cn";
 import { FIELD_CONTROL } from "../../ui/TextField";
@@ -97,18 +97,47 @@ export function traceItems(steps: readonly AgentStep[]): TraceItem[] {
   return items;
 }
 
-/** One row of the trace: an icon on the rail, then the content. */
-function Row({ icon: Icon, tone = "dim", spin = false, children, last = false }: { icon: LucideIcon; tone?: Tone; spin?: boolean; children: ReactNode; last?: boolean }) {
+/** A row's state as a kit badge: what it is (or how long it took), in the kit's status tones. */
+type RowStatus = { tone: BadgeTone; label: string; live?: boolean };
+
+/**
+ * One row of the trace, as a kit list row: the icon chip in the row's tone, the content, and a status badge on
+ * the right. `last` is kept for callers; the list's own hairlines separate the rows.
+ */
+function Row({
+  icon: Icon,
+  tone = "dim",
+  spin = false,
+  status,
+  action,
+  children,
+}: {
+  icon: LucideIcon;
+  tone?: Tone;
+  spin?: boolean;
+  status?: RowStatus;
+  /** A control under the status badge (the details toggle). */
+  action?: ReactNode;
+  children: ReactNode;
+  last?: boolean;
+}) {
   return (
-    <li className="tm-enter relative grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-3 pb-3 last:pb-0">
-      {!last && <span aria-hidden="true" className="absolute bottom-0 left-3.5 top-8 w-px -translate-x-1/2 bg-line" />}
-      <span
-        aria-hidden="true"
-        className={cn("relative grid h-7 w-7 place-items-center rounded-md border border-line bg-surface-2", TONE[tone])}
-      >
-        <Icon size={14} strokeWidth={1.75} className={spin ? "tm-spin" : undefined} />
+    <li className="li tm-enter items-start gap-3 py-3">
+      <span aria-hidden="true" className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-card-2", TONE[tone])}>
+        <Icon size={15} strokeWidth={1.75} className={spin ? "tm-spin" : undefined} />
       </span>
-      <div className="min-w-0 pt-0.5">{children}</div>
+      <div className="min-w-0 flex-1 pt-0.5">{children}</div>
+      {(status || action) && (
+        <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
+          {status && (
+            <Badge tone={status.tone} className="px-2 font-mono text-[10.5px]">
+              {status.live && <span aria-hidden="true" className="dot tm-live h-1.5! w-1.5!" />}
+              {status.label}
+            </Badge>
+          )}
+          {action}
+        </div>
+      )}
     </li>
   );
 }
@@ -294,36 +323,43 @@ function ToolRow({ call, result, last }: { call: ToolCallStep | null; result: To
   const running = result === null;
   const failed = result !== null && !result.payload.ok;
   const label = call?.payload.label ?? tool.replace(/_/g, " ");
+  const took = result?.duration_ms !== null && result?.duration_ms !== undefined ? formatMs(result.duration_ms) : null;
+  const status: RowStatus = running
+    ? { tone: "primary", label: "Running", live: true }
+    : failed
+      ? { tone: "danger", label: took ? `Failed · ${took}` : "Failed" }
+      : { tone: "ok", label: took ?? "Done" };
   return (
-    <Row icon={running ? LoaderCircle : failed ? CircleAlert : Icon} tone={running ? "primary" : failed ? "danger" : "dim"} spin={running} last={last}>
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[13px] font-medium leading-5 text-ink">{label}</p>
-          <p className={cn("text-xs leading-4", failed ? "text-danger" : "text-dim")}>
-            {running ? "Running…" : result.payload.summary}
-            {result?.payload.memo && <span className="text-faint"> · reused an earlier result</span>}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {result?.duration_ms !== null && result?.duration_ms !== undefined && (
-            <span className="tm-num text-[11px] text-faint">{formatMs(result.duration_ms)}</span>
-          )}
-          {result && (
+    <Row
+      icon={running ? LoaderCircle : failed ? CircleAlert : Icon}
+      tone={running ? "primary" : failed ? "danger" : "dim"}
+      spin={running}
+      status={status}
+      last={last}
+      action={
+        result && (
             <button
               type="button"
               aria-expanded={open}
               aria-controls={detailsId}
               aria-label={`${open ? "Hide" : "Show"} details: ${label}`}
               onClick={() => setOpen((value) => !value)}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-dim transition-colors duration-150 ease-tm hover:bg-hover hover:text-ink"
+              className="-mr-1 inline-flex h-8 w-8 items-center justify-center rounded-[10px] text-dim transition-colors duration-150 ease-tm hover:bg-card-2 hover:text-ink"
             >
-              <ChevronDown size={14} aria-hidden="true" className={cn("transition-transform duration-150 ease-tm", open && "rotate-180")} />
+              <ChevronDown size={15} aria-hidden="true" className={cn("transition-transform duration-150 ease-tm", open && "rotate-180")} />
             </button>
-          )}
-        </div>
+        )
+      }
+    >
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium leading-5 text-ink">{label}</p>
+        <p className={cn("text-xs leading-4", failed ? "text-danger" : "text-dim")}>
+          {running ? "Running…" : result.payload.summary}
+          {result?.payload.memo && <span className="text-faint"> · reused an earlier result</span>}
+        </p>
       </div>
       {open && result && (
-        <div id={detailsId} className="mt-2 rounded-md border border-line bg-surface-2/60 px-3 py-2.5">
+        <div id={detailsId} className="mt-2 rounded-[12px] border border-line bg-card-2 px-3 py-2.5">
           <ToolData tool={tool} data={result.payload.data ?? {}} />
         </div>
       )}
@@ -369,13 +405,13 @@ function QuestionForm({
   return (
     <form
       aria-label="Answer the question"
-      className="tm-enter flex flex-col gap-2 rounded-lg border border-warn/40 bg-surface-2 p-3"
+      className="card warn tm-enter flex flex-col gap-2 p-3.5"
       onSubmit={(event) => {
         event.preventDefault();
         send();
       }}
     >
-      <p className="tm-micro text-warn">Your answer to the question above</p>
+      <p className="hud text-warn">Your answer to the question above</p>
       {pending.fields.length > 0 && (
         <p id={hintId} className="flex flex-wrap items-center gap-1.5 text-xs text-dim">
           <span>Needed:</span>
@@ -396,7 +432,7 @@ function QuestionForm({
         aria-label="Your answer"
         aria-describedby={[pending.fields.length > 0 ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined}
         placeholder="From Mumbai, 12 to 16 Dec, 2 adults"
-        className={cn(FIELD_CONTROL, "h-auto min-h-16 resize-y border-line-strong bg-surface py-2 leading-5")}
+        className={cn(FIELD_CONTROL, "h-auto min-h-16 resize-y border-line-strong py-2 leading-5")}
       />
       {error && (
         <p id={errorId} role="alert" className="flex items-center gap-1.5 text-xs text-danger">
@@ -444,14 +480,14 @@ function StepRow({ step, run, last }: { step: Exclude<AgentStep, ToolCallStep | 
       const active = pending !== null && pending.call_id === step.payload.call_id && pending.kind === step.payload.kind;
       if (step.payload.kind === "confirm") {
         return (
-          <Row icon={ShieldQuestion} tone="warn" last={last}>
+          <Row icon={ShieldQuestion} tone="warn" status={active ? { tone: "warn", label: "Waiting", live: true } : undefined} last={last}>
             <p className="tm-micro">{active ? "Waiting for approval" : "Approval asked"}</p>
             <p className="mt-0.5 text-[13px] leading-5 text-ink">{step.payload.action}</p>
           </Row>
         );
       }
       return (
-        <Row icon={MessageCircleQuestion} tone="warn" last={last}>
+        <Row icon={MessageCircleQuestion} tone="warn" status={active ? { tone: "warn", label: "Waiting", live: true } : undefined} last={last}>
           <p className="tm-micro">{active ? "Question · waiting for your answer" : "Question"}</p>
           <p className="mt-0.5 text-[13px] leading-5 text-ink">{step.payload.question}</p>
         </Row>
@@ -471,7 +507,7 @@ function StepRow({ step, run, last }: { step: Exclude<AgentStep, ToolCallStep | 
       return (
         <Row icon={UserRound} tone="primary" last={last}>
           <p className="tm-micro">You</p>
-          <p className="mt-1 whitespace-pre-wrap rounded-md border border-line bg-surface-2 px-3 py-2 text-[13px] leading-5 text-ink">{payload.text}</p>
+          <p className="bubble me mt-1.5 max-w-full whitespace-pre-wrap text-[13px] leading-5 text-ink">{payload.text}</p>
         </Row>
       );
     }
@@ -479,7 +515,12 @@ function StepRow({ step, run, last }: { step: Exclude<AgentStep, ToolCallStep | 
       const passed = step.payload.passed;
       const count = step.payload.violations.length;
       return (
-        <Row icon={passed ? ShieldCheck : ShieldAlert} tone={passed ? "ok" : "warn"} last={last}>
+        <Row
+          icon={passed ? ShieldCheck : ShieldAlert}
+          tone={passed ? "ok" : "warn"}
+          status={passed ? { tone: "ok", label: "Pass" } : { tone: "warn", label: `${count} flagged` }}
+          last={last}
+        >
           <p className="text-[13px] font-medium leading-5 text-ink">
             {passed ? "Checked prices against live results" : "Some values couldn't be verified"}
           </p>
@@ -505,8 +546,8 @@ function StepRow({ step, run, last }: { step: Exclude<AgentStep, ToolCallStep | 
     case "answer":
       return (
         <Row icon={MessageSquareText} tone="primary" last={last}>
-          <p className="tm-micro">Plan summary</p>
-          <div className="mt-1 rounded-md border border-line border-l-2 border-l-primary bg-surface-2 px-3 py-2.5">
+          <p className="hud c-pink">Plan summary</p>
+          <div className="mt-1.5 rounded-[14px] border border-line border-l-2 border-l-primary bg-card-2 px-3 py-2.5">
             <p className="whitespace-pre-wrap text-[13px] leading-5 text-ink">{step.payload.text}</p>
           </div>
         </Row>
@@ -514,7 +555,7 @@ function StepRow({ step, run, last }: { step: Exclude<AgentStep, ToolCallStep | 
     case "error": {
       const retrying = step.payload.code === "timeout";
       return (
-        <Row icon={CircleAlert} tone={retrying ? "warn" : "danger"} last={last}>
+        <Row icon={CircleAlert} tone={retrying ? "warn" : "danger"} status={{ tone: retrying ? "warn" : "danger", label: retrying ? "Retry" : "Error" }} last={last}>
           <p className={cn("text-[13px] leading-5", retrying ? "text-warn" : "text-danger")}>{step.payload.message}</p>
         </Row>
       );
@@ -528,13 +569,13 @@ function StepRow({ step, run, last }: { step: Exclude<AgentStep, ToolCallStep | 
 function Outcome({ run, onRetry, retrying }: { run: AgentRunDetail; onRetry: () => void; retrying: boolean }) {
   const outcome =
     run.status === "failed"
-      ? { icon: CircleAlert, tone: "border-danger/40 text-danger", title: "This plan didn't finish", body: run.error ?? "Something went wrong while planning. Try again.", action: "Try again" }
+      ? { icon: CircleAlert, tone: "alert text-danger", title: "This plan didn't finish", body: run.error ?? "Something went wrong while planning. Try again.", action: "Try again" }
       : run.status === "cancelled"
-        ? { icon: CircleSlash, tone: "border-line-strong text-dim", title: "Plan cancelled", body: "It stopped before finishing. Nothing was saved.", action: "Run again" }
+        ? { icon: CircleSlash, tone: "text-dim", title: "Plan cancelled", body: "It stopped before finishing. Nothing was saved.", action: "Run again" }
         : run.status === "budget_exceeded"
           ? {
               icon: Wallet,
-              tone: "border-warn/40 text-warn",
+              tone: "warn text-warn",
               title: "Plan stopped at its limit",
               body: run.error ?? "It reached the step, time or token limit for one plan before finishing.",
               action: "Run again",
@@ -543,7 +584,7 @@ function Outcome({ run, onRetry, retrying }: { run: AgentRunDetail; onRetry: () 
   if (!outcome) return null;
   const Icon = outcome.icon;
   return (
-    <div role="status" className={cn("tm-enter flex flex-wrap items-start gap-3 rounded-lg border bg-surface-2 p-3.5", outcome.tone)}>
+    <div role="status" className={cn("card tm-enter flex flex-wrap items-start gap-3 p-3.5", outcome.tone)}>
       <Icon size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-semibold text-ink">{outcome.title}</p>
@@ -560,13 +601,13 @@ function Outcome({ run, onRetry, retrying }: { run: AgentRunDetail; onRetry: () 
 /** While the plan works: a live line under the trace (announced politely). */
 function Working({ status }: { status: AgentRunDetail["status"] }) {
   return (
-    <div role="status" className="flex flex-col gap-2 rounded-md border border-line bg-surface-2/60 px-3 py-2.5">
+    <div role="status" className="callout flex-col gap-2 px-3 py-2.5">
       <p className="flex items-center gap-2 text-[13px] text-ink">
         <LoaderCircle size={14} aria-hidden="true" className="tm-spin shrink-0 text-primary" />
         {status === "queued" ? "Queued · starting shortly" : "Planning · searching live sources"}
       </p>
-      <div aria-hidden="true" className="h-0.5 overflow-hidden rounded-full bg-line">
-        <div className="tm-progress-sweep h-full rounded-full bg-primary" />
+      <div aria-hidden="true" className="h-1 w-full overflow-hidden rounded-full bg-line-2">
+        <div className="tm-progress-sweep h-full rounded-full bg-[image:var(--grad)]" />
       </div>
     </div>
   );
@@ -606,10 +647,10 @@ export function RunTrace({
         aria-label="Plan trace"
         className="rounded-md focus:outline-2 focus:outline-offset-4 focus:outline-primary"
       >
-        <ol className="flex flex-col">
+        <ol className="list">
         <Row icon={UserRound} tone="primary" last={items.length === 0}>
-          <p className="tm-micro">Request</p>
-          <p className="mt-1 whitespace-pre-wrap rounded-md border border-line bg-surface-2 px-3 py-2 text-[13px] leading-5 text-ink">{run.prompt}</p>
+          <p className="hud">Request</p>
+          <p className="bubble me mt-1.5 max-w-full whitespace-pre-wrap text-[13px] leading-5 text-ink">{run.prompt}</p>
         </Row>
         {items.map((item, index) => {
           const last = index === items.length - 1;

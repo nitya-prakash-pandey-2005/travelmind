@@ -50,7 +50,8 @@ function QuoteFrame({ agency, busy, children }: { agency?: PublicQuote["agency"]
   const style = useMemo(() => accentVars(brandAccent(brand, palette)) as CSSProperties, [brand, palette]);
   const print = useMemo(() => printCss(`[${ROOT_ATTR}]`, brand), [brand]);
   return (
-    <div {...{ [ROOT_ATTR]: "" }} style={style} className="flex min-h-dvh flex-col bg-bg text-ink">
+    <div {...{ [ROOT_ATTR]: "" }} style={style} className="relative isolate flex min-h-dvh flex-col bg-bg text-ink">
+      <div aria-hidden="true" className="tm-ambient -z-10" />
       <meta name="robots" content="noindex, nofollow" />
       <meta name="referrer" content="no-referrer" />
       <style>{print}</style>
@@ -60,20 +61,20 @@ function QuoteFrame({ agency, busy, children }: { agency?: PublicQuote["agency"]
           <div className="flex min-w-0 items-center gap-3">
             <span
               aria-hidden="true"
-              className="tm-brand-mark grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[13px] font-semibold tracking-[0.02em] text-ink"
+              className="tm-brand-mark grid h-10 w-10 shrink-0 place-items-center rounded-[12px] font-display text-[13px] font-semibold tracking-[0.02em] text-ink"
             >
               {initials(agency.name)}
             </span>
             <div className="min-w-0">
-              <p className="truncate text-[15px] font-semibold leading-5 text-ink">{agency.name}</p>
-              <p className="text-xs leading-4 text-dim">Travel quote</p>
+              <p className="truncate font-display text-[16px] font-semibold leading-5 text-ink">{agency.name}</p>
+              <p className="hud">Travel quote</p>
             </div>
           </div>
         ) : (
           <div className="flex items-center gap-2.5 text-[13px] text-dim">
             <span
               aria-hidden="true"
-              className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-surface text-dim"
+              className="grid h-10 w-10 place-items-center rounded-[12px] border border-line bg-card-2 text-dim"
             >
               {busy ? <Skeleton className="h-4 w-4" /> : <ReceiptText size={17} strokeWidth={1.75} />}
             </span>
@@ -86,7 +87,7 @@ function QuoteFrame({ agency, busy, children }: { agency?: PublicQuote["agency"]
         {children}
       </main>
       <footer className={cn(WIDTH, "pb-8 text-xs leading-5 text-faint")}>
-        <div className="border-t border-line pt-5">Powered by TravelMind</div>
+        <div className="pill-src border-t border-line pt-5">Powered by TravelMind</div>
       </footer>
     </div>
   );
@@ -96,11 +97,11 @@ function QuoteFrame({ agency, busy, children }: { agency?: PublicQuote["agency"]
 function Notice({ icon, title, body, action }: { icon: ReactNode; title: string; body: string; action?: ReactNode }) {
   return (
     <div className="flex flex-1 items-center justify-center py-16">
-      <div className="flex max-w-sm flex-col items-center text-center">
-        <span aria-hidden="true" className="mb-5 grid h-11 w-11 place-items-center rounded-lg border border-line bg-surface text-dim">
+      <div className="card flex w-full max-w-sm flex-col items-center p-7 text-center">
+        <span aria-hidden="true" className="mb-5 grid h-11 w-11 place-items-center rounded-[13px] border border-line-soft bg-card-2 text-dim">
           {icon}
         </span>
-        <h1 className="text-xl font-semibold leading-7 tracking-[-0.01em] text-ink">{title}</h1>
+        <h1 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-ink">{title}</h1>
         <p className="mt-2 text-sm leading-6 text-dim">{body}</p>
         {action && <div className="mt-6">{action}</div>}
       </div>
@@ -116,8 +117,8 @@ function LoadingQuote() {
       <Skeleton className="mt-5 h-9 w-56" />
       <Skeleton lines={3} className="mt-5 max-w-[38rem]" />
       <div className="mt-12 flex flex-col gap-4">
-        <Skeleton className="h-72 rounded-lg" />
-        <Skeleton className="h-72 rounded-lg" />
+        <Skeleton className="h-72 rounded-[22px]" />
+        <Skeleton className="h-72 rounded-[22px]" />
       </div>
     </div>
   );
@@ -200,15 +201,15 @@ function StatusBanner({ quote, justDecided }: { quote: PublicQuote; justDecided:
     <section
       aria-labelledby="pq-status"
       className={cn(
-        "mt-8 flex gap-3.5 rounded-lg border bg-surface px-4 py-4 sm:px-5",
-        justDecided ? "border-(color:--pq-accent)" : "border-line",
+        "card mt-8 flex gap-3.5 px-4 py-4 sm:px-5",
+        justDecided && "border-(color:--pq-accent)",
       )}
     >
-      <span aria-hidden="true" className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-md border border-line bg-surface-2">
+      <span aria-hidden="true" className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-[11px] border border-line-soft bg-card-2">
         {icon}
       </span>
       <div className="min-w-0">
-        <h2 id="pq-status" ref={headingRef} tabIndex={-1} className="text-[15px] font-semibold leading-6 text-ink outline-none">
+        <h2 id="pq-status" ref={headingRef} tabIndex={-1} className="font-display text-[16px] font-semibold leading-6 text-ink outline-none">
           {title}
         </h2>
         <p className="mt-0.5 text-[13px] leading-5 text-dim">{body}</p>
@@ -222,7 +223,7 @@ function RefusalNotice({ message }: { message: string | null }) {
   return (
     <div role="status" className="empty:hidden">
       {message && (
-        <div className="mt-8 flex gap-2.5 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-[13px] leading-5 text-ink sm:px-5">
+        <div className="card warn mt-8 flex gap-2.5 px-4 py-3 text-[13px] leading-5 text-ink sm:px-5">
           <CircleAlert size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-warn" />
           <p>{message}</p>
         </div>
@@ -299,8 +300,8 @@ function QuoteBody({ token, quote, readAt, refreshing }: QuoteBodyProps) {
     <>
       <section className="border-b border-line pb-8 pt-6 sm:pt-10">
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] leading-5 text-dim">
-          <span>
-            Quote <span className="font-mono text-ink">{quote.number}</span>
+          <span className="hud">
+            Quote <span className="font-mono">{quote.number}</span>
           </span>
           {open && quote.expires_at && (
             <>
@@ -314,7 +315,7 @@ function QuoteBody({ token, quote, readAt, refreshing }: QuoteBodyProps) {
             </>
           )}
         </p>
-        <h1 className="mt-4 text-[28px] font-semibold leading-9 tracking-[-0.02em] text-ink sm:text-[32px] sm:leading-10">
+        <h1 className="mt-4 font-display text-[30px] font-semibold leading-9 tracking-[-0.025em] text-ink sm:text-[36px] sm:leading-[44px]">
           {greeting}
         </h1>
         {quote.message && (
@@ -327,7 +328,7 @@ function QuoteBody({ token, quote, readAt, refreshing }: QuoteBodyProps) {
 
       <section aria-labelledby="pq-options" className="pt-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 id="pq-options" className="text-lg font-semibold leading-7 text-ink">
+          <h2 id="pq-options" className="font-display text-lg font-semibold leading-7 text-ink">
             {quote.options.length === 1 ? "Your option" : "Your options"}
           </h2>
           <p className="text-[13px] text-dim">
@@ -348,7 +349,7 @@ function QuoteBody({ token, quote, readAt, refreshing }: QuoteBodyProps) {
       </section>
 
       {open && (
-        <section className="mt-6 flex flex-col items-start justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-4 sm:flex-row sm:items-center sm:px-5 print:hidden">
+        <section className="card mt-6 flex flex-col items-start justify-between gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5 print:hidden">
           <div>
             <p className="text-sm font-medium leading-5 text-ink">None of these work for you?</p>
             <p className="mt-0.5 text-[13px] leading-5 text-dim">

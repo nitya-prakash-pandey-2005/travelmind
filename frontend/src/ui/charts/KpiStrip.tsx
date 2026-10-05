@@ -3,7 +3,7 @@ import { cn } from "../cn";
 
 const InStrip = createContext(false);
 
-/** True inside a KpiStrip: tiles drop their own frame and share the strip's hairlines. */
+/** True inside a KpiStrip: tiles become the strip's compact glass cards. */
 export function useInKpiStrip(): boolean {
   return useContext(InStrip);
 }
@@ -20,9 +20,8 @@ const WIDE: Record<2 | 3 | 4 | 5 | 6 | 7 | 8, string> = {
 };
 
 /**
- * One bordered strip of KPI tiles separated by 1px dividers (not separate boxes). Put KpiTile children
- * inside; the grid is 2 columns on phones, 3 on tablets and `columns` on wide screens. Rows that don't
- * fill up leave plain surface, never a stray divider.
+ * The kit's KPI row: a grid of compact glass Stat cards. Put KpiTile children inside; the grid is 2 columns on
+ * phones (an odd last tile spans the row), 3 on tablets and `columns` on wide screens.
  */
 export function KpiStrip({
   label,
@@ -42,10 +41,16 @@ export function KpiStrip({
     <section
       aria-label={label}
       aria-busy={busy || undefined}
-      className={cn("overflow-hidden rounded-lg border border-line bg-surface", className)}
+      className={cn("min-w-0", className)}
     >
-      {/* Each tile draws its right and bottom hairline; the -1px margins tuck the outer ones under the frame. */}
-      <div className={cn("-mb-px -mr-px grid grid-cols-2", columns > 2 && "sm:grid-cols-3", WIDE[columns])}>
+      {/* On the 2-column phone grid an odd last tile takes the whole row instead of leaving a hole beside it. */}
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-3 max-sm:[&>:last-child:nth-child(odd)]:col-span-2",
+          columns > 2 && "sm:grid-cols-3",
+          WIDE[columns],
+        )}
+      >
         <InStrip value>{children}</InStrip>
       </div>
     </section>

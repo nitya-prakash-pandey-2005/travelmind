@@ -28,6 +28,7 @@ test("an agent searches sandbox fares, verifies a price and checks the supplier 
 
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Suppliers" }).click();
   await expect(page).toHaveURL(/\/app\/suppliers$/);
-  const links = page.getByRole("table", { name: "Booking suppliers" });
-  await expect(links.getByRole("row", { name: /Sandbox inventory/ })).toContainText("Connected");
+  // Each connection is a card in its group's list, named by its title.
+  const links = page.getByRole("list", { name: "Booking suppliers", exact: true });
+  await expect(links.getByRole("listitem", { name: /Sandbox inventory/ })).toContainText("Connected");
 });

@@ -71,7 +71,7 @@ export function RoutePicker({ origin, destination, cabin, onChange }: RoutePicke
   return (
     <section
       aria-label="Route"
-      className="mb-4 grid gap-3 rounded-lg border border-line bg-surface p-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_11rem] md:items-end"
+      className="card mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_11rem] md:items-end"
     >
       <AirportPicker label="Origin" value={from} onChange={(airport) => pick("origin", airport)} />
       <Button
@@ -86,7 +86,7 @@ export function RoutePicker({ origin, destination, cabin, onChange }: RoutePicke
         <ArrowLeftRight size={15} aria-hidden="true" className="max-md:rotate-90" />
       </Button>
       <AirportPicker label="Destination" value={to} onChange={(airport) => pick("destination", airport)} />
-      <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="field min-w-0 gap-1.5">
         <label htmlFor={`${id}-cabin`} className={FIELD_LABEL}>
           Cabin
         </label>

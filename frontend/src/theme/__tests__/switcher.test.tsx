@@ -15,38 +15,38 @@ const saved = () => JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null
 test("the trigger names the current theme and the list shows all six with name, tagline and swatch", async () => {
   const user = userEvent.setup();
   render(<ThemeSwitcher />);
-  await user.click(screen.getByRole("button", { name: "Theme: Orbital" }));
+  await user.click(screen.getByRole("button", { name: "Theme: Aurora" }));
   const options = screen.getAllByRole("option");
   expect(options.map((option) => option.textContent)).toEqual([
-    "OrbitalGraphite console, cyan telemetry",
-    "NebulaViolet night with teal and violet glow",
-    "EmberDeep indigo with saffron and amber warmth",
+    "AuroraNight glass with pink, violet and cyan glow",
+    "OceanMidnight blue glass with sky and teal light",
+    "EmberWarm dark glass with orange, rose and gold",
+    "ForestDeep green glass with emerald and lime",
     "ClearskyBright and clean, for projectors and daylight",
-    "TerminalAmber monochrome console, all monospace",
     "ContrastBlack, white and yellow; maximum legibility",
   ]);
-  expect(screen.getByRole("option", { name: /Orbital/ })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("option", { name: /Aurora/ })).toHaveAttribute("aria-selected", "true");
   for (const option of options) expect(option.querySelectorAll("[aria-hidden] > span")).toHaveLength(4);
 });
 
 test("keyboard: open, move with arrows/Home/End, pick with Enter, close with Escape back to the trigger", async () => {
   const user = userEvent.setup();
   render(<ThemeSwitcher />);
-  const trigger = screen.getByRole("button", { name: "Theme: Orbital" });
+  const trigger = screen.getByRole("button", { name: "Theme: Aurora" });
   trigger.focus();
   await user.keyboard("{Enter}");
   const list = screen.getByRole("listbox", { name: "Theme" });
   expect(list).toHaveFocus();
-  expect(activeOption()).toHaveTextContent("Orbital");
+  expect(activeOption()).toHaveTextContent("Aurora");
 
   await user.keyboard("{ArrowDown}");
-  expect(activeOption()).toHaveTextContent("Nebula");
+  expect(activeOption()).toHaveTextContent("Ocean");
   await user.keyboard("{End}");
   expect(activeOption()).toHaveTextContent("Contrast");
   await user.keyboard("{ArrowDown}");
   expect(activeOption()).toHaveTextContent("Contrast");
   await user.keyboard("{Home}");
-  expect(activeOption()).toHaveTextContent("Orbital");
+  expect(activeOption()).toHaveTextContent("Aurora");
   await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
 
   // Applied at once and saved; the panel stays open for the mode and contrast controls.
@@ -69,7 +69,7 @@ test("ArrowDown on the trigger opens the list; a click outside closes it", async
       <button type="button">Elsewhere</button>
     </>,
   );
-  screen.getByRole("button", { name: "Theme: Orbital" }).focus();
+  screen.getByRole("button", { name: "Theme: Aurora" }).focus();
   await user.keyboard("{ArrowDown}");
   expect(screen.getByRole("listbox", { name: "Theme" })).toHaveFocus();
   await user.click(screen.getByRole("button", { name: "Elsewhere" }));
@@ -79,19 +79,19 @@ test("ArrowDown on the trigger opens the list; a click outside closes it", async
 test("mode and high contrast apply instantly for toggle themes", async () => {
   const user = userEvent.setup();
   render(<ThemeSwitcher />);
-  await user.click(screen.getByRole("button", { name: "Theme: Orbital" }));
+  await user.click(screen.getByRole("button", { name: "Theme: Aurora" }));
   await user.click(screen.getByRole("radio", { name: "Light" }));
   expect(html.dataset.mode).toBe("light");
   await user.click(screen.getByRole("switch", { name: "High contrast" }));
   expect(screen.getByRole("switch", { name: "High contrast" })).toBeChecked();
   expect(html.dataset.contrast).toBe("high");
-  expect(saved()).toEqual({ theme: "orbital", mode: "light", contrast: true });
+  expect(saved()).toEqual({ theme: "aurora", mode: "light", contrast: true });
 });
 
 test("fixed themes disable the mode and contrast controls and say why", async () => {
   const user = userEvent.setup();
   render(<ThemeSwitcher />);
-  await user.click(screen.getByRole("button", { name: "Theme: Orbital" }));
+  await user.click(screen.getByRole("button", { name: "Theme: Aurora" }));
   expect(screen.getByRole("radio", { name: "Dark" })).toBeEnabled();
   expect(screen.getByRole("switch", { name: "High contrast" })).toBeEnabled();
 
@@ -102,12 +102,12 @@ test("fixed themes disable the mode and contrast controls and say why", async ()
   expect(contrast).toBeDisabled();
   expect(contrast).toHaveAccessibleDescription("Clearsky has a single look, so mode and contrast are set by the theme.");
 
-  await user.click(screen.getByRole("option", { name: /Terminal/ }));
+  await user.click(screen.getByRole("option", { name: /Contrast/ }));
   expect(screen.getByRole("radio", { name: "Dark" })).toBeChecked();
   expect(screen.getByRole("switch", { name: "High contrast" })).toBeDisabled();
-  expect(html.dataset.theme).toBe("terminal");
+  expect(html.dataset.theme).toBe("contrast");
 
-  await user.click(screen.getByRole("option", { name: /Nebula/ }));
+  await user.click(screen.getByRole("option", { name: /Ocean/ }));
   expect(screen.getByRole("switch", { name: "High contrast" })).toBeEnabled();
   expect(screen.queryByText(/has a single look/)).not.toBeInTheDocument();
 });
@@ -115,43 +115,43 @@ test("fixed themes disable the mode and contrast controls and say why", async ()
 test("the choice survives a reload (remount after initTheme)", async () => {
   const user = userEvent.setup();
   const first = render(<ThemeSwitcher />);
-  await user.click(screen.getByRole("button", { name: "Theme: Orbital" }));
-  await user.click(screen.getByRole("option", { name: /Nebula/ }));
+  await user.click(screen.getByRole("button", { name: "Theme: Aurora" }));
+  await user.click(screen.getByRole("option", { name: /Ocean/ }));
   await user.click(screen.getByRole("radio", { name: "Light" }));
   first.unmount();
 
-  expect(saved()).toEqual({ theme: "nebula", mode: "light", contrast: false });
+  expect(saved()).toEqual({ theme: "ocean", mode: "light", contrast: false });
 
   // A fresh page: the in-memory store is back on the default (without touching storage), then main.tsx
   // re-reads storage.
   const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {});
-  act(() => setThemeChoice({ theme: "orbital", mode: "dark" }));
+  act(() => setThemeChoice({ theme: "aurora", mode: "dark" }));
   setItem.mockRestore();
-  expect(html.dataset.theme).toBe("orbital");
+  expect(html.dataset.theme).toBe("aurora");
   act(() => {
     initTheme();
   });
   render(<ThemeSwitcher />);
-  expect(screen.getByRole("button", { name: "Theme: Nebula" })).toBeInTheDocument();
-  expect(html.dataset).toMatchObject({ theme: "nebula", mode: "light", contrast: "normal" });
+  expect(screen.getByRole("button", { name: "Theme: Ocean" })).toBeInTheDocument();
+  expect(html.dataset).toMatchObject({ theme: "ocean", mode: "light", contrast: "normal" });
 });
 
 test("Space picks the active theme, like Enter", async () => {
   const user = userEvent.setup();
   render(<ThemeSwitcher />);
-  screen.getByRole("button", { name: "Theme: Orbital" }).focus();
+  screen.getByRole("button", { name: "Theme: Aurora" }).focus();
   await user.keyboard(" ");
   expect(screen.getByRole("listbox", { name: "Theme" })).toHaveFocus();
   await user.keyboard("{ArrowDown}");
   await user.keyboard(" ");
-  expect(html.dataset.theme).toBe("nebula");
-  expect(screen.getByRole("option", { name: /Nebula/ })).toHaveAttribute("aria-selected", "true");
+  expect(html.dataset.theme).toBe("ocean");
+  expect(screen.getByRole("option", { name: /Ocean/ })).toHaveAttribute("aria-selected", "true");
 });
 
 test("Escape on the trigger closes an open panel and keeps focus there", async () => {
   const user = userEvent.setup();
   render(<ThemeSwitcher />);
-  const trigger = screen.getByRole("button", { name: "Theme: Orbital" });
+  const trigger = screen.getByRole("button", { name: "Theme: Aurora" });
   trigger.focus();
   await user.keyboard("{Enter}");
   expect(screen.getByRole("listbox", { name: "Theme" })).toHaveFocus();
@@ -167,11 +167,11 @@ test("Escape on the trigger closes an open panel and keeps focus there", async (
 test("the active option follows a theme changed elsewhere while the panel is open", async () => {
   const user = userEvent.setup();
   render(<ThemeSwitcher />);
-  await user.click(screen.getByRole("button", { name: "Theme: Orbital" }));
-  expect(activeOption()).toHaveTextContent("Orbital");
-  act(() => setThemeChoice({ theme: "terminal" }));
-  expect(screen.getByRole("option", { name: /Terminal/ })).toHaveAttribute("aria-selected", "true");
-  expect(activeOption()).toHaveTextContent("Terminal");
+  await user.click(screen.getByRole("button", { name: "Theme: Aurora" }));
+  expect(activeOption()).toHaveTextContent("Aurora");
+  act(() => setThemeChoice({ theme: "clearsky" }));
+  expect(screen.getByRole("option", { name: /Clearsky/ })).toHaveAttribute("aria-selected", "true");
+  expect(activeOption()).toHaveTextContent("Clearsky");
   await user.keyboard("{ArrowDown}");
   expect(activeOption()).toHaveTextContent("Contrast");
 });
@@ -179,18 +179,18 @@ test("the active option follows a theme changed elsewhere while the panel is ope
 test("an option shows either the hover fill or the selected fill, never both", async () => {
   const user = userEvent.setup();
   render(<ThemeSwitcher />);
-  await user.click(screen.getByRole("button", { name: "Theme: Orbital" }));
+  await user.click(screen.getByRole("button", { name: "Theme: Aurora" }));
   const list = screen.getByRole("listbox", { name: "Theme" });
-  const orbital = within(list).getByRole("option", { name: /Orbital/ });
-  // Orbital is both selected and active.
-  expect(activeOption()).toBe(orbital);
-  expect(orbital).toHaveClass("bg-selected");
-  expect(orbital).not.toHaveClass("bg-hover");
+  const aurora = within(list).getByRole("option", { name: /Aurora/ });
+  // Aurora is both selected and active.
+  expect(activeOption()).toBe(aurora);
+  expect(aurora).toHaveClass("bg-selected");
+  expect(aurora).not.toHaveClass("bg-hover");
   await user.keyboard("{ArrowDown}");
-  const nebula = within(list).getByRole("option", { name: /Nebula/ });
-  expect(nebula).toHaveClass("bg-hover");
-  expect(nebula).not.toHaveClass("bg-selected");
-  expect(orbital).toHaveClass("bg-selected");
+  const ocean = within(list).getByRole("option", { name: /Ocean/ });
+  expect(ocean).toHaveClass("bg-hover");
+  expect(ocean).not.toHaveClass("bg-selected");
+  expect(aurora).toHaveClass("bg-selected");
 });
 
 test("on a narrow screen the panel is moved back inside the viewport", async () => {
@@ -205,7 +205,7 @@ test("on a narrow screen the panel is moved back inside the viewport", async () 
   });
   try {
     render(<ThemeSwitcher />);
-    await user.click(screen.getByRole("button", { name: "Theme: Orbital" }));
+    await user.click(screen.getByRole("button", { name: "Theme: Aurora" }));
     const panel = screen.getByRole("dialog", { name: "Theme" });
     const box = panel.getBoundingClientRect();
     expect(box.left).toBeGreaterThanOrEqual(8);

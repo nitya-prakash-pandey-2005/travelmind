@@ -20,7 +20,7 @@ export function QuickGroup<T>({
   return (
     <section aria-labelledby={id} className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <h3 id={id} className="tm-micro">
+        <h3 id={id} className="hud">
           {title}
         </h3>
         {note && <p className="text-[11px] leading-4 text-faint">{note}</p>}

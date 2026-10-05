@@ -12,7 +12,7 @@ export function SelectField({ label, hint, error, className, children, ...select
   const showHint = Boolean(hint) && !error;
   const describedBy = error ? errorId : showHint ? hintId : undefined;
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+    <div className={cn("field gap-1.5", className)}>
       <label htmlFor={id} className={FIELD_LABEL}>
         {label}
       </label>

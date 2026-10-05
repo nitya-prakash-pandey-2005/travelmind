@@ -20,20 +20,28 @@ import {
 } from "./format";
 
 /**
- * The price label the constraints require, with a live dot for a live fare and an info mark otherwise. Anything
- * but the live label reads as indicative, so no other wording from the server ever reaches the client.
+ * The price label the constraints require, as a kit badge: green with a live dot for a live fare, neutral with an
+ * info mark otherwise. Anything but the live label reads as indicative, so no other wording from the server ever
+ * reaches the client.
  */
 export function PriceLabel({ label, className }: { label: PublicOption["price_label"]; className?: string }) {
   const live = label === LIVE_PRICE_LABEL;
   const text = live ? LIVE_PRICE_LABEL : INDICATIVE_PRICE_LABEL;
   return (
-    <p className={cn("flex items-start gap-1.5 text-xs leading-4 text-dim", className)}>
-      {live ? (
-        <span aria-hidden="true" className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-ok" />
-      ) : (
-        <Info size={13} strokeWidth={1.75} aria-hidden="true" className="mt-px shrink-0 text-faint" />
-      )}
-      <span>{text}</span>
+    <p className={className}>
+      <span
+        className={cn(
+          "badge tone-fill max-w-full items-start whitespace-normal rounded-[12px] px-2.5 py-1 text-[11.5px] font-medium leading-4",
+          live ? "text-ok" : "text-dim",
+        )}
+      >
+        {live ? (
+          <span aria-hidden="true" className="dot mt-[4.5px] h-1.5! w-1.5!" />
+        ) : (
+          <Info size={13} strokeWidth={1.75} aria-hidden="true" className="mt-px shrink-0" />
+        )}
+        <span className={live ? "text-ink" : undefined}>{text}</span>
+      </span>
     </p>
   );
 }
@@ -52,7 +60,7 @@ function Journey({ slice, label }: { slice: PublicSlice; label: string }) {
       </p>
       <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 sm:gap-4">
         <div className="flex flex-col">
-          <span className="tm-num text-xl font-medium leading-7 text-ink">{localTime(slice.departing_at)}</span>
+          <span className="num text-xl font-semibold leading-7 text-ink">{localTime(slice.departing_at)}</span>
           <span className="font-mono text-xs leading-4 text-dim">{slice.origin}</span>
         </div>
         <div className="flex min-w-0 flex-col items-center gap-1 text-xs leading-4">
@@ -74,7 +82,7 @@ function Journey({ slice, label }: { slice: PublicSlice; label: string }) {
           <span className={cn("max-w-full truncate", stops === 0 ? "text-dim" : "text-ink")}>{stopsLabel(slice)}</span>
         </div>
         <div className="flex flex-col items-end">
-          <span className="tm-num text-xl font-medium leading-7 text-ink">
+          <span className="num text-xl font-semibold leading-7 text-ink">
             {localTime(slice.arriving_at)}
             {shift > 0 && (
               <sup className="ml-0.5 font-sans text-[11px] font-medium text-dim">
@@ -151,31 +159,31 @@ export function PublicOptionCard({ option, state, disabled = false, onAccept }: 
     <article
       aria-labelledby={`${eyebrowId} ${titleId}`}
       className={cn(
-        "overflow-hidden rounded-lg border bg-surface print:break-inside-avoid",
-        accepted ? "border-(color:--pq-accent) ring-1 ring-(color:--pq-accent)" : "border-line",
+        "card flush print:break-inside-avoid",
+        accepted && "border-(color:--pq-accent) ring-1 ring-(color:--pq-accent)",
       )}
     >
-      <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
+      <header className="flex items-center justify-between gap-3 border-b border-line bg-card-2 px-4 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <span
             aria-hidden="true"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-line bg-surface-2 font-mono text-xs font-semibold text-ink"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] border border-line-soft bg-card-2 font-mono text-xs font-semibold text-ink"
           >
             {option.carrier_code}
           </span>
           <div className="min-w-0">
-            <p id={eyebrowId} className="text-xs leading-4 text-dim">
+            <p id={eyebrowId} className="hud">
               Option {number}
             </p>
-            <h3 id={titleId} className="truncate text-[15px] font-semibold leading-5 text-ink">
+            <h3 id={titleId} className="truncate font-display text-[16px] font-semibold leading-5 text-ink">
               {carrierName(option)}
             </h3>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {details && <span className="hidden text-xs text-dim sm:inline">{details}</span>}
+          {details && <span className="badge hidden sm:inline-flex">{details}</span>}
           {accepted && (
-            <span className="inline-flex h-6 items-center gap-1 rounded-full border border-ok/40 bg-ok/10 px-2 text-xs font-medium text-ok">
+            <span className="badge tone-fill text-ok">
               <CircleCheck size={13} aria-hidden="true" />
               Accepted
             </span>
@@ -194,9 +202,9 @@ export function PublicOptionCard({ option, state, disabled = false, onAccept }: 
             />
           ))}
         </div>
-        <div className="flex flex-col border-t border-line bg-surface-2/40 px-4 py-4 sm:px-5 sm:py-5 md:border-l md:border-t-0">
-          <p className="text-xs leading-4 text-dim">Total price</p>
-          <p className="tm-num mt-1 text-[26px] font-semibold leading-8 tracking-[-0.01em] text-ink">
+        <div className="flex flex-col border-t border-line bg-card-2 px-4 py-4 sm:px-5 sm:py-5 md:border-l md:border-t-0">
+          <p className="hud">Total price</p>
+          <p className="num mt-1 text-[28px] font-semibold leading-9 text-ink">
             {formatMoney(option.sell)}
           </p>
           {/* No share for one traveller (or a party with children): the total says it all. */}

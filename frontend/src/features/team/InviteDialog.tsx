@@ -7,7 +7,7 @@ import { teamApi } from "../../api/team";
 import type { InvitationCreated } from "../../api/types";
 import { formatDate } from "../../lib/format";
 import { Button } from "../../ui/Button";
-import { Dialog } from "../../ui/Dialog";
+import { Drawer } from "../../ui/Drawer";
 import { FormError } from "../../ui/FormError";
 import { SelectField } from "../../ui/SelectField";
 import { FIELD_CONTROL, FIELD_LABEL, TextField } from "../../ui/TextField";
@@ -63,11 +63,11 @@ export function InviteDialog({ agencyName, onClose }: { agencyName: string; onCl
   };
 
   return (
-    <Dialog
+    <Drawer
       open
       onClose={onClose}
       title="Invite teammate"
-      description={`They get a one-time link to join ${agencyName}.`}
+      description={`They get a one-time link to join ${agencyName.trimEnd().replace(/\.+$/, "")}.`}
       footer={
         created ? (
           <>
@@ -149,6 +149,6 @@ export function InviteDialog({ agencyName, onClose }: { agencyName: string; onCl
           </SelectField>
         </form>
       )}
-    </Dialog>
+    </Drawer>
   );
 }

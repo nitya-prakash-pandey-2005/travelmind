@@ -43,10 +43,7 @@ function DeltaChip({ delta: raw }: { delta: KpiDelta }) {
   return (
     <span
       data-delta=""
-      className={cn(
-        "tm-tint inline-flex h-5 items-center gap-0.5 rounded-[4px] border px-1.5 font-mono text-[11px] font-medium tabular-nums",
-        deltaTone(delta),
-      )}
+      className={cn("badge tone-fill gap-0.5 px-2 py-0.5 font-mono text-[11px] font-medium leading-4 tabular-nums", deltaTone(delta))}
     >
       {delta.pct !== null && <Arrow size={12} strokeWidth={2} aria-hidden="true" />}
       {delta.pct === null ? "—" : deltaAmount({ ...delta, pct: delta.pct })}
@@ -55,9 +52,9 @@ function DeltaChip({ delta: raw }: { delta: KpiDelta }) {
 }
 
 /**
- * Headline metric: micro-label, value (28px mono), optional unit, change chip coloured by whether the move
- * is good, a caption (`hint`, e.g. "vs previous 30 days"), optional 32px sparkline. `loading` shows skeletons
- * sized like the content and marks the tile busy. Inside a KpiStrip it drops its own frame.
+ * Headline metric as the kit's Stat: HUD label, big Space Grotesk value, optional unit, a delta badge coloured by
+ * whether the move is good, a caption (`hint`, e.g. "vs previous 30 days") and an optional sparkline. `loading`
+ * shows skeletons sized like the content and marks the tile busy. A glass card of its own, in a strip or alone.
  */
 export function KpiTile({
   label,
@@ -88,33 +85,37 @@ export function KpiTile({
       aria-label={summary}
       aria-busy={loading || undefined}
       className={cn(
-        "relative flex min-w-0 flex-col gap-1.5 p-4",
-        inStrip ? "border-b border-r border-line" : "rounded-lg border border-line bg-surface",
+        "card stat relative flex min-w-0 flex-col gap-1.5",
+        inStrip ? "px-4 py-3.5" : "p-[18px]",
       )}
     >
-      <p className="tm-micro truncate">{label}</p>
+      {/* One line on wider screens; phones wrap long labels to two lines rather than cut them short. */}
+      <p className="tm-micro truncate max-sm:line-clamp-2 max-sm:whitespace-normal">{label}</p>
       {loading ? (
         <>
-          <Skeleton className="my-[3px] h-7 w-24" />
+          <Skeleton className="my-[3px] h-8 w-24" />
           <Skeleton className="h-4 w-32" />
           <Skeleton className="h-8 w-full" />
         </>
       ) : (
         <>
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-            <span className="font-mono text-[28px] font-medium leading-[34px] tracking-tight tabular-nums text-ink">{value}</span>
+            <span className="v text-[30px] leading-[38px]">{value}</span>
             {unit && <span className="text-[13px] text-dim">{unit}</span>}
           </div>
           {(delta || hint) && (
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               {delta && <DeltaChip delta={delta} />}
-              {hint && <p className="min-w-0 truncate text-xs text-dim">{hint}</p>}
+              {/* One line on wider screens; phones give the captions two lines rather than cut them short. */}
+              {hint && <p className="min-w-0 truncate text-xs text-dim max-sm:line-clamp-2 max-sm:whitespace-normal">{hint}</p>}
             </div>
           )}
           {series && series.length > 0 && (
             <div className="mt-1.5">
               <Sparkline label={trendLabel ?? `${label} trend`} values={series} />
-              {trendLabel && <p className="mt-1 truncate text-[11px] leading-4 text-faint">{trendLabel}</p>}
+              {trendLabel && (
+                <p className="mt-1 truncate text-[11px] leading-4 text-faint max-sm:line-clamp-2 max-sm:whitespace-normal">{trendLabel}</p>
+              )}
             </div>
           )}
         </>

@@ -1,19 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, CircleAlert, PlugZap } from "lucide-react";
+import { useId } from "react";
 import { asApiError } from "../../api/client";
 import { supplierHealthQueryOptions, type SupplierHealth } from "../../api/dashboard";
 import type { SupplierStatus } from "../../api/offers";
 import { suppliersQueryOptions } from "../../api/queries";
 import { formatNumber } from "../../lib/format";
-import { Badge } from "../../ui/Badge";
+import { MiniRing, Stat } from "../../kit";
+import { Badge, type BadgeTone } from "../../ui/Badge";
 import { KpiStrip, KpiTile } from "../../ui/charts";
-import { DataTable, type DataTableColumn } from "../../ui/DataTable";
 import { EmptyState } from "../../ui/EmptyState";
 import { PageHeader } from "../../ui/PageHeader";
 import { Panel } from "../../ui/Panel";
 import { Skeleton } from "../../ui/Skeleton";
-import { StatusDot } from "../../ui/StatusDot";
-import { KIND, MODE, callsLine, healthOf, isBooking, latencyLine, ms } from "./supplierMeta";
+import { BREAKER, KIND, MODE, breakerOf, callsLine, healthOf, isBooking, ms } from "./supplierMeta";
 
 /**
  * Setup facts the status endpoint doesn't carry: the server setting for built-in sources (keyed ones name
@@ -78,108 +78,149 @@ function Setup({ supplier }: { supplier: SupplierStatus }) {
   );
 }
 
-function nameColumn(header: string): DataTableColumn<SupplierStatus> {
-  return {
-    key: "supplier",
-    header,
-    sortValue: (s) => s.name,
-    className: "min-w-52",
-    cell: (s) => (
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-2">
-          <span className="font-medium text-ink">{s.name}</span>
-          <span className="font-mono text-[11px] text-faint">{s.code}</span>
-        </span>
-        <span className="max-w-sm whitespace-normal break-words text-xs leading-4 text-dim">{splitDetail(s.detail).about}</span>
-      </div>
-    ),
-  };
-}
-
-const PROVIDES: DataTableColumn<SupplierStatus> = {
-  key: "kind",
-  header: "Provides",
-  sortValue: (s) => KIND[s.kind].label,
-  className: "whitespace-nowrap",
-  cell: (s) => {
-    const { label, icon: Icon } = KIND[s.kind];
-    return (
-      <span className="inline-flex items-center gap-2 text-dim">
-        <Icon size={14} aria-hidden="true" className="text-faint" />
-        {label}
-      </span>
-    );
-  },
-};
-
-const STATUS: DataTableColumn<SupplierStatus> = {
-  key: "status",
-  header: "Status",
-  sortValue: (s) => (s.connected ? 0 : 1),
-  className: "whitespace-nowrap",
-  cell: (s) => (
-    <span className="flex flex-col items-start gap-1">
-      <StatusDot
-        status={s.connected ? "ok" : "unknown"}
-        label={s.connected ? "Connected" : "Not connected"}
-        className={s.connected ? "text-ink" : "text-dim"}
-      />
-      {s.mode && <Badge tone={MODE[s.mode].tone}>{MODE[s.mode].label}</Badge>}
-    </span>
-  ),
-};
-
-const SETUP_COLUMN: DataTableColumn<SupplierStatus> = {
-  key: "setup",
-  header: "Setup",
-  className: "min-w-44",
-  cell: (s) => <Setup supplier={s} />,
-};
-
 type HealthState = { rows: SupplierHealth[]; pending: boolean; failed: boolean };
 
-function HealthCell({ supplier, health }: { supplier: SupplierStatus; health: HealthState }) {
-  if (health.pending) return <Skeleton className="h-8 w-40" />;
-  if (health.failed) return <span className="text-xs text-faint">Health unavailable</span>;
-  const row = health.rows.find((h) => h.supplier === supplier.code && h.kind === supplier.kind);
-  if (!row || row.calls === 0) return <span className="text-xs text-faint">No calls in the last 24 h</span>;
-  const { status, word } = healthOf(row);
-  const latency = latencyLine(row);
+const HEALTH_TONE: Record<ReturnType<typeof healthOf>["status"], BadgeTone> = { ok: "ok", degraded: "warn", down: "danger", unknown: "neutral" };
+const RING_COLOUR: Record<ReturnType<typeof healthOf>["status"], string> = {
+  ok: "var(--tm-ok)",
+  degraded: "var(--tm-warn)",
+  down: "var(--tm-danger)",
+  unknown: "var(--tm-text-3)",
+};
+const PCT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+
+/** A dot badge: the kit's status badge (colour plus the word, never colour alone). */
+function DotBadge({ tone, children }: { tone: BadgeTone; children: string }) {
   return (
-    <span className="flex flex-col items-start gap-0.5">
-      <StatusDot status={status} label={word} live={false} className="text-[13px] text-ink" />
-      <span className="tm-num text-xs text-dim">{callsLine(row)}</span>
-      <span className="tm-num whitespace-nowrap text-xs text-faint">{latency ?? "No successful calls"}</span>
-    </span>
+    <Badge tone={tone}>
+      <span aria-hidden="true" className="dot h-1.5! w-1.5!" />
+      {children}
+    </Badge>
   );
 }
 
-function bookingColumns(health: HealthState): DataTableColumn<SupplierStatus>[] {
-  return [
-    nameColumn("Supplier"),
-    PROVIDES,
-    STATUS,
-    {
-      key: "health",
-      header: "Health (last 24 h)",
-      className: "min-w-52",
-      cell: (s) => <HealthCell supplier={s} health={health} />,
-    },
-    SETUP_COLUMN,
-  ];
+/** A booking supplier's last 24 hours: success rate as a ring, health and calls, then p50 and p95 latency. */
+function Health({ supplier, health }: { supplier: SupplierStatus; health: HealthState }) {
+  if (health.pending) return <Skeleton className="h-[54px] w-full" />;
+  if (health.failed) return <p className="text-xs text-faint">Health unavailable</p>;
+  const row = health.rows.find((h) => h.supplier === supplier.code && h.kind === supplier.kind);
+  if (!row || row.calls === 0) return <p className="text-xs text-faint">No calls in the last 24 h</p>;
+  const { status, word } = healthOf(row);
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <div role="img" aria-label={`${PCT.format(row.success_pct)}% of calls succeeded`}>
+          <MiniRing value={row.success_pct} max={100} color={RING_COLOUR[status]} label={`${Math.round(row.success_pct)}%`} />
+        </div>
+        <div className="flex min-w-0 flex-col items-start gap-1">
+          <DotBadge tone={HEALTH_TONE[status]}>{word}</DotBadge>
+          <span className="tm-num text-xs text-dim">{callsLine(row)}</span>
+        </div>
+      </div>
+      {row.p50_ms !== null && row.p95_ms !== null ? (
+        <div className="flex gap-5">
+          <Stat value={formatNumber(Math.round(row.p50_ms))} unit="ms" label="p50 latency" className="[&_.v]:text-[22px]" />
+          <Stat value={formatNumber(Math.round(row.p95_ms))} unit="ms" label="p95 latency" className="[&_.v]:text-[22px]" />
+        </div>
+      ) : (
+        <p className="text-xs text-faint">No successful calls</p>
+      )}
+    </div>
+  );
 }
 
-const DATA_COLUMNS: DataTableColumn<SupplierStatus>[] = [
-  nameColumn("Service"),
-  STATUS,
-  {
-    key: "used",
-    header: "Used for",
-    className: "min-w-44",
-    cell: (s) => <span className="whitespace-normal text-xs leading-4 text-dim">{USED_FOR[s.kind] ?? "—"}</span>,
-  },
-  SETUP_COLUMN,
-];
+/**
+ * One connection as a kit card: kind icon, name and code, status, mode and circuit-breaker badges, what it provides,
+ * then (booking suppliers) its health or (data services) where it is used, and how to set it up.
+ */
+function SupplierCard({ supplier, health }: { supplier: SupplierStatus; health?: HealthState }) {
+  const titleId = useId();
+  const { label, icon: Icon } = KIND[supplier.kind];
+  const breaker = breakerOf(supplier);
+  return (
+    <li aria-labelledby={titleId} className="card flex min-w-0 flex-col gap-3.5">
+      <div className="flex min-w-0 items-start gap-3">
+        <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-card-2 text-dim">
+          <Icon size={17} strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 id={titleId} className="flex flex-wrap items-baseline gap-x-2 font-display text-[15px] font-semibold leading-5 text-ink">
+            {supplier.name}
+            <span className="font-mono text-[11px] font-normal text-faint">{supplier.code}</span>
+          </h3>
+          <p className="mt-0.5 text-xs leading-4 text-dim">{label}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <DotBadge tone={supplier.connected ? "ok" : "neutral"}>{supplier.connected ? "Connected" : "Not connected"}</DotBadge>
+        {supplier.mode && <Badge tone={MODE[supplier.mode].tone}>{MODE[supplier.mode].label}</Badge>}
+        {breaker && <Badge tone={BREAKER[breaker].tone}>{BREAKER[breaker].label}</Badge>}
+      </div>
+      <p className="text-[13px] leading-5 text-dim">{splitDetail(supplier.detail).about}</p>
+      {health ? (
+        <div className="flex flex-col gap-2 border-t border-line pt-3">
+          <p className="hud">Health (last 24 h)</p>
+          <Health supplier={supplier} health={health} />
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1 border-t border-line pt-3">
+          <p className="hud">Used for</p>
+          <p className="text-[13px] leading-5 text-ink">{USED_FOR[supplier.kind] ?? "—"}</p>
+        </div>
+      )}
+      <div className="mt-auto flex flex-col gap-1 border-t border-line pt-3 text-[13px]">
+        <p className="hud">Setup</p>
+        <Setup supplier={supplier} />
+      </div>
+    </li>
+  );
+}
+
+/** A group of connections: a heading and its cards, two across on wide screens. */
+function SupplierGroup({
+  title,
+  description,
+  suppliers,
+  loading,
+  health,
+}: {
+  title: string;
+  description: string;
+  suppliers: SupplierStatus[];
+  loading: boolean;
+  health?: HealthState;
+}) {
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
+      <div>
+        <h2 id={headingId} className="font-display text-base font-semibold leading-6 text-ink">
+          {title}
+        </h2>
+        <p className="text-xs leading-4 text-dim">{description}</p>
+      </div>
+      {loading ? (
+        <div aria-busy="true" className="grid g2">
+          {[0, 1].map((index) => (
+            <div key={index} className="card">
+              <Skeleton lines={4} />
+            </div>
+          ))}
+        </div>
+      ) : suppliers.length === 0 ? (
+        <div className="card p-0">
+          <EmptyState icon={PlugZap} title="No suppliers reported" description="The API returned no data sources." />
+        </div>
+      ) : (
+        <ul aria-label={title} className="grid g2 items-stretch">
+          {suppliers.map((supplier) => (
+            <SupplierCard key={supplier.code} supplier={supplier} health={health} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 const STEPS = [
   "Add the variable to the API server's environment, or to backend/.env in development.",
@@ -244,7 +285,6 @@ export function SuppliersPage() {
   };
   const connected = suppliers.data?.filter((s) => s.connected).length ?? 0;
   const rows = suppliers.data ?? [];
-  const empty = <EmptyState icon={PlugZap} title="No suppliers reported" description="The API returned no data sources." />;
 
   return (
     <>
@@ -264,7 +304,7 @@ export function SuppliersPage() {
         {suppliers.isError ? (
           <p
             role="alert"
-            className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/5 px-4 py-3 text-[13px] leading-5 text-danger"
+            className="card alert flex items-start gap-2 text-[13px] leading-5 text-danger"
           >
             <CircleAlert size={15} aria-hidden="true" className="mt-0.5 shrink-0" />
             {asApiError(suppliers.error).message}
@@ -272,30 +312,24 @@ export function SuppliersPage() {
         ) : (
           <Overview suppliers={suppliers.data} health={health} />
         )}
-        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="flex min-w-0 flex-col gap-4">
-            <Panel title="Booking suppliers" description="Answer fare and hotel searches with offers" flush>
-              <DataTable
-                caption="Booking suppliers"
-                columns={bookingColumns(health)}
-                rows={rows.filter(isBooking)}
-                getRowId={(s) => s.code}
-                loading={suppliers.isPending}
-                emptyState={empty}
-              />
-            </Panel>
-            <Panel title="Data services" description="Add CO₂, fare history and converted prices to results" flush>
-              <DataTable
-                caption="Data services"
-                columns={DATA_COLUMNS}
-                rows={rows.filter((s) => !isBooking(s))}
-                getRowId={(s) => s.code}
-                loading={suppliers.isPending}
-                emptyState={empty}
-              />
-            </Panel>
+        {/* The kit's list + detail: the connections as cards in span-8, how to connect and what modes mean in span-4. */}
+        <div className="grid g-12 items-start">
+          <div className="span-8 flex min-w-0 flex-col gap-6">
+            <SupplierGroup
+              title="Booking suppliers"
+              description="Answer fare and hotel searches with offers"
+              suppliers={rows.filter(isBooking)}
+              loading={suppliers.isPending}
+              health={health}
+            />
+            <SupplierGroup
+              title="Data services"
+              description="Add CO₂, fare history and converted prices to results"
+              suppliers={rows.filter((s) => !isBooking(s))}
+              loading={suppliers.isPending}
+            />
           </div>
-          <div className="flex min-w-0 flex-col gap-4">
+          <div className="span-4 flex min-w-0 flex-col gap-4">
             <Panel title="Connect a supplier" description="Keys live on the server, never in the browser">
               <ol className="flex flex-col gap-3">
                 {STEPS.map((step, index) => (

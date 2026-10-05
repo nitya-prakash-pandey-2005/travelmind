@@ -1,5 +1,6 @@
 import { BedDouble, Coins, History, Leaf, MapPin, Plane, type LucideIcon } from "lucide-react";
 import { cn } from "../../ui/cn";
+import { Kicker } from "./Kicker";
 import { CONTAINER } from "./layout";
 
 type DataSource = { name: string; role: string; icon: LucideIcon };
@@ -25,8 +26,8 @@ export function SourceMark({ source, size = "md" }: { source: DataSource; size?:
       <span
         aria-hidden="true"
         className={cn(
-          "inline-flex shrink-0 items-center justify-center rounded-md border border-line-strong bg-surface-2 text-dim",
-          size === "md" ? "h-8 w-8" : "h-6 w-6",
+          "inline-flex shrink-0 items-center justify-center border border-line-soft bg-card-2 text-dim",
+          size === "md" ? "h-8 w-8 rounded-[10px]" : "h-6 w-6 rounded-[8px]",
         )}
       >
         <Icon size={size === "md" ? 15 : 12} strokeWidth={1.75} />
@@ -45,20 +46,23 @@ export function SourceMark({ source, size = "md" }: { source: DataSource; size?:
 export function IntegrationsStrip() {
   return (
     <section id="data-sources" aria-labelledby="integrations-title" className="scroll-mt-16 border-b border-line">
-      <div className={cn(CONTAINER, "flex flex-col gap-5 py-8 lg:flex-row lg:items-center lg:gap-12")}>
-        <div className="shrink-0 lg:w-56">
-          <h2 id="integrations-title" className="text-[15px] font-semibold text-ink">
-            Connects to
-          </h2>
-          <p className="mt-1 text-[13px] leading-5 text-dim">The suppliers and public data sources behind every search.</p>
+      <div className={cn(CONTAINER, "py-8")}>
+        <div className="card flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-12 lg:px-7 lg:py-6">
+          <div className="shrink-0 lg:w-56">
+            <Kicker className="mb-2">Data sources</Kicker>
+            <h2 id="integrations-title" className="font-display text-[17px] font-semibold text-ink">
+              Connects to
+            </h2>
+            <p className="mt-1 text-[13px] leading-5 text-dim">The suppliers and public data sources behind every search.</p>
+          </div>
+          <ul className="grid flex-1 grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 lg:border-l lg:border-line lg:pl-12">
+            {DATA_SOURCES.map((source) => (
+              <li key={source.name} className="min-w-0">
+                <SourceMark source={source} />
+              </li>
+            ))}
+          </ul>
         </div>
-        <ul className="grid flex-1 grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 lg:border-l lg:border-line lg:pl-12">
-          {DATA_SOURCES.map((source) => (
-            <li key={source.name} className="min-w-0">
-              <SourceMark source={source} />
-            </li>
-          ))}
-        </ul>
       </div>
     </section>
   );

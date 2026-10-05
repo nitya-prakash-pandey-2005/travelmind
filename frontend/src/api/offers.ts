@@ -112,6 +112,8 @@ export type SupplierStatus = {
   connected: boolean;
   mode: "live" | "test" | "sandbox" | null;
   detail: string;
+  /** The API process's circuit breaker for this supplier; older servers may leave it out. */
+  breaker?: "closed" | "open" | "half_open";
 };
 
 export type HotelSearchRequest = {

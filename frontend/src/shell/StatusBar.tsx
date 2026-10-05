@@ -58,7 +58,7 @@ export function StatusBar({ me }: { me: Me }) {
   const { timezone, country_code } = me.agency;
   const agencyZone = timezone !== "UTC" && isValidTimeZone(timezone) ? timezone : null;
   return (
-    <footer className="flex h-7 shrink-0 items-center justify-between gap-4 overflow-hidden border-t border-line bg-surface px-3 font-mono text-[11px] leading-4 text-dim lg:px-4">
+    <footer className="relative flex h-8 shrink-0 items-center justify-between gap-4 overflow-hidden border-t border-line bg-chrome px-(--gutter) font-mono text-[11px] leading-4 tracking-[0.04em] text-dim backdrop-blur-xl">
       <div className="flex min-w-0 items-center gap-3">
         <StatusDot status={status} label={LABELS[status]} />
         {data && data.status !== "down" && (

@@ -50,7 +50,7 @@ type View = (typeof VIEWS)[number]["value"];
 const SKELETON_CARDS: Record<EnquiryStatus, number> = { new: 3, quoting: 2, quoted: 2, won: 1, lost: 1 };
 
 const COMPACT_SELECT = cn(
-  "h-8 min-w-0 cursor-pointer appearance-none rounded-md border border-line-strong bg-surface-2 pl-2.5 pr-8 text-[13px] text-ink",
+  "h-9 min-w-0 cursor-pointer appearance-none rounded-md border border-line-strong bg-bg pl-3 pr-8 text-[13px] text-ink",
   "transition-colors duration-150 ease-tm hover:border-faint focus:border-primary",
 );
 
@@ -110,20 +110,20 @@ function PipelineKpis({ figures, currency, loading, now }: { figures: Figures; c
       <dl
         aria-label="Pipeline summary"
         aria-busy={loading || undefined}
-        className="mb-3 grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-surface sm:hidden"
+        className="card mb-3 grid grid-cols-3 divide-x divide-line p-0 sm:hidden"
       >
         {[
           ["Open", formatNumber(open.length)],
           ["Open value", money(openValue)],
           ["Win rate", winRate],
         ].map(([label, figure]) => (
-          <div key={label} className="flex min-w-0 flex-col gap-0.5 px-3 py-2">
+          <div key={label} className="stat flex min-w-0 flex-col-reverse gap-0.5 px-3 py-2.5">
             <dt className="tm-micro truncate">{label}</dt>
-            <dd className="tm-num truncate text-base font-medium text-ink">{loading ? "…" : figure}</dd>
+            <dd className="v truncate text-[19px]">{loading ? "…" : figure}</dd>
           </div>
         ))}
       </dl>
-      <KpiStrip label="Pipeline totals" columns={5} busy={loading} className="mb-4 max-sm:hidden">
+      <KpiStrip label="Pipeline totals" columns={5} busy={loading} className="mb-4 max-sm:hidden [&>div]:gap-4">
         <KpiTile
           label="Open enquiries"
           value={formatNumber(open.length)}
@@ -152,7 +152,7 @@ function PipelineKpis({ figures, currency, loading, now }: { figures: Figures; c
 /** Small screens show one stage at a time: this picks it, with each stage's count. */
 function StagePicker({ value, onChange, counts }: { value: EnquiryStatus; onChange: (status: EnquiryStatus) => void; counts: Record<EnquiryStatus, number> }) {
   return (
-    <div role="group" aria-label="Stage to show" className="mb-3 grid grid-cols-5 gap-1 rounded-md border border-line-strong bg-surface-2 p-0.5 lg:hidden">
+    <div role="group" aria-label="Stage to show" className="seg mb-3 grid w-full grid-cols-5 gap-1 lg:hidden">
       {STAGES.map((status) => {
         const selected = status === value;
         return (
@@ -161,10 +161,7 @@ function StagePicker({ value, onChange, counts }: { value: EnquiryStatus; onChan
             type="button"
             aria-pressed={selected}
             onClick={() => onChange(status)}
-            className={cn(
-              "flex min-w-0 flex-col items-center rounded-[4px] border px-1 py-1 transition-colors duration-150 ease-tm",
-              selected ? "border-line-strong bg-surface text-ink shadow-raise" : "border-transparent text-dim hover:text-ink",
-            )}
+            className={cn("flex min-h-10 min-w-0 flex-col items-center justify-center px-1 py-1", selected && "on")}
           >
             <span className="w-full truncate text-center text-xs font-medium leading-4">{stageLabel(status)}</span>
             <span className="font-mono text-[11px] leading-4 tabular-nums">
@@ -343,16 +340,16 @@ export function PipelinePage() {
 
       <PipelineKpis figures={figures} currency={currency} loading={loading} now={now} />
 
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-lg border border-line bg-surface px-3 py-2.5">
+      <div className="card tight mb-4 flex flex-wrap items-center gap-x-4 gap-y-2.5">
         <div className="relative w-full min-w-0 sm:w-64">
-          <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+          <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
           <input
             type="search"
             aria-label="Search enquiries"
             placeholder="Number, route, client or notes"
             value={term}
             onChange={(event) => setTerm(event.target.value)}
-            className="h-8 w-full rounded-md border border-line-strong bg-surface-2 pl-8 pr-2.5 text-[13px] text-ink placeholder:text-faint transition-colors duration-150 ease-tm hover:border-faint focus:border-primary"
+            className="h-9 w-full rounded-md border border-line-strong bg-bg pl-9 pr-3 text-[13px] text-ink placeholder:text-faint transition-colors duration-150 ease-tm hover:border-faint focus:border-primary"
           />
         </div>
         <CompactSelect label="Assignee" value={assignee} onChange={setAssignee}>
@@ -397,7 +394,7 @@ export function PipelinePage() {
       {enquiries.isError ? (
         <PanelError error={enquiries.error} onRetry={() => void enquiries.refetch()} retrying={enquiries.isFetching} />
       ) : nothingAtAll && filtered ? (
-        <div className="rounded-lg border border-line bg-surface">
+        <div className="card p-0">
           <EmptyState
             icon={SearchX}
             title="No enquiries match these filters"
@@ -406,7 +403,7 @@ export function PipelinePage() {
           />
         </div>
       ) : view === "list" ? (
-        <div className="rounded-lg border border-line bg-surface">
+        <div className="card overflow-hidden p-0">
           <DataTable
             caption="Enquiries"
             columns={columns}
@@ -440,7 +437,7 @@ export function PipelinePage() {
           />
           <div
             aria-busy={loading || undefined}
-            className="grid grid-cols-1 gap-3 lg:grid-cols-[repeat(5,minmax(13.5rem,1fr))] lg:overflow-x-auto lg:pb-2"
+            className="grid grid-cols-1 gap-3 lg:grid-cols-[repeat(5,minmax(12rem,1fr))] lg:gap-4 lg:overflow-x-auto"
           >
             {loading
               ? STAGES.map((status) => (

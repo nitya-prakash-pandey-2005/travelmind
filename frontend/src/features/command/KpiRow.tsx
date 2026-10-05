@@ -16,17 +16,12 @@ const KPI_LABELS: ReadonlyArray<{ key: KpiKey; label: string }> = [
 ];
 
 /**
- * The strip has 2 columns on phones, 3 on tablets, 4 on laptops and 7 from 1600px. Seven tiles leave a
- * short last row everywhere but the widest screens, so the last tile stretches over the free cells.
+ * The kit's KPI row (`g4 keep-2`): 4 tiles a row on desktop, 3 on tablets and 2 on phones, at the kit's 16px gap.
+ * Seven tiles leave a short last row, so the last tile stretches over the free cells.
  */
 // Non-overlapping ranges, so no breakpoint has to win over another in the stylesheet's order.
-const LAST_TILE = "max-sm:col-span-2 sm:max-lg:col-span-3 lg:max-[1600px]:col-span-2";
-
-/**
- * Seven across from 1600px. The strip's own `min-[1600px]:grid-cols-7` is emitted before `lg:grid-cols-4`
- * and never applies, so this targets its grid with a child selector, which outranks both.
- */
-const SEVEN_ACROSS = "min-[1600px]:[&>div]:grid-cols-7";
+const LAST_TILE = "max-sm:col-span-2 sm:max-lg:col-span-3 lg:col-span-2";
+const KIT_GAP = "[&>div]:gap-4 max-sm:[&>div]:gap-3";
 
 /** Grid cell for the tile at `index`: the last one fills its row. */
 function cellClass(index: number): string {
@@ -74,7 +69,7 @@ export function KpiRow({ range }: { range: DashboardRange }) {
   if (!summary.data) {
     // Placeholder tiles stay out of the accessibility tree: a labelled tile only appears with its figure.
     return (
-      <KpiStrip label="Key figures" columns={7} className={SEVEN_ACROSS} busy>
+      <KpiStrip label="Key figures" columns={4} className={KIT_GAP} busy>
         {KPI_LABELS.map(({ key, label }, index) => (
           <div key={key} aria-hidden="true" className={cellClass(index)}>
             <KpiTile label={label} value="" loading />
@@ -88,7 +83,7 @@ export function KpiRow({ range }: { range: DashboardRange }) {
   const currency = summary.data.currency;
 
   return (
-    <KpiStrip label="Key figures" columns={7} className={SEVEN_ACROSS} busy={summary.isPlaceholderData}>
+    <KpiStrip label="Key figures" columns={4} className={KIT_GAP} busy={summary.isPlaceholderData}>
       {KPI_LABELS.map(({ key }, index) => {
         const kpi = byKey.get(key);
         if (!kpi) return null;

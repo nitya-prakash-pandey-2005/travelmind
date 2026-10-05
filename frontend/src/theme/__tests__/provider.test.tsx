@@ -23,8 +23,8 @@ function ChoiceProbe() {
   return (
     <div>
       <output aria-label="choice">{`${choice.theme} ${choice.mode} ${choice.contrast ? "high" : "normal"}`}</output>
-      <button type="button" onClick={() => setChoice({ theme: "nebula" })}>
-        Nebula
+      <button type="button" onClick={() => setChoice({ theme: "ocean" })}>
+        Ocean
       </button>
       <button type="button" onClick={() => setChoice({ mode: "light" })}>
         Light
@@ -59,7 +59,7 @@ test("mounting the provider again does not reset a choice made since (even when 
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
     throw new Error("QuotaExceededError");
   });
-  act(() => setThemeChoice({ theme: "nebula", mode: "light" }));
+  act(() => setThemeChoice({ theme: "ocean", mode: "light" }));
   const { unmount } = render(
     <ThemeProvider>
       <ChoiceProbe />
@@ -71,8 +71,8 @@ test("mounting the provider again does not reset a choice made since (even when 
       <ChoiceProbe />
     </ThemeProvider>,
   );
-  expect(screen.getByRole("status", { name: "choice" })).toHaveTextContent("nebula light normal");
-  expect(attributes()).toMatchObject({ theme: "nebula", mode: "light" });
+  expect(screen.getByRole("status", { name: "choice" })).toHaveTextContent("ocean light normal");
+  expect(attributes()).toMatchObject({ theme: "ocean", mode: "light" });
   vi.restoreAllMocks();
 });
 
@@ -83,12 +83,12 @@ test("setChoice applies instantly, re-renders consumers and persists", async () 
       <ChoiceProbe />
     </ThemeProvider>,
   );
-  await user.click(screen.getByRole("button", { name: "Nebula" }));
+  await user.click(screen.getByRole("button", { name: "Ocean" }));
   await user.click(screen.getByRole("button", { name: "Light" }));
   await user.click(screen.getByRole("button", { name: "High contrast" }));
-  expect(screen.getByRole("status", { name: "choice" })).toHaveTextContent("nebula light high");
-  expect(attributes()).toEqual({ theme: "nebula", mode: "light", contrast: "high" });
-  expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({ theme: "nebula", mode: "light", contrast: true });
+  expect(screen.getByRole("status", { name: "choice" })).toHaveTextContent("ocean light high");
+  expect(attributes()).toEqual({ theme: "ocean", mode: "light", contrast: "high" });
+  expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({ theme: "ocean", mode: "light", contrast: true });
 });
 
 test("useThemePalette hands canvas and WebGL code the live palette after a switch", () => {
@@ -98,11 +98,11 @@ test("useThemePalette hands canvas and WebGL code the live palette after a switc
     </ThemeProvider>,
   );
   const output = screen.getByRole("status", { name: "primary" });
-  expect(output).toHaveTextContent(resolvePalette({ theme: "orbital", mode: "dark", contrast: false }).primary);
+  expect(output).toHaveTextContent(resolvePalette({ theme: "aurora", mode: "dark", contrast: false }).primary);
   act(() => setThemeChoice({ theme: "ember", mode: "light" }));
   expect(output).toHaveTextContent(resolvePalette({ theme: "ember", mode: "light", contrast: false }).primary);
-  act(() => setThemeChoice({ theme: "terminal" }));
-  expect(output).toHaveTextContent("#FFD27A");
+  act(() => setThemeChoice({ theme: "contrast" }));
+  expect(output).toHaveTextContent("#FFE600");
 });
 
 test("a change saved in another tab is picked up", () => {
@@ -124,14 +124,14 @@ test("ThemeToggle flips between dark and light mode and updates its label", asyn
   const user = userEvent.setup();
   render(<ThemeToggle />);
   await user.click(screen.getByRole("button", { name: "Switch to light mode" }));
-  expect(attributes()).toMatchObject({ theme: "orbital", mode: "light" });
+  expect(attributes()).toMatchObject({ theme: "aurora", mode: "light" });
   expect(screen.getByRole("button", { name: "Switch to dark mode" })).toBeInTheDocument();
 });
 
 test("ThemeToggle is disabled for a fixed theme", () => {
-  act(() => setThemeChoice({ theme: "terminal" }));
+  act(() => setThemeChoice({ theme: "contrast" }));
   render(<ThemeToggle />);
   const button = screen.getByRole("button", { name: /mode/i });
   expect(button).toBeDisabled();
-  expect(button).toHaveAccessibleDescription("Terminal has a single look");
+  expect(button).toHaveAccessibleDescription("Contrast has a single look");
 });

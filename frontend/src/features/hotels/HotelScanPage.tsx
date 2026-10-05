@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { BedDouble, Building2, CircleAlert, PlugZap, Search, Star } from "lucide-react";
+import { BedDouble, Building2, CircleAlert, ListOrdered, PlugZap, Search, Star } from "lucide-react";
 import { useState } from "react";
 import { asApiError } from "../../api/client";
 import type { HotelOffer, HotelSearchRequest } from "../../api/offers";
@@ -79,11 +79,11 @@ function HotelCard({ offer }: { offer: HotelOffer }) {
   return (
     <article
       aria-label={converted ? `${offer.name} about ${price}` : `${offer.name} ${price}`}
-      className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-3 rounded-lg border border-line bg-surface p-3 transition-colors duration-150 ease-tm hover:border-line-strong sm:grid-cols-[9rem_minmax(0,1fr)_auto]"
+      className="card grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-3 p-3.5 transition-colors duration-150 ease-tm hover:border-line-strong sm:grid-cols-[9rem_minmax(0,1fr)_auto]"
     >
       <div
         className={cn(
-          "col-span-2 aspect-[16/9] overflow-hidden rounded-md border border-line bg-surface-2 sm:col-span-1 sm:row-span-2 sm:aspect-[4/3]",
+          "col-span-2 aspect-[16/9] overflow-hidden rounded-[14px] border border-line bg-card-2 sm:col-span-1 sm:row-span-2 sm:aspect-[4/3]",
           // Without a photo, phones skip the placeholder rather than spend a screen's width on an icon.
           !offer.photo_url && "max-sm:hidden",
         )}
@@ -103,7 +103,7 @@ function HotelCard({ offer }: { offer: HotelOffer }) {
           {offer.stars ? <Stars count={offer.stars} /> : null}
           {offer.rating !== null ? (
             <span className="inline-flex items-center gap-1.5">
-              <span className="tm-num rounded-[4px] border border-line-strong bg-surface-2 px-1 text-[11px] font-semibold text-ink">
+              <span className="tm-num rounded-[6px] border border-line-strong bg-card-2 px-1.5 text-[11px] font-semibold text-ink">
                 {offer.rating.toFixed(1)}
               </span>
               Guest rating
@@ -121,7 +121,7 @@ function HotelCard({ offer }: { offer: HotelOffer }) {
 
       <div className="flex flex-col items-end gap-0.5 text-right">
         <p className="text-xs leading-4 text-dim">
-          <span className="tm-num block text-xl font-semibold leading-7 text-ink">{`${approx}${perNight}`}</span>
+          <span className="tm-num block font-display text-[22px] font-semibold leading-7 tracking-[-0.02em] text-ink">{`${approx}${perNight}`}</span>
           {" "}/ night
         </p>
         <p className="tm-num text-xs leading-4 text-dim">{`${approx}${price} for ${offer.nights} night${offer.nights === 1 ? "" : "s"}`}</p>
@@ -146,8 +146,8 @@ function Searching() {
         Searching hotels…
       </p>
       {[0, 1, 2].map((index) => (
-        <div key={index} aria-hidden="true" className="grid grid-cols-[9rem_minmax(0,1fr)_auto] gap-6 rounded-lg border border-line bg-surface p-3">
-          <Skeleton className="aspect-[4/3] h-auto" />
+        <div key={index} aria-hidden="true" className="card grid grid-cols-[9rem_minmax(0,1fr)_auto] gap-6 p-3.5 max-sm:grid-cols-[minmax(0,1fr)_auto]">
+          <Skeleton className="aspect-[4/3] h-auto max-sm:hidden" />
           <Skeleton lines={3} />
           <Skeleton className="h-7 w-24" />
         </div>
@@ -198,7 +198,7 @@ export function HotelScanPage() {
       <div className="flex flex-col gap-4">
         <form
           aria-label="Search hotels"
-          className="rounded-lg border border-line bg-surface p-4"
+          className="card"
           onSubmit={(event) => {
             event.preventDefault();
             if (!ready || !destination) return;
@@ -213,7 +213,7 @@ export function HotelScanPage() {
             <div className="min-w-0 grow-[3] basis-[20rem]">
               <AirportPicker label="Near" value={destination} onChange={setDestination} />
             </div>
-            <div className="grid min-w-0 grow basis-[24rem] grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem] items-start gap-3">
+            <div className="grid min-w-0 grow basis-[24rem] grid-cols-2 items-start gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem]">
               <TextField
                 label="Check-in"
                 type="date"
@@ -235,6 +235,7 @@ export function HotelScanPage() {
               />
               <TextField
                 label="Adults"
+                className="max-sm:col-span-2"
                 type="number"
                 min={1}
                 max={MAX_ADULTS}
@@ -252,17 +253,27 @@ export function HotelScanPage() {
         </form>
 
         {request === null ? (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-            <QuickDestinations recent={recent} selected={destination} onPick={setDestination} />
-            <SupplierStatusCard booking="hotels" bookingTitle="Hotel suppliers" services={["exchange_rates"]} />
-            <div className="min-w-0 xl:col-span-2">
+          // The kit's 12-column grid: quick destinations (span 8) beside supplier status (span 4), the guide under
+          // both. One column under 1180 px.
+          <div className="grid g-12">
+            <div className="span-8 grid min-w-0">
+              <QuickDestinations recent={recent} selected={destination} onPick={setDestination} />
+            </div>
+            <div className="span-4 grid min-w-0">
+              <SupplierStatusCard booking="hotels" bookingTitle="Hotel suppliers" services={["exchange_rates"]} />
+            </div>
+            <div className="span-12 min-w-0">
               <ReadingGuide sections={HOTEL_GUIDE} note={HOTEL_NOTE} />
             </div>
           </div>
         ) : (
           <section aria-labelledby="hotel-results" className="flex flex-col gap-3">
-            <div className="min-w-0">
-              <h2 id="hotel-results" className="text-base font-semibold leading-6 text-ink">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-card-2 text-dim">
+                <ListOrdered size={17} strokeWidth={1.75} />
+              </span>
+              <div className="min-w-0">
+              <h2 id="hotel-results" className="font-display text-base font-semibold leading-6 text-ink">
                 Results
                 {showResults && (
                   <span className="tm-num ml-2 text-[13px] font-normal text-dim">
@@ -275,6 +286,7 @@ export function HotelScanPage() {
                   {stayLine(request)}
                 </p>
               )}
+              </div>
             </div>
 
             {search.isFetching ? (
@@ -282,7 +294,7 @@ export function HotelScanPage() {
             ) : search.isError ? (
               <p
                 role="alert"
-                className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/5 px-4 py-3 text-[13px] leading-5 text-danger"
+                className="card alert flex items-start gap-2 px-4 py-3 text-[13px] leading-5 text-danger"
               >
                 <CircleAlert size={15} aria-hidden="true" className="mt-0.5 shrink-0" />
                 {asApiError(search.error).message}
@@ -291,7 +303,7 @@ export function HotelScanPage() {
               <>
                 <SourceStrip sources={data.sources} />
                 {notConfigured && (
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-4 py-3">
+                  <div className="card warn flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                     <PlugZap size={16} aria-hidden="true" className="shrink-0 text-warn" />
                     <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink">{notConfigured.message}</p>
                     <Link to="/app/suppliers" className={buttonClasses({ variant: "secondary", size: "sm" })}>
@@ -301,7 +313,7 @@ export function HotelScanPage() {
                 )}
                 {data.offers.length > 0 ? (
                   <>
-                    <ol aria-label="Hotel offers" className="flex flex-col gap-2">
+                    <ol aria-label="Hotel offers" className="flex flex-col gap-3">
                       {data.offers.map((offer) => (
                         <li key={offer.id}>
                           <HotelCard offer={offer} />
@@ -319,7 +331,7 @@ export function HotelScanPage() {
                   </>
                 ) : (
                   !notConfigured && (
-                    <div className="rounded-lg border border-line bg-surface">
+                    <div className="card p-0">
                       <EmptyState
                         icon={BedDouble}
                         title="No rooms for these dates."

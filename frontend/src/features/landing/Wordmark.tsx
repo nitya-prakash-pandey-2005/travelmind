@@ -12,10 +12,10 @@ export function BrandMark({ className }: { className?: string }) {
   );
 }
 
-/** Mark plus name, Inter 600 with slight tracking (design direction v2). */
+/** Mark plus name in the kit's display face. */
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-2 text-[15px] font-semibold tracking-[0.01em] text-ink", className)}>
+    <span className={cn("inline-flex items-center gap-2 font-display text-[16px] font-bold tracking-[-0.02em] text-ink", className)}>
       <BrandMark />
       TravelMind
     </span>

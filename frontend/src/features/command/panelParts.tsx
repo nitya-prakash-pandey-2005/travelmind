@@ -1,5 +1,5 @@
 import { Link, type LinkProps } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Panel } from "../../ui/Panel";
 import { Skeleton } from "../../ui/Skeleton";
@@ -40,18 +40,21 @@ export function LiveIndicator({ every }: { every: string }) {
 export function LoadingPanel({
   title,
   description,
+  icon,
   actions,
   rows = 4,
   className,
 }: {
   title: string;
   description?: ReactNode;
+  /** The card head's icon chip. */
+  icon?: LucideIcon;
   actions?: ReactNode;
   rows?: number;
   className?: string;
 }) {
   return (
-    <Panel title={title} description={description} actions={actions} busy className={cn("flex flex-col", className)}>
+    <Panel title={title} description={description} icon={icon} actions={actions} busy className={cn("flex flex-col", className)}>
       <span className="sr-only">Loading {title}…</span>
       <div aria-hidden="true" className="flex flex-col">
         {Array.from({ length: rows }, (_, index) => (

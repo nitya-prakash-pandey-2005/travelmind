@@ -1,4 +1,4 @@
-import { Equal, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
+import { ChartLine, Equal, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
 import type { Baseline, Insight, Money } from "../../api/offers";
 import { formatNumber } from "../../lib/format";
 import { formatMoney } from "../../lib/money";
@@ -36,6 +36,7 @@ export function FareInsight({ baseline, price: fare, insight }: { baseline: Base
   return (
     <Panel
       title="Fare insight"
+      icon={ChartLine}
       description={`Per-traveller fares seen on this route in the last ${baseline.window_days} days`}
       actions={<Badge tone={sandbox ? "warn" : "info"}>{sandbox ? "Sandbox data" : "Market data"}</Badge>}
     >
@@ -64,19 +65,20 @@ export function FareInsight({ baseline, price: fare, insight }: { baseline: Base
           aria-label={price ? `${MARKER} ${formatMoney(price)} against ${range}` : `Fares on this route usually fall in ${range}`}
           className="relative min-w-0 pb-6 pt-5"
         >
-          <div className="grid h-2 grid-cols-3 gap-0.5">
-            <span className="rounded-l-full bg-ok/30" />
-            <span className="bg-line-strong" />
-            <span className="rounded-r-full bg-warn/30" />
+          {/* The kit's drivers bar: three equal bands, low (good), typical and high (watch). */}
+          <div className="grid h-2.5 grid-cols-3 gap-1">
+            <span className="rounded-full bg-ok/35" />
+            <span className="rounded-full bg-line-strong" />
+            <span className="rounded-full bg-warn/35" />
           </div>
           <span
-            className="absolute top-[18px] h-3 w-px -translate-x-1/2 bg-dim"
+            className="absolute top-[18px] h-3.5 w-px -translate-x-1/2 bg-dim"
             style={{ left: `${at(baseline.median_minor)}%` }}
           />
           {price && (
             <>
               <span
-                className="absolute top-[14px] h-5 w-0.5 -translate-x-1/2 rounded-full bg-ink ring-2 ring-surface"
+                className="absolute top-[13px] h-6 w-1 -translate-x-1/2 rounded-full bg-ink shadow-[0_0_12px_var(--glow)] ring-2 ring-bg"
                 style={{ left: `${at(price.amount_minor)}%` }}
               />
               <span

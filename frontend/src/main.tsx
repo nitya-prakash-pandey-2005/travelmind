@@ -1,13 +1,8 @@
-// Theme faces, self-hosted. Browsers only download the files a theme actually uses.
+// The UI kit's faces, self-hosted: Inter for the interface, Space Grotesk for titles and big numbers,
+// JetBrains Mono for HUD labels and data.
 import "@fontsource-variable/inter";
-import "@fontsource-variable/sora";
-import "@fontsource/fraunces/400.css";
-import "@fontsource/fraunces/600.css";
-import "@fontsource/ibm-plex-mono/400.css";
-import "@fontsource/ibm-plex-mono/500.css";
-import "@fontsource/ibm-plex-mono/600.css";
-import "@fontsource/jetbrains-mono/400.css";
-import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource-variable/space-grotesk";
+import "@fontsource-variable/jetbrains-mono";
 import "./styles/index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

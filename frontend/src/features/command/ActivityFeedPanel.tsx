@@ -33,6 +33,8 @@ import { ErrorPanel, PanelError } from "./PanelError";
 import { LiveIndicator, LoadingPanel } from "./panelParts";
 
 const TITLE = "Live activity";
+/** Icon chip in the card head. */
+const ICON = Activity;
 const DESCRIPTION = "What your team did, newest first";
 
 /** Kind icons are neutral; only outcomes a person should notice carry a status colour. */
@@ -95,11 +97,12 @@ export function ActivityFeedPanel({ className }: { className?: string }) {
   const now = useClock(30_000);
   const live = <LiveIndicator every="20 seconds" />;
 
-  if (feed.isPending) return <LoadingPanel title={TITLE} description={DESCRIPTION} actions={live} rows={8} className={className} />;
+  if (feed.isPending) return <LoadingPanel title={TITLE} icon={ICON} description={DESCRIPTION} actions={live} rows={8} className={className} />;
   if (feed.isError && !feed.data) {
     return (
       <ErrorPanel
         title={TITLE}
+        icon={ICON}
         description={DESCRIPTION}
         error={feed.error}
         onRetry={() => void feed.refetch()}
@@ -116,6 +119,7 @@ export function ActivityFeedPanel({ className }: { className?: string }) {
   return (
     <Panel
       title={TITLE}
+      icon={ICON}
       description={DESCRIPTION}
       flush
       className={cn("flex flex-col", className)}

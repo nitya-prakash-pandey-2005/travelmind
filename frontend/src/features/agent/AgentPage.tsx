@@ -1,16 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import {
+  Activity,
   BadgeCheck,
+  Bot,
   CircleSlash,
   Cpu,
+  Database,
   Hand,
+  ListChecks,
   MessageSquareText,
   Plus,
   Radio,
   SearchX,
   ShieldCheck,
   WifiOff,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -32,6 +37,7 @@ import {
 } from "../../api/agent";
 import { asApiError } from "../../api/client";
 import { formatNumber } from "../../lib/format";
+import { MiniRing } from "../../kit";
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { BarList, KpiStrip, KpiTile } from "../../ui/charts";
@@ -92,42 +98,53 @@ const TOOLS: { tool: AgentTool; label: string; approval?: boolean }[] = [
 
 const TOOL_NAME = Object.fromEntries(TOOLS.map(({ tool, label }) => [tool, label])) as Partial<Record<AgentTool, string>>;
 
-function HowItWorks() {
+/** The four stages of a plan, as numbered kit tiles. */
+function HowItWorks({ className }: { className?: string }) {
   return (
-    <div className="flex flex-col gap-4">
-      <Panel title="How a plan runs" description="From a plain request to a plan you can quote" className="@container">
-        <ol className="grid gap-3 @lg:grid-cols-2">
-          {STEPS.map(({ icon: Icon, title, body }, index) => (
-            <li key={title} className="flex gap-3 rounded-md border border-line bg-surface-2/50 p-3">
-              <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-line bg-surface text-primary">
-                <Icon size={15} strokeWidth={1.75} />
+    <Panel title="How a plan runs" icon={ListChecks} description="From a plain request to a plan you can quote" className={cn("@container", className)}>
+      <ol className="grid gap-2.5 @lg:grid-cols-2">
+        {STEPS.map(({ icon: Icon, title, body }, index) => (
+          <li key={title} className="flex gap-3 rounded-[14px] border border-line bg-card-2 p-3">
+            <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-card-2 text-primary">
+              <Icon size={16} strokeWidth={1.75} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[13px] font-semibold leading-5 text-ink">
+                <span className="tm-num mr-1.5 text-faint">{index + 1}</span>
+                {title}
               </span>
-              <span className="min-w-0">
-                <span className="block text-[13px] font-medium leading-5 text-ink">
-                  <span className="tm-num mr-1.5 text-faint">{index + 1}</span>
-                  {title}
-                </span>
-                <span className="mt-0.5 block text-xs leading-4 text-dim">{body}</span>
-              </span>
+              <span className="mt-0.5 block text-xs leading-4 text-dim">{body}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </Panel>
+  );
+}
+
+/** Every tool the planner may call, the two writes flagged as needing approval. */
+function ToolsPanel({ className }: { className?: string }) {
+  return (
+    <Panel title="Tools it can use" icon={Wrench} description="Each call appears in the trace with its result and timing" className={cn("@container", className)}>
+      <ul className="grid grid-cols-1 gap-2 @[17rem]:grid-cols-2 @2xl:grid-cols-3">
+        {TOOLS.map(({ tool, label, approval }) => {
+          const Icon = TOOL_ICON[tool];
+          return (
+            <li
+              key={tool}
+              className={cn(
+                "flex min-w-0 items-center gap-2 rounded-[12px] border border-line bg-card-2 px-2.5 py-2",
+                approval && "@[17rem]:col-span-2 @2xl:col-span-1",
+              )}
+            >
+              <Icon size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-dim" />
+              <span className="min-w-0 truncate text-[13px] text-ink">{label}</span>
+              {approval && <Badge tone="warn" className="ml-auto">Approval</Badge>}
             </li>
-          ))}
-        </ol>
-      </Panel>
-      <Panel title="Tools it can use" description="Each call appears in the trace with its result and timing" className="@container">
-        <ul className="grid grid-cols-1 gap-2 @xs:grid-cols-2 @2xl:grid-cols-3">
-          {TOOLS.map(({ tool, label, approval }) => {
-            const Icon = TOOL_ICON[tool];
-            return (
-              <li key={tool} className={cn("flex min-w-0 items-center gap-2 rounded-md border border-line px-2.5 py-2", approval && "@xs:col-span-2 @2xl:col-span-1")}>
-                <Icon size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-dim" />
-                <span className="min-w-0 truncate text-[13px] text-ink">{label}</span>
-                {approval && <Badge tone="warn" className="ml-auto">Approval</Badge>}
-              </li>
-            );
-          })}
-        </ul>
-      </Panel>
-    </div>
+          );
+        })}
+      </ul>
+    </Panel>
   );
 }
 
@@ -159,15 +176,9 @@ const SOURCES: [string, string, string][] = [
   ["Places", "OpenStreetMap", "Sights, food and more near the destination · ODbL"],
 ];
 
-function AgentStatusPanel({ availability }: { availability: AgentAvailability | undefined }) {
-  const runs = useQuery(agentRunsQueryOptions(20));
-  const items = runs.data?.items ?? [];
-  const done = items.filter((run) => run.status === "done");
-  const verified = done.filter((run) => isVerified(run.grounded, run.result)).length;
-  const typical = median(done.map(elapsedMs).filter((ms): ms is number => ms !== null));
+function StatusCard({ availability, className }: { availability: AgentAvailability | undefined; className?: string }) {
   return (
-    <div className="flex flex-col gap-4">
-      <Panel title="Agent status" description="What runs your plans">
+    <Panel title="Agent status" icon={Bot} description="What runs your plans" className={className}>
         <div className="flex flex-col gap-3 text-[13px] text-ink">
           <PlannerLine availability={availability} />
           <ul className="flex flex-col gap-2 border-t border-line pt-3 text-xs leading-4 text-dim">
@@ -184,8 +195,22 @@ function AgentStatusPanel({ availability }: { availability: AgentAvailability | 
             ))}
           </ul>
         </div>
-      </Panel>
-      <KpiStrip label="Plan figures" columns={2} busy={runs.isPending}>
+    </Panel>
+  );
+}
+
+/** The kit's KPI row (`g4 keep-2`): four tiles a row on desktops, two on tablets and phones, at the kit gap. */
+const KPI_GRID = "[&>div]:grid-cols-2 [&>div]:gap-4 max-sm:[&>div]:gap-3 min-[1181px]:[&>div]:grid-cols-4";
+
+/** The last 20 plans in figures: how many, how many finished, the share with every price verified, typical time. */
+function PlanFigures() {
+  const runs = useQuery(agentRunsQueryOptions(20));
+  const items = runs.data?.items ?? [];
+  const done = items.filter((run) => run.status === "done");
+  const verified = done.filter((run) => isVerified(run.grounded, run.result)).length;
+  const typical = median(done.map(elapsedMs).filter((ms): ms is number => ms !== null));
+  return (
+      <KpiStrip label="Plan figures" columns={4} busy={runs.isPending} className={KPI_GRID}>
         <KpiTile label="Plans" value={formatNumber(items.length)} hint="Most recent 20" loading={runs.isPending} />
         <KpiTile label="Completed" value={formatNumber(done.length)} hint={`${formatNumber(items.length - done.length)} other outcomes`} loading={runs.isPending} />
         <KpiTile
@@ -196,7 +221,12 @@ function AgentStatusPanel({ availability }: { availability: AgentAvailability | 
         />
         <KpiTile label="Typical time" value={typical !== null ? formatMs(typical) : "—"} hint="Median to finish" loading={runs.isPending} />
       </KpiStrip>
-      <Panel title="Where the data comes from" description="Shown with every result it supports">
+  );
+}
+
+function SourcesPanel({ className }: { className?: string }) {
+  return (
+    <Panel title="Where the data comes from" icon={Database} description="Shown with every result it supports" className={className}>
         <dl className="flex flex-col divide-y divide-line text-[13px]">
           {SOURCES.map(([label, source, note]) => (
             <div key={label} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-3 py-2 first:pt-0 last:pb-0">
@@ -208,7 +238,29 @@ function AgentStatusPanel({ availability }: { availability: AgentAvailability | 
             </div>
           ))}
         </dl>
-      </Panel>
+    </Panel>
+  );
+}
+
+/**
+ * The overview with no plan open, as kit cards on the 12-column grid: the composer and recent plans on the left
+ * (span 4), and on the right (span 8) the plan figures, how a plan runs beside the agent's status, then the tools
+ * beside the data sources. `notice` (a plan that wasn't found or didn't load) leads the right-hand side.
+ */
+function Overview({ left, availability, notice }: { left: ReactNode; availability: AgentAvailability | undefined; notice?: ReactNode }) {
+  return (
+    <div className="grid g-12 items-start">
+      <div className="span-4 flex min-w-0 flex-col gap-4">{left}</div>
+      <div className="span-8 flex min-w-0 flex-col gap-4">
+        {notice}
+        <PlanFigures />
+        <div className="grid g-12">
+          <HowItWorks className="span-7" />
+          <StatusCard availability={availability} className="span-5" />
+          <ToolsPanel className="span-6" />
+          <SourcesPanel className="span-6" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -218,7 +270,7 @@ function AgentStatusPanel({ availability }: { availability: AgentAvailability | 
 function StreamNote({ state }: { state: StreamState }) {
   if (state === "paused") {
     return (
-      <p role="status" className="flex items-center gap-2 rounded-md border border-line bg-surface-2 px-3 py-2 text-xs leading-4 text-dim">
+      <p role="status" className="callout items-center gap-2 px-3 py-2 text-xs leading-4 text-dim">
         <WifiOff size={13} aria-hidden="true" className="shrink-0 text-faint" />
         Live updates paused, too many open views; refresh later. This plan is checked every few seconds instead.
       </p>
@@ -251,25 +303,47 @@ function Telemetry({ run }: { run: AgentRunDetail }) {
         ]
       : [],
   );
+  const succeeded = counts.tools - counts.failures;
   return (
-    <Panel title="Run telemetry" description={run.demo ? "Demo planner · rule-based" : `Model ${run.model}`}>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+    <Panel
+      title="Run telemetry"
+      icon={Activity}
+      className="@container"
+      description={run.demo ? "Demo planner · rule-based" : `Model ${run.model}`}
+      actions={
+        counts.tools > 0 ? (
+          <div role="img" aria-label={`${succeeded} of ${counts.tools} tool calls succeeded`} className="flex items-center gap-2">
+            <MiniRing
+              value={succeeded}
+              max={counts.tools}
+              size={44}
+              color={counts.failures > 0 ? "var(--tm-warn)" : "var(--tm-ok)"}
+              label={`${succeeded}/${counts.tools}`}
+            />
+          </div>
+        ) : undefined
+      }
+    >
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 @sm:grid-cols-4">
         {[
           ["Steps", formatNumber(counts.steps)],
           ["Tools", formatNumber(counts.tools)],
           ["Elapsed", elapsed !== null ? formatMs(elapsed) : isWorking(run.status) ? "Running" : "—"],
           ["Tokens", formatNumber(run.input_tokens + run.output_tokens)],
         ].map(([label, value]) => (
-          <div key={label} className="flex min-w-0 flex-col gap-0.5">
-            <dt className="tm-micro">{label}</dt>
-            <dd className="tm-num truncate text-base text-ink">{value}</dd>
+          <div key={label} className="stat flex min-w-0 flex-col gap-1">
+            <dt className="hud">{label}</dt>
+            <dd className="v truncate text-[22px]!">{value}</dd>
           </div>
         ))}
       </dl>
       {bars.length > 0 && (
         <div className="mt-4 border-t border-line pt-3">
-          <p className="tm-micro mb-2.5">Time per tool call</p>
-          <BarList label="Time per tool call" items={bars} valueFormat={formatMs} />
+          <p className="hud mb-2.5">Time per tool call</p>
+          {/* Relative and clipped: the chart's screen-reader table is wider than a phone column. */}
+          <div className="relative overflow-hidden">
+            <BarList label="Time per tool call" items={bars} valueFormat={formatMs} />
+          </div>
         </div>
       )}
       {run.prompt_version && <p className="mt-3 text-[11px] leading-4 text-faint">Instructions version {run.prompt_version}</p>}
@@ -287,6 +361,8 @@ type Layout = {
 };
 
 const PANE = "flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]";
+/** The three panes on the kit's 12-column grid (3 · 4 · 5), one row as tall as the rest of the window. */
+const WIDE_GRID = "grid g-12 min-h-[35rem] flex-1 grid-rows-[minmax(0,1fr)]";
 
 /**
  * Wide: three panes that fill the rest of the window (the page is a full-height column) and scroll on their
@@ -304,10 +380,10 @@ function Columns({ left, centre, right, hasRun, attention = null }: Layout) {
   }
   if (wide) {
     return (
-      <div className="grid min-h-[35rem] flex-1 grid-cols-[17.5rem_minmax(0,1fr)_minmax(0,1.2fr)] grid-rows-[minmax(0,1fr)] gap-4">
-        <div data-pane="requests" className={PANE}>{left}</div>
-        <div data-pane="conversation" className={PANE}>{centre}</div>
-        <div data-pane="plan" className={PANE}>{right}</div>
+      <div className={WIDE_GRID}>
+        <div data-pane="requests" className={cn("span-3", PANE)}>{left}</div>
+        <div data-pane="conversation" className={cn("span-4", PANE)}>{centre}</div>
+        <div data-pane="plan" className={cn("span-5", PANE)}>{right}</div>
       </div>
     );
   }
@@ -422,6 +498,7 @@ function OpenRun({
   const conversation = (
     <Panel
       title="Conversation"
+      icon={MessageSquareText}
       description={run.demo ? "Demo planner · each step as it runs" : "Each step as it runs"}
       actions={
         <>
@@ -488,7 +565,7 @@ function RunWorkspace({
         left={left}
         centre={<LoadingRun />}
         right={
-          <Panel title="Plan" busy>
+          <Panel title="Plan" icon={ListChecks} busy>
             <Skeleton lines={8} />
           </Panel>
         }
@@ -498,12 +575,12 @@ function RunWorkspace({
   if (run.isError) {
     const error = asApiError(run.error);
     return (
-      <Columns
-        hasRun={false}
+      <Overview
         left={left}
-        centre={
+        availability={availability}
+        notice={
           error.status === 404 ? (
-            <div className="rounded-lg border border-line bg-surface">
+            <div className="card p-0">
               <EmptyState
                 icon={SearchX}
                 title="Plan not found"
@@ -515,7 +592,6 @@ function RunWorkspace({
             <PanelError error={run.error} onRetry={() => void run.refetch()} retrying={run.isFetching} />
           )
         }
-        right={<AgentStatusPanel availability={availability} />}
       />
     );
   }
@@ -534,7 +610,7 @@ function RunWorkspace({
 
 function LoadingRun() {
   return (
-    <Panel title="Conversation" busy>
+    <Panel title="Conversation" icon={MessageSquareText} busy>
       <Skeleton lines={6} />
       <span className="sr-only">Loading plan…</span>
     </Panel>
@@ -596,6 +672,7 @@ export function AgentPage() {
   return (
     <div className="flex flex-col xl:h-full">
       <PageHeader
+        breadcrumb={[{ label: "Workspace", to: "/app" }, { label: "Agent" }]}
         title="Agent"
         description="Plans trips from a plain request with live fares, hotels and weather. Every price is checked against the results."
         meta={
@@ -623,7 +700,7 @@ export function AgentPage() {
         }
       />
       {unavailable && (
-        <div role="status" className={cn("mb-4 flex items-start gap-3 rounded-lg border border-warn/40 bg-surface px-4 py-3")}>
+        <div role="status" className="card warn mb-4 flex items-start gap-3 px-4 py-3">
           <WifiOff size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-warn" />
           <div>
             <p className="text-sm font-semibold text-ink">{UNAVAILABLE}</p>
@@ -644,7 +721,7 @@ export function AgentPage() {
           onExtend={extend}
         />
       ) : (
-        <Columns hasRun={false} left={left} centre={<HowItWorks />} right={<AgentStatusPanel availability={availability.data} />} />
+        <Overview left={left} availability={availability.data} />
       )}
     </div>
   );

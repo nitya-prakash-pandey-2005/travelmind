@@ -1,0 +1,68 @@
+/*
+ * UI kit tokens (D:\Hackathons\ui-kit, styles/tokens.css), mapped onto the project's theme tokens.
+ *
+ * The kit's colour names are aliases of --tm-* properties: the values live in src/theme/palettes.ts and arrive
+ * through themes.generated.css, so switching theme (data-theme / data-mode / data-contrast on <html>) recolours
+ * every kit class too. Only sizes are the kit's own values here. An element that re-declares the --tm-* tokens
+ * (a theme preview card) marks itself [data-theme-scope] so these aliases resolve against its own values.
+ */
+:root,
+[data-theme-scope] {
+  /* surfaces */
+  --bg: var(--tm-bg);
+  --bg-2: var(--tm-bg);
+  --surface: var(--tm-card);
+  --surface-2: var(--tm-card-2);
+  --surface-solid: var(--tm-surface);
+  --surface-raised: var(--tm-surface-2);
+  --chrome: var(--tm-chrome);
+  --line: var(--tm-border);
+  --line-2: var(--tm-border-soft);
+  --line-strong: var(--tm-border-strong);
+
+  /* text */
+  --text: var(--tm-text);
+  --text-2: var(--tm-text-2);
+  --muted: var(--tm-text-3);
+  --faint: var(--tm-text-3);
+
+  /* The kit's colour-named accents are not aliased: write the semantic token instead, so no colour name
+     reaches a stylesheet. pink -> --tm-primary, violet -> --tm-ai, cyan -> --tm-info, green -> --tm-ok,
+     amber -> --tm-warn, rose -> --tm-danger, blue -> --tm-chart-6. */
+
+  /* gradient, glow and ambience */
+  --grad: var(--tm-grad);
+  --grad-soft: var(--tm-grad-soft);
+  --glow: var(--tm-glow);
+  --glow-1: var(--tm-ambient-1);
+  --glow-2: var(--tm-ambient-2);
+  --glow-3: var(--tm-ambient-3);
+  --grid-line: var(--tm-hud-grid);
+  --shadow: var(--tm-shadow-pop);
+
+  /* corners */
+  --r-sm: 10px;
+  --r: 16px;
+  --r-lg: var(--tm-radius-panel);
+  --r-xl: 28px;
+  --r-control: var(--tm-radius-control);
+
+  /* type */
+  --font-ui: var(--tm-font-sans);
+  --font-display: var(--tm-font-display);
+  --font-mono: var(--tm-font-mono);
+
+  /* layout */
+  --sidebar: 264px;
+  --sidebar-rail: 76px;
+  --topbar: 64px;
+  --bottomnav: 68px;
+  --gutter: 28px;
+}
+
+@media (max-width: 900px) {
+  :root {
+    --gutter: 16px;
+    --topbar: 56px;
+  }
+}

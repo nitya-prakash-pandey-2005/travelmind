@@ -1,11 +1,12 @@
-import { ArrowLeftRight, ChevronDown, Search, X } from "lucide-react";
+import { ArrowLeftRight, Search, X } from "lucide-react";
 import { useId, useState } from "react";
 import type { Cabin, FlightSearchRequest } from "../../api/offers";
 import { isoDateFromNow } from "../../lib/dates";
 import { clampGuests } from "../../lib/guests";
 import { Button } from "../../ui/Button";
 import { cn } from "../../ui/cn";
-import { FIELD_LABEL, TextField } from "../../ui/TextField";
+import { SegmentedControl } from "../../ui/SegmentedControl";
+import { FIELD_CONTROL, FIELD_LABEL, TextField } from "../../ui/TextField";
 import { AirportPicker } from "../airports/AirportPicker";
 import { routeStore, useRouteSelection } from "../route/routeStore";
 import { MAX_PASSENGERS } from "./fareSearchParams";
@@ -17,15 +18,13 @@ export const CABINS: { value: Cabin; label: string }[] = [
   { value: "first", label: "First" },
 ];
 
-/** A 32px field for the toolbar above the route (the form's full-size fields are 36px). */
-const COMPACT_CONTROL = cn(
-  "h-8 min-w-0 rounded-md border border-line-strong bg-surface-2 px-2.5 text-sm text-ink",
-  "transition-colors duration-150 ease-tm hover:border-faint focus:border-primary",
-);
+/** The cabin switch: the kit's segmented control, allowed to wrap onto a second line on a phone. */
+const CABIN_SEG = "h-auto! flex-wrap! [&>label]:min-h-8 [&>label]:py-1!";
 
 /**
- * The fare search bar: adults and cabin on a toolbar, then route, dates and the scan button in one row on
- * laptops. The route takes the spare width; the dates wrap under it on tablets and everything stacks on phones.
+ * The fare search card in the kit's form recipe: route and dates on the first row (the route takes the spare
+ * width; the dates wrap under it on tablets), then adults, any children, the cabin as a segmented switch and the
+ * scan button. Everything stacks on phones.
  */
 export function FareSearchForm({
   busy,
@@ -60,7 +59,7 @@ export function FareSearchForm({
   return (
     <form
       aria-label="Search flights"
-      className="rounded-lg border border-line bg-surface p-4"
+      className="card flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
         if (!ready || !origin || !destination) return;
@@ -78,63 +77,6 @@ export function FareSearchForm({
         });
       }}
     >
-      {/* Party and cabin sit on a toolbar above the route, so the route and dates get the row's width. */}
-      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line pb-3">
-        <div className="flex items-center gap-2">
-          <label htmlFor={`${id}-adults`} className={FIELD_LABEL}>
-            Adults
-          </label>
-          <input
-            id={`${id}-adults`}
-            type="number"
-            min={1}
-            max={maxAdults}
-            value={adults}
-            onChange={(e) => setAdults(e.target.value)}
-            onBlur={() => setAdults(String(clampGuests(adults, maxAdults)))}
-            className={cn(COMPACT_CONTROL, "w-16 font-mono")}
-          />
-        </div>
-        {children.length > 0 && (
-          <div className="flex items-center gap-1">
-            <p className="flex items-center gap-2">
-              <span className={FIELD_LABEL}>Children</span>
-              <span className="font-mono text-[13px] text-ink">
-                {`${children.length} (age${children.length === 1 ? "" : "s"} ${children.join(", ")})`}
-              </span>
-            </p>
-            <Button variant="ghost" size="sm" iconOnly aria-label="Remove children" onClick={() => setChildren([])}>
-              <X size={14} aria-hidden="true" />
-            </Button>
-          </div>
-        )}
-        <div className="flex items-center gap-2">
-          <label htmlFor={`${id}-cabin`} className={FIELD_LABEL}>
-            Cabin
-          </label>
-          <div className="relative">
-            <select
-              id={`${id}-cabin`}
-              value={cabin}
-              onChange={(e) => setCabin(e.target.value as Cabin)}
-              className={cn(COMPACT_CONTROL, "w-44 cursor-pointer appearance-none pr-8")}
-            >
-              {CABINS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              size={14}
-              aria-hidden="true"
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-dim"
-            />
-          </div>
-        </div>
-        <p className="text-xs leading-4 text-dim sm:ml-auto">Up to 1 connection · prices for all travellers, taxes included</p>
-      </div>
-
       <div className="flex flex-wrap items-start gap-3">
         <div className="grid min-w-0 grow-[3] basis-[24rem] items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:gap-2">
           <AirportPicker label="From" value={origin} onChange={(a) => routeStore.setOrigin(a)} />
@@ -170,14 +112,54 @@ export function FareSearchForm({
             onChange={(e) => setReturning(e.target.value)}
           />
         </div>
-        {/* 26px = a field label (20px) and its gap (6px): lines the button up with the inputs beside it. */}
-        <Button type="submit" disabled={!ready} loading={busy} className="shrink-0 max-sm:w-full sm:mt-[26px]">
+      </div>
+
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-3 border-t border-line pt-4">
+        <div className="field w-24 gap-1.5">
+          <label htmlFor={`${id}-adults`} className={FIELD_LABEL}>
+            Adults
+          </label>
+          <input
+            id={`${id}-adults`}
+            type="number"
+            min={1}
+            max={maxAdults}
+            value={adults}
+            onChange={(e) => setAdults(e.target.value)}
+            onBlur={() => setAdults(String(clampGuests(adults, maxAdults)))}
+            className={cn(FIELD_CONTROL, "border-line-strong font-mono")}
+          />
+        </div>
+        {children.length > 0 && (
+          <div className="field gap-1.5">
+            <span className={FIELD_LABEL}>Children</span>
+            <p className="flex h-10 items-center gap-1 rounded-[12px] border border-line bg-card-2 pl-3.5 pr-1">
+              <span className="font-mono text-[13px] text-ink">
+                {`${children.length} (age${children.length === 1 ? "" : "s"} ${children.join(", ")})`}
+              </span>
+              <Button variant="ghost" size="sm" iconOnly aria-label="Remove children" onClick={() => setChildren([])}>
+                <X size={14} aria-hidden="true" />
+              </Button>
+            </p>
+          </div>
+        )}
+        <div className="field min-w-0 gap-1.5">
+          {/* The switch carries the name "Cabin" itself; this is its visible label. */}
+          <span aria-hidden="true" className={FIELD_LABEL}>
+            Cabin
+          </span>
+          <SegmentedControl label="Cabin" value={cabin} onChange={setCabin} options={CABINS} className={CABIN_SEG} />
+        </div>
+        <p className="min-w-0 basis-56 pb-2.5 text-xs leading-4 text-dim lg:ml-auto lg:text-right">
+          Up to 1 connection · prices for all travellers, taxes included
+        </p>
+        <Button type="submit" disabled={!ready} loading={busy} className="shrink-0 max-sm:w-full">
           {!busy && <Search size={15} aria-hidden="true" />}
           Scan fares
         </Button>
       </div>
       {sameAirport && (
-        <p role="alert" className="mt-3 text-[13px] text-warn">
+        <p role="alert" className="text-[13px] text-warn">
           Pick two different airports.
         </p>
       )}
